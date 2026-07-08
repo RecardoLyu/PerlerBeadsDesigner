@@ -1,0 +1,1107 @@
+[
+  {
+    "code": "A1",
+    "name": "奶油白",
+    "hex": "#faf5cd"
+  },
+  {
+    "code": "A2",
+    "name": "浅米黄",
+    "hex": "#fcfed6"
+  },
+  {
+    "code": "A3",
+    "name": "柠檬黄",
+    "hex": "#fcff92"
+  },
+  {
+    "code": "A4",
+    "name": "金黄",
+    "hex": "#f7ec5c"
+  },
+  {
+    "code": "A5",
+    "name": "葵花黄",
+    "hex": "#f0d83a"
+  },
+  {
+    "code": "A6",
+    "name": "橘黄",
+    "hex": "#fda951"
+  },
+  {
+    "code": "A7",
+    "name": "橙橘",
+    "hex": "#fa8c4f"
+  },
+  {
+    "code": "A8",
+    "name": "明黄",
+    "hex": "#fbda4d"
+  },
+  {
+    "code": "A9",
+    "name": "杏黄",
+    "hex": "#f79d5f"
+  },
+  {
+    "code": "A10",
+    "name": "橘红",
+    "hex": "#f47e38"
+  },
+  {
+    "code": "A11",
+    "name": "浅杏",
+    "hex": "#fedb99"
+  },
+  {
+    "code": "A12",
+    "name": "桃杏",
+    "hex": "#fda276"
+  },
+  {
+    "code": "A13",
+    "name": "姜黄",
+    "hex": "#fec667"
+  },
+  {
+    "code": "A14",
+    "name": "辣椒红",
+    "hex": "#f75842"
+  },
+  {
+    "code": "A15",
+    "name": "亮黄",
+    "hex": "#fbf65e"
+  },
+  {
+    "code": "A16",
+    "name": "浅柠黄",
+    "hex": "#feff97"
+  },
+  {
+    "code": "A17",
+    "name": "鹅黄",
+    "hex": "#fde173"
+  },
+  {
+    "code": "A18",
+    "name": "浅橘粉",
+    "hex": "#fcbf80"
+  },
+  {
+    "code": "A19",
+    "name": "珊瑚粉",
+    "hex": "#fd7e77"
+  },
+  {
+    "code": "A20",
+    "name": "香槟黄",
+    "hex": "#f9d666"
+  },
+  {
+    "code": "A21",
+    "name": "奶黄",
+    "hex": "#fae393"
+  },
+  {
+    "code": "A22",
+    "name": "嫩黄绿",
+    "hex": "#edf878"
+  },
+  {
+    "code": "A23",
+    "name": "浅桃色",
+    "hex": "#e4c8ba"
+  },
+  {
+    "code": "A24",
+    "name": "芽黄",
+    "hex": "#f3f6a9"
+  },
+  {
+    "code": "A25",
+    "name": "亮柠黄",
+    "hex": "#fdf785"
+  },
+  {
+    "code": "A26",
+    "name": "橘金",
+    "hex": "#ffc734"
+  },
+  {
+    "code": "B1",
+    "name": "草绿",
+    "hex": "#dff13b"
+  },
+  {
+    "code": "B2",
+    "name": "荧光绿",
+    "hex": "#64f343"
+  },
+  {
+    "code": "B3",
+    "name": "浅草绿",
+    "hex": "#a1f586"
+  },
+  {
+    "code": "B4",
+    "name": "翠绿",
+    "hex": "#5fdf34"
+  },
+  {
+    "code": "B5",
+    "name": "嫩绿",
+    "hex": "#39e158"
+  },
+  {
+    "code": "B6",
+    "name": "薄荷绿",
+    "hex": "#64e0a4"
+  },
+  {
+    "code": "B7",
+    "name": "墨绿",
+    "hex": "#3eae7c"
+  },
+  {
+    "code": "B8",
+    "name": "森林绿",
+    "hex": "#1d9b54"
+  },
+  {
+    "code": "B9",
+    "name": "深军绿",
+    "hex": "#2a5037"
+  },
+  {
+    "code": "B10",
+    "name": "浅湖绿",
+    "hex": "#9ad1ba"
+  },
+  {
+    "code": "B11",
+    "name": "橄榄绿",
+    "hex": "#627032"
+  },
+  {
+    "code": "B12",
+    "name": "深翠绿",
+    "hex": "#1a6e3d"
+  },
+  {
+    "code": "B13",
+    "name": "芽绿",
+    "hex": "#c8e87d"
+  },
+  {
+    "code": "B14",
+    "name": "亮草绿",
+    "hex": "#abe84f"
+  },
+  {
+    "code": "B15",
+    "name": "暗绿",
+    "hex": "#305335"
+  },
+  {
+    "code": "B16",
+    "name": "薄绿",
+    "hex": "#c0ed9c"
+  },
+  {
+    "code": "B17",
+    "name": "苔绿",
+    "hex": "#9eb33e"
+  },
+  {
+    "code": "B18",
+    "name": "亮黄绿",
+    "hex": "#e6ed4f"
+  },
+  {
+    "code": "B19",
+    "name": "湖绿",
+    "hex": "#26b78e"
+  },
+  {
+    "code": "B20",
+    "name": "淡薄荷绿",
+    "hex": "#cbeccf"
+  },
+  {
+    "code": "B21",
+    "name": "深湖蓝绿",
+    "hex": "#18616a"
+  },
+  {
+    "code": "B22",
+    "name": "墨蓝绿",
+    "hex": "#0a4241"
+  },
+  {
+    "code": "B23",
+    "name": "暗苔绿",
+    "hex": "#343b1a"
+  },
+  {
+    "code": "B24",
+    "name": "浅嫩绿",
+    "hex": "#e8faa6"
+  },
+  {
+    "code": "B25",
+    "name": "灰绿",
+    "hex": "#4e846d"
+  },
+  {
+    "code": "B26",
+    "name": "土绿",
+    "hex": "#907c35"
+  },
+  {
+    "code": "B27",
+    "name": "青灰绿",
+    "hex": "#d0e0af"
+  },
+  {
+    "code": "B28",
+    "name": "水绿",
+    "hex": "#9ee5bb"
+  },
+  {
+    "code": "B29",
+    "name": "黄绿",
+    "hex": "#c6df5f"
+  },
+  {
+    "code": "B30",
+    "name": "浅芽绿",
+    "hex": "#e3fbb1"
+  },
+  {
+    "code": "B31",
+    "name": "翠草绿",
+    "hex": "#b4e691"
+  },
+  {
+    "code": "B32",
+    "name": "灰草绿",
+    "hex": "#92ad60"
+  },
+  {
+    "code": "C1",
+    "name": "冰蓝",
+    "hex": "#f0fee4"
+  },
+  {
+    "code": "C2",
+    "name": "天蓝",
+    "hex": "#abf8fe"
+  },
+  {
+    "code": "C3",
+    "name": "浅天蓝",
+    "hex": "#a2e0f7"
+  },
+  {
+    "code": "C4",
+    "name": "亮蓝",
+    "hex": "#44cdfb"
+  },
+  {
+    "code": "C5",
+    "name": "湖蓝",
+    "hex": "#06aadf"
+  },
+  {
+    "code": "C6",
+    "name": "海蓝",
+    "hex": "#54a7e9"
+  },
+  {
+    "code": "C7",
+    "name": "宝蓝",
+    "hex": "#3977ca"
+  },
+  {
+    "code": "C8",
+    "name": "深蓝",
+    "hex": "#0f52bd"
+  },
+  {
+    "code": "C9",
+    "name": "藏蓝",
+    "hex": "#3349c3"
+  },
+  {
+    "code": "C10",
+    "name": "浅海蓝",
+    "hex": "#3cbce3"
+  },
+  {
+    "code": "C11",
+    "name": "翠蓝",
+    "hex": "#2aded3"
+  },
+  {
+    "code": "C12",
+    "name": "深灰蓝",
+    "hex": "#1e334e"
+  },
+  {
+    "code": "C13",
+    "name": "淡蓝",
+    "hex": "#cde7fe"
+  },
+  {
+    "code": "C14",
+    "name": "冰青",
+    "hex": "#d5fcf7"
+  },
+  {
+    "code": "C15",
+    "name": "青蓝",
+    "hex": "#21c5c4"
+  },
+  {
+    "code": "C16",
+    "name": "钴蓝",
+    "hex": "#1858a2"
+  },
+  {
+    "code": "C17",
+    "name": "亮青",
+    "hex": "#02d1f3"
+  },
+  {
+    "code": "C18",
+    "name": "深藏青",
+    "hex": "#213244"
+  },
+  {
+    "code": "C19",
+    "name": "深青",
+    "hex": "#18869d"
+  },
+  {
+    "code": "C20",
+    "name": "深海蓝",
+    "hex": "#1a70a9"
+  },
+  {
+    "code": "C21",
+    "name": "浅灰蓝",
+    "hex": "#bcddfc"
+  },
+  {
+    "code": "C22",
+    "name": "灰湖蓝",
+    "hex": "#6bb1bb"
+  },
+  {
+    "code": "C23",
+    "name": "粉蓝",
+    "hex": "#c8e2fd"
+  },
+  {
+    "code": "C24",
+    "name": "亮天蓝",
+    "hex": "#7ec5f9"
+  },
+  {
+    "code": "C25",
+    "name": "浅青蓝",
+    "hex": "#a9e8e0"
+  },
+  {
+    "code": "C26",
+    "name": "湖青",
+    "hex": "#42adcf"
+  },
+  {
+    "code": "C27",
+    "name": "薰衣草蓝",
+    "hex": "#d0def9"
+  },
+  {
+    "code": "C28",
+    "name": "灰蓝",
+    "hex": "#bdcee8"
+  },
+  {
+    "code": "C29",
+    "name": "暗蓝",
+    "hex": "#364a89"
+  },
+  {
+    "code": "D1",
+    "name": "浅紫蓝",
+    "hex": "#acb7ef"
+  },
+  {
+    "code": "D2",
+    "name": "灰紫蓝",
+    "hex": "#868dd3"
+  },
+  {
+    "code": "D3",
+    "name": "中紫蓝",
+    "hex": "#3554af"
+  },
+  {
+    "code": "D4",
+    "name": "深紫蓝",
+    "hex": "#162d7b"
+  },
+  {
+    "code": "D5",
+    "name": "紫罗兰",
+    "hex": "#b34ec6"
+  },
+  {
+    "code": "D6",
+    "name": "浅紫",
+    "hex": "#b37bdc"
+  },
+  {
+    "code": "D7",
+    "name": "深紫",
+    "hex": "#8758a9"
+  },
+  {
+    "code": "D8",
+    "name": "淡紫",
+    "hex": "#e3d2fe"
+  },
+  {
+    "code": "D9",
+    "name": "粉紫",
+    "hex": "#d5b9f4"
+  },
+  {
+    "code": "D10",
+    "name": "暗紫",
+    "hex": "#301a49"
+  },
+  {
+    "code": "D11",
+    "name": "灰紫",
+    "hex": "#beb9e2"
+  },
+  {
+    "code": "D12",
+    "name": "玫瑰紫",
+    "hex": "#dc99ce"
+  },
+  {
+    "code": "D13",
+    "name": "品红紫",
+    "hex": "#b5038d"
+  },
+  {
+    "code": "D14",
+    "name": "葡萄紫",
+    "hex": "#862993"
+  },
+  {
+    "code": "D15",
+    "name": "深靛紫",
+    "hex": "#2f1f8c"
+  },
+  {
+    "code": "D16",
+    "name": "幽灵蓝",
+    "hex": "#e2e4f0"
+  },
+  {
+    "code": "D17",
+    "name": "淡薰衣草",
+    "hex": "#c7d3f9"
+  },
+  {
+    "code": "D18",
+    "name": "中紫",
+    "hex": "#9a64b8"
+  },
+  {
+    "code": "D19",
+    "name": "薄紫",
+    "hex": "#d8c2d9"
+  },
+  {
+    "code": "D20",
+    "name": "亮紫",
+    "hex": "#9a35ad"
+  },
+  {
+    "code": "D21",
+    "name": "深品红紫",
+    "hex": "#940595"
+  },
+  {
+    "code": "D22",
+    "name": "蓝紫",
+    "hex": "#38389a"
+  },
+  {
+    "code": "D23",
+    "name": "浅薄紫",
+    "hex": "#eadbf8"
+  },
+  {
+    "code": "D24",
+    "name": "亮紫蓝",
+    "hex": "#768ae1"
+  },
+  {
+    "code": "D25",
+    "name": "靛蓝",
+    "hex": "#4950c2"
+  },
+  {
+    "code": "D26",
+    "name": "薄薰衣草",
+    "hex": "#d6c6eb"
+  },
+  {
+    "code": "E1",
+    "name": "浅粉",
+    "hex": "#f6d4cb"
+  },
+  {
+    "code": "E2",
+    "name": "婴儿粉",
+    "hex": "#fcc1dd"
+  },
+  {
+    "code": "E3",
+    "name": "粉玫红",
+    "hex": "#f6bde8"
+  },
+  {
+    "code": "E4",
+    "name": "桃红",
+    "hex": "#e8649e"
+  },
+  {
+    "code": "E5",
+    "name": "亮粉",
+    "hex": "#f0569f"
+  },
+  {
+    "code": "E6",
+    "name": "玫红",
+    "hex": "#eb4172"
+  },
+  {
+    "code": "E7",
+    "name": "深玫红",
+    "hex": "#c53674"
+  },
+  {
+    "code": "E8",
+    "name": "淡粉",
+    "hex": "#fddbe9"
+  },
+  {
+    "code": "E9",
+    "name": "紫粉",
+    "hex": "#e376c7"
+  },
+  {
+    "code": "E10",
+    "name": "洋红",
+    "hex": "#d13b95"
+  },
+  {
+    "code": "E11",
+    "name": "肉粉",
+    "hex": "#f7dad4"
+  },
+  {
+    "code": "E12",
+    "name": "粉桃",
+    "hex": "#f693bf"
+  },
+  {
+    "code": "E13",
+    "name": "酒红",
+    "hex": "#b5026a"
+  },
+  {
+    "code": "E14",
+    "name": "浅杏粉",
+    "hex": "#fad4bf"
+  },
+  {
+    "code": "E15",
+    "name": "浅藕粉",
+    "hex": "#f5c9ca"
+  },
+  {
+    "code": "E16",
+    "name": "米白粉",
+    "hex": "#fbf4ec"
+  },
+  {
+    "code": "E17",
+    "name": "薄粉",
+    "hex": "#f7e3ec"
+  },
+  {
+    "code": "E18",
+    "name": "樱花粉",
+    "hex": "#f9c8db"
+  },
+  {
+    "code": "E19",
+    "name": "藕粉",
+    "hex": "#f6bbd1"
+  },
+  {
+    "code": "E20",
+    "name": "灰粉",
+    "hex": "#d7c6ce"
+  },
+  {
+    "code": "E21",
+    "name": "豆沙粉",
+    "hex": "#c09da4"
+  },
+  {
+    "code": "E22",
+    "name": "紫灰粉",
+    "hex": "#b38c9f"
+  },
+  {
+    "code": "E23",
+    "name": "褐粉",
+    "hex": "#937d8a"
+  },
+  {
+    "code": "E24",
+    "name": "丁香紫",
+    "hex": "#debee5"
+  },
+  {
+    "code": "F1",
+    "name": "浅红",
+    "hex": "#fe9381"
+  },
+  {
+    "code": "F2",
+    "name": "正红",
+    "hex": "#f63d4b"
+  },
+  {
+    "code": "F3",
+    "name": "朱红",
+    "hex": "#ee4e3e"
+  },
+  {
+    "code": "F4",
+    "name": "鲜红",
+    "hex": "#fb2a40"
+  },
+  {
+    "code": "F5",
+    "name": "深红",
+    "hex": "#e10328"
+  },
+  {
+    "code": "F6",
+    "name": "暗红",
+    "hex": "#913635"
+  },
+  {
+    "code": "F7",
+    "name": "酒红暗",
+    "hex": "#911932"
+  },
+  {
+    "code": "F8",
+    "name": "深酒红",
+    "hex": "#bb0126"
+  },
+  {
+    "code": "F9",
+    "name": "玫粉",
+    "hex": "#e0677a"
+  },
+  {
+    "code": "F10",
+    "name": "棕红",
+    "hex": "#874628"
+  },
+  {
+    "code": "F11",
+    "name": "深棕红",
+    "hex": "#592323"
+  },
+  {
+    "code": "F12",
+    "name": "西瓜红",
+    "hex": "#f3536b"
+  },
+  {
+    "code": "F13",
+    "name": "橙红",
+    "hex": "#f45c45"
+  },
+  {
+    "code": "F14",
+    "name": "浅水红",
+    "hex": "#fcadb2"
+  },
+  {
+    "code": "F15",
+    "name": "大红",
+    "hex": "#d50527"
+  },
+  {
+    "code": "F16",
+    "name": "浅肉粉",
+    "hex": "#f8c0a9"
+  },
+  {
+    "code": "F17",
+    "name": "浅棕粉",
+    "hex": "#e89b7d"
+  },
+  {
+    "code": "F18",
+    "name": "棕橘",
+    "hex": "#d07f4a"
+  },
+  {
+    "code": "F19",
+    "name": "砖红",
+    "hex": "#be454a"
+  },
+  {
+    "code": "F20",
+    "name": "灰玫红",
+    "hex": "#c69495"
+  },
+  {
+    "code": "F21",
+    "name": "浅玫粉",
+    "hex": "#f2b8c6"
+  },
+  {
+    "code": "F22",
+    "name": "薄玫粉",
+    "hex": "#f7c3d0"
+  },
+  {
+    "code": "F23",
+    "name": "珊瑚红",
+    "hex": "#ed806c"
+  },
+  {
+    "code": "F24",
+    "name": "灰粉红",
+    "hex": "#e09daf"
+  },
+  {
+    "code": "F25",
+    "name": "亮玫红",
+    "hex": "#e84854"
+  },
+  {
+    "code": "G1",
+    "name": "浅杏色",
+    "hex": "#ffe4d3"
+  },
+  {
+    "code": "G2",
+    "name": "浅肉色",
+    "hex": "#fcc6ac"
+  },
+  {
+    "code": "G3",
+    "name": "肤色",
+    "hex": "#f1c4a5"
+  },
+  {
+    "code": "G4",
+    "name": "浅棕",
+    "hex": "#dcb387"
+  },
+  {
+    "code": "G5",
+    "name": "金棕",
+    "hex": "#e7b34e"
+  },
+  {
+    "code": "G6",
+    "name": "橘金棕",
+    "hex": "#e3a014"
+  },
+  {
+    "code": "G7",
+    "name": "深棕",
+    "hex": "#985c3a"
+  },
+  {
+    "code": "G8",
+    "name": "咖啡棕",
+    "hex": "#713d2f"
+  },
+  {
+    "code": "G9",
+    "name": "杏棕",
+    "hex": "#e4b685"
+  },
+  {
+    "code": "G10",
+    "name": "橙棕",
+    "hex": "#da8c42"
+  },
+  {
+    "code": "G11",
+    "name": "沙色",
+    "hex": "#dac898"
+  },
+  {
+    "code": "G12",
+    "name": "蜜橘",
+    "hex": "#fec993"
+  },
+  {
+    "code": "G13",
+    "name": "栗棕",
+    "hex": "#b2714b"
+  },
+  {
+    "code": "G14",
+    "name": "驼棕",
+    "hex": "#8b684c"
+  },
+  {
+    "code": "G15",
+    "name": "米白",
+    "hex": "#f6f8e3"
+  },
+  {
+    "code": "G16",
+    "name": "奶咖",
+    "hex": "#f2d8c1"
+  },
+  {
+    "code": "G17",
+    "name": "深咖",
+    "hex": "#77544e"
+  },
+  {
+    "code": "G18",
+    "name": "淡粉杏",
+    "hex": "#ffe3d5"
+  },
+  {
+    "code": "G19",
+    "name": "土橘",
+    "hex": "#dd7d41"
+  },
+  {
+    "code": "G20",
+    "name": "红棕",
+    "hex": "#a5452f"
+  },
+  {
+    "code": "G21",
+    "name": "灰棕",
+    "hex": "#b38561"
+  },
+  {
+    "code": "H1",
+    "name": "纯白",
+    "hex": "#ffffff"
+  },
+  {
+    "code": "H2",
+    "name": "雪白",
+    "hex": "#fbfbfb"
+  },
+  {
+    "code": "H3",
+    "name": "浅灰",
+    "hex": "#b4b4b4"
+  },
+  {
+    "code": "H4",
+    "name": "中灰",
+    "hex": "#878787"
+  },
+  {
+    "code": "H5",
+    "name": "深灰",
+    "hex": "#464648"
+  },
+  {
+    "code": "H6",
+    "name": "暗灰",
+    "hex": "#2c2c2c"
+  },
+  {
+    "code": "H7",
+    "name": "纯黑",
+    "hex": "#010101"
+  },
+  {
+    "code": "H8",
+    "name": "淡紫灰",
+    "hex": "#e7d6dc"
+  },
+  {
+    "code": "H9",
+    "name": "淡银灰",
+    "hex": "#efedee"
+  },
+  {
+    "code": "H10",
+    "name": "银灰",
+    "hex": "#ebebeb"
+  },
+  {
+    "code": "H11",
+    "name": "灰",
+    "hex": "#cdcdcd"
+  },
+  {
+    "code": "H12",
+    "name": "暖白",
+    "hex": "#fdf6ee"
+  },
+  {
+    "code": "H13",
+    "name": "粉白",
+    "hex": "#f4edf1"
+  },
+  {
+    "code": "H14",
+    "name": "青灰",
+    "hex": "#ced7d4"
+  },
+  {
+    "code": "H15",
+    "name": "灰蓝绿",
+    "hex": "#9aa6a6"
+  },
+  {
+    "code": "H16",
+    "name": "墨黑",
+    "hex": "#1b1213"
+  },
+  {
+    "code": "H17",
+    "name": "灰白",
+    "hex": "#f0eeef"
+  },
+  {
+    "code": "H18",
+    "name": "冷白",
+    "hex": "#fcfff6"
+  },
+  {
+    "code": "H19",
+    "name": "米灰",
+    "hex": "#f2eee5"
+  },
+  {
+    "code": "H20",
+    "name": "青灰中",
+    "hex": "#96a09f"
+  },
+  {
+    "code": "H21",
+    "name": "浅米绿",
+    "hex": "#f8fbe6"
+  },
+  {
+    "code": "H22",
+    "name": "蓝灰",
+    "hex": "#cacad2"
+  },
+  {
+    "code": "H23",
+    "name": "褐灰",
+    "hex": "#9b9c94"
+  },
+  {
+    "code": "M1",
+    "name": "鼠尾绿",
+    "hex": "#bbc6b6"
+  },
+  {
+    "code": "M2",
+    "name": "灰绿中",
+    "hex": "#909994"
+  },
+  {
+    "code": "M3",
+    "name": "灰蓝墨",
+    "hex": "#697e81"
+  },
+  {
+    "code": "M4",
+    "name": "浅卡其",
+    "hex": "#e0d4bc"
+  },
+  {
+    "code": "M5",
+    "name": "卡其",
+    "hex": "#d1ccaf"
+  },
+  {
+    "code": "M6",
+    "name": "灰卡其",
+    "hex": "#b0aa86"
+  },
+  {
+    "code": "M7",
+    "name": "灰驼",
+    "hex": "#b0a796"
+  },
+  {
+    "code": "M8",
+    "name": "灰玫",
+    "hex": "#ae8082"
+  },
+  {
+    "code": "M9",
+    "name": "驼色",
+    "hex": "#a68862"
+  },
+  {
+    "code": "M10",
+    "name": "灰藕",
+    "hex": "#c4b3bb"
+  },
+  {
+    "code": "M11",
+    "name": "灰紫梅",
+    "hex": "#9d7693"
+  },
+  {
+    "code": "M12",
+    "name": "深灰紫",
+    "hex": "#644b51"
+  },
+  {
+    "code": "M13",
+    "name": "棕杏",
+    "hex": "#c79266"
+  },
+  {
+    "code": "M14",
+    "name": "砖棕",
+    "hex": "#c27563"
+  },
+  {
+    "code": "M15",
+    "name": "灰绿暗",
+    "hex": "#747d7a"
+  }
+]

@@ -1,0 +1,54 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: PerlerBeadsDesigner.exe
+            asset_name: PerlerBeadsDesigner-windows.exe
+          - os: macos-latest
+            artifact_name: PerlerBeadsDesigner
+            asset_name: PerlerBeadsDesigner-macos
+          - os: ubuntu-latest
+            artifact_name: PerlerBeadsDesigner
+            asset_name: PerlerBeadsDesigner-linux
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Build with PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller pyinstaller.spec
+    
+    - name: Build with PyInstaller (macOS/Linux)
+      if: runner.os != 'Windows'
+      run: |
+        pyinstaller pyinstaller.spec
+    
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/PerlerBeadsDesigner/${{ matrix.artifact_name }}
+        asset_name: ${{ matrix.asset_name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

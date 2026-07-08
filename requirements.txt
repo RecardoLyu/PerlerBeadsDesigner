@@ -1,0 +1,8 @@
+PyQt6>=6.6.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+scikit-image>=0.22.0
+scipy>=1.11.0
+reportlab>=4.0.0
+colorspacious>=1.1.2
