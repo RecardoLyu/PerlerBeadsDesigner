@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拼豆图纸设计器 — 分割算法调研报告</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #dee2e6;
+    --text: #212529;
+    --text-secondary: #495057;
+    --accent: #4361ee;
+    --accent-light: #eef1ff;
+    --green: #2d6a4f;
+    --green-light: #d8f3dc;
+    --red: #9b2226;
+    --red-light: #f8d7da;
+    --orange: #e76f51;
+    --orange-light: #fde2e4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 2rem;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 3rem 1rem;
+    background: linear-gradient(135deg, #4361ee, #3a0ca3);
+    color: white;
+    border-radius: 16px;
+    margin-bottom: 2rem;
+  }
+  header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  header p { opacity: 0.9; font-size: 1.05rem; }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 {
+    font-size: 1.3rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--accent);
+    color: var(--accent);
+  }
+  .card h3 {
+    font-size: 1.05rem;
+    margin: 1rem 0 0.5rem;
+    color: var(--text-secondary);
+  }
+  .card p, .card li { font-size: 0.95rem; }
+  .card ul, .card ol { padding-left: 1.5rem; }
+  .card li { margin-bottom: 0.3rem; }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .tag-problem { background: var(--red-light); color: var(--red); }
+  .tag-solution { background: var(--green-light); color: var(--green); }
+  .tag-info { background: var(--accent-light); color: var(--accent); }
+  .tag-warn { background: var(--orange-light); color: var(--orange); }
+
+  /* Comparison Table */
+  .comparison {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1rem 0;
+  }
+  .comparison th, .comparison td {
+    border: 1px solid var(--border);
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+  }
+  .comparison th {
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  .comparison tr:nth-child(even) { background: var(--bg); }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 8px;
+  }
+  .flow-step {
+    background: var(--card);
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    min-width: 100px;
+  }
+  .flow-step.old { border-color: var(--red); color: var(--red); }
+  .flow-step.new { border-color: var(--green); color: var(--green); }
+  .flow-arrow {
+    font-size: 1.3rem;
+    color: var(--text-secondary);
+  }
+
+  /* Code */
+  pre {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 1rem 1.2rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    margin: 0.8rem 0;
+  }
+  code { font-family: "JetBrains Mono", "Fira Code", monospace; }
+  pre .kw { color: #89b4fa; }
+  pre .fn { color: #a6e3a1; }
+  pre .cm { color: #6c7086; }
+  pre .str { color: #f9e2af; }
+  pre .num { color: #fab387; }
+
+  .recommend {
+    background: var(--green-light);
+    border-left: 4px solid var(--green);
+    padding: 1rem 1.5rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+  }
+  .recommend strong { color: var(--green); }
+
+  /* Buttons layout mock */
+  .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+  .btn-mock {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 2px solid var(--border);
+    background: var(--card);
+  }
+  .btn-mock.removed {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+  .btn-mock.auto {
+    border-color: var(--green);
+    background: var(--green-light);
+  }
+  .btn-mock.primary {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 1rem; }
+    header h1 { font-size: 1.4rem; }
+    .card { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>分割算法优化调研报告</h1>
+  <p>交互式前景分割工作流的简化与重构方案</p>
+</header>
+
+<!-- 现状 -->
+<section class="card">
+  <h2>🔍 现状分析</h2>
+  <p>当前代码中存在 <strong>两套独立的分割显示组件</strong>（<code>InteractiveImageDisplay</code> 和 <code>IterativeGrabCutDisplay</code>），它们共享大量重复逻辑（坐标映射、缩放、鼠标事件处理），却通过 <code>pack_forget() / pack()</code> 来回切换，不仅造成视觉闪烁，也增加了维护负担。</p>
+
+  <h3>现存问题</h3>
+  <ul>
+    <li><span class="tag tag-problem">流程过长</span> 完成一次分割需要 6~10 次点击操作：绘制矩形 → 第一次分割 → 切换前景/背景模式 → 涂抹 → 迭代分割 → 应用结果，对拼豆图纸这类粗略分割任务过度设计</li>
+    <li><span class="tag tag-problem">GMM 模型丢失</span> <code>segmentation.py</code> 中的 <code>grabcut_interactive()</code> 每次调用都重新创建 <code>bgdModel / fgdModel</code>，丢弃了前序迭代中学习的颜色分布</li>
+    <li><span class="tag tag-problem">无背景标记</span> <code>InteractiveImageDisplay</code> 只能标记前景，mask 中缺少 <code>GC_BGD</code> 样本时 OpenCV 内部 GMM 初始化会因断言 <code>!bgdSamples.empty() && !fgdSamples.empty()</code> 失败</li>
+    <li><span class="tag tag-problem">结果显示脱节</span> 分割结果显示在 igc 小部件，实际使用却在 seg_display 通过"应用Mask"按钮，用户需要手动切换下拉菜单查看结果</li>
+  </ul>
+
+  <h3>代码结构概览</h3>
+  <table class="comparison">
+    <tr><th>文件</th><th>类/方法</th><th>行号</th><th>职责</th></tr>
+    <tr><td rowspan="2"><code>main_window.py</code></td><td><code>InteractiveImageDisplay</code></td><td>26-368</td><td>矩形/椭圆/涂抹标记，只能前景</td></tr>
+    <tr><td><code>IterativeGrabCutDisplay</code></td><td>370-712</td><td>两阶段 GrabCut：初始矩形 + 标注迭代</td></tr>
+    <tr><td><code>segmentation.py</code></td><td><code>ImageSegmentation</code></td><td>1-292</td><td>grabcut_rect / grabcut_interactive / 阈值 / 形态学</td></tr>
+  </table>
+</section>
+
+<!-- 技术调研 -->
+<section class="card">
+  <h2>📚 技术调研</h2>
+
+  <h3>方案 A：OpenCV GrabCut（CPU 原生，推荐）</h3>
+  <p>GrabCut 是基于图割（Graph Cut）的迭代分割算法，内置于 OpenCV 中，无需额外依赖。对于拼豆图画这种不需要像素级精度的场景，<strong>3~5 次迭代即可在 CPU 上 100~300ms 完成</strong>。</p>
+  <ul>
+    <li><span class="tag tag-info">GC_INIT_WITH_RECT</span> — 用户绘制矩形框选前景，矩形外标记为确定背景，矩形内标记为可能前景/背景</li>
+    <li><span class="tag tag-info">GC_INIT_WITH_MASK</span> — 用户添加前景/背景笔触（硬标签），结合复用 GMM 模型做迭代优化</li>
+    <li><span class="tag tag-info">bgdModel(1×65)</span> — 背景高斯混合模型参数，必须在迭代之间保持引用</li>
+  </ul>
+
+  <h3>方案 B：SLIC 超像素 + GrabCut（快速）</h3>
+  <p><code>cv2.ximgproc.createSuperpixelSLIC()</code> 可将图像分割为 ~1000 个超像素（region），然后在超像素级别运行 GrabCut，将像素级的 O(n) 降为超像素级的 O(s)。<strong>对于拼豆的大图（>1500px）有价值</strong>，但通常预处理缩放后已低于 1000px，收益有限。</p>
+
+  <h3>方案 C：轻量级 SAM（MobileSAM / TinySAM）</h3>
+  <p>截至 2026 年，MobileSAMv2 (~56MB)、TinySAM int8 (~30MB) 可在 CPU 上 200~500ms 完成点提示分割。但在拼豆场景下 <strong>大材小用</strong>：</p>
+  <ul>
+    <li>额外引入 ~30-70MB ONNX 运行时，增加打包体积</li>
+    <li>拼豆图案最终会量化为 50~200 个色块，GrabCut 的精度已足够</li>
+  </ul>
+
+  <div class="recommend">
+    <strong>✓ 推荐方案 A</strong> — 纯 OpenCV GrabCut，双阶段流程（矩形初始化 + 笔触细化），迭代保留 GMM 模型，3+2 次迭代。
+  </div>
+</section>
+
+<!-- 新设计 -->
+<section class="card">
+  <h2>✨ 新工作流设计</h2>
+
+  <h3>原有流程（过于繁琐）</h3>
+  <div class="flow">
+    <span class="flow-step old">1. 绘制矩形<br><small>点击按钮</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step old">2. 第一次分割<br><small>点击按钮</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step old">3. 切换模式<br><small>前景/背景</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step old">4. 涂抹标注</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step old">5. 迭代分割<br><small>点击按钮</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step old">6. 应用结果<br><small>点击按钮</small></span>
+  </div>
+  <p>共需 <strong>6 步、7 个按钮</strong>，外加两个显示组件间的切换。</p>
+
+  <h3>新流程（一步到位）</h3>
+  <div class="flow">
+    <span class="flow-step new">1. 框选前景<br><small>自动运行 GrabCut</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step new">2. 涂抹修正<br><small>左键前景 / Ctrl+左键背景<br>每笔触释放自动迭代</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-step new">3. 应用Mask<br><small>任意时刻可点<br>或直接用结果</small></span>
+  </div>
+  <p>只需 <strong>3 步</strong>：框选 → 自动分割 → 涂抹修正（可选），每一步的结果都可以直接用于下一步。</p>
+
+  <h3>按钮布局对比</h3>
+  <p><strong>当前（7 个按钮）：</strong></p>
+  <div class="btn-group">
+    <span class="btn-mock">1. 绘制初始矩形</span>
+    <span class="btn-mock">2. 执行第一次分割</span>
+    <span class="btn-mock">前景(红)</span>
+    <span class="btn-mock">背景(绿)</span>
+    <span class="btn-mock">3. 迭代分割</span>
+    <span class="btn-mock">清除标注</span>
+    <span class="btn-mock">应用分割结果</span>
+  </div>
+
+  <p><strong>新版（4 个按钮 + 鼠标修饰键）：</strong></p>
+  <div class="btn-group">
+    <span class="btn-mock auto">启用分割</span>
+    <span class="btn-mock primary">左键: 前景</span>
+    <span class="btn-mock primary">Ctrl+左键: 背景</span>
+    <span class="btn-mock">重置</span>
+    <span class="btn-mock">应用Mask</span>
+  </div>
+
+  <h3>关键优化点</h3>
+  <ol>
+    <li><strong>统一显示组件</strong> — 合并 <code>InteractiveImageDisplay</code> 和 <code>IterativeGrabCutDisplay</code> 为一个 <code>SegmentationCanvas</code>，消除重复逻辑与显示切换</li>
+    <li><strong>矩形自动分割</strong> — 绘制矩形后 <strong>立即</strong> 执行 <code>GC_INIT_WITH_RECT</code>（3 次迭代），无需额外点击</li>
+    <li><strong>上下文相关笔触</strong> — 左键拖拽 = 前景笔触（红色叠加），Ctrl+左键拖拽 = 背景笔触（绿色叠加），每次释放自动运行 <code>GC_INIT_WITH_MASK</code>（2 次迭代）</li>
+    <li><strong>GMM 模型持久化</strong> — <code>bgdModel / fgdModel</code> 在整个交互周期内保留，OpenCV 从上次 GMM 状态继续学习</li>
+    <li><strong>结果即时可见</strong> — 分割结果叠加显示在原始图像上（半透明蓝色前景），用户随时可看到当前 Mask 效果</li>
+    <li><strong>任意步骤可往下走</strong> — 矩形分割后的结果可直接"应用Mask"，涂抹修正后的结果也可以随时"应用Mask"，不需要先走完所有步骤</li>
+  </ol>
+</section>
+
+<!-- 核心实现 -->
+<section class="card">
+  <h2>🧩 核心实现</h2>
+
+  <h3>新的 SegmentationCanvas 类</h3>
+  <p>合并 <code>InteractiveImageDisplay</code> 和 <code>IterativeGrabCutDisplay</code> 的功能，新增 GrabCut 引擎集成：</p>
+  <pre><code><span class="kw">class</span> <span class="fn">SegmentationCanvas</span>(tk.Frame):
+    <span class="cm">"""统一分割交互画布：矩形→自动GrabCut→涂抹修正"""</span>
+
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, parent, ...):
+        self.image = <span class="kw">None</span>           <span class="cm"># RGB 源图像</span>
+        self.mask = <span class="kw">None</span>              <span class="cm"># GrabCut mask (GC_BGD/GC_FGD/GC_PR_BGD/GC_PR_FGD)</span>
+        self.result_mask = <span class="kw">None</span>        <span class="cm"># 二值结果 (0/255)</span>
+        self.bgd_model = np.zeros((<span class="num">1</span>, <span class="num">65</span>), np.float64)
+        self.fgd_model = np.zeros((<span class="num">1</span>, <span class="num">65</span>), np.float64)
+        self.has_init = <span class="kw">False</span>          <span class="cm"># 是否已执行过首次分割</span>
+        self.mode = <span class="str">'rect'</span>            <span class="cm"># 'rect' | 'fgd' | 'bgd' | 'view'</span>
+
+    <span class="kw">def</span> <span class="fn">run_initial_rect</span>(self, x1, y1, x2, y2):
+        <span class="cm">"""矩形初始化 + 立即 GrabCut"""</span>
+        cv2.grabCut(self.image, self.mask, (x1, y1, x2-x1, y2-y1),
+                     self.bgd_model, self.fgd_model, <span class="num">3</span>, cv2.GC_INIT_WITH_RECT)
+        self.has_init = <span class="kw">True</span>
+        self._update_result()
+
+    <span class="kw">def</span> <span class="fn">add_stroke</span>(self, points, is_foreground=<span class="kw">True</span>):
+        <span class="cm">"""添加笔触 + 自动迭代"""</span>
+        val = cv2.GC_FGD <span class="kw">if</span> is_foreground <span class="kw">else</span> cv2.GC_BGD
+        <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(len(points)-<span class="num">1</span>):
+            cv2.line(self.mask, points[i], points[i+<span class="num">1</span>], val, self.brush_width)
+        cv2.grabCut(self.image, self.mask, <span class="kw">None</span>,
+                     self.bgd_model, self.fgd_model, <span class="num">2</span>, cv2.GC_INIT_WITH_MASK)
+        self._update_result()
+
+    <span class="kw">def</span> <span class="fn">get_result</span>(self) -> np.ndarray:
+        <span class="kw">return</span> np.where(
+            (self.mask == cv2.GC_FGD) | (self.mask == cv2.GC_PR_FGD), <span class="num">255</span>, <span class="num">0</span>
+        ).astype(np.uint8)</code></pre>
+
+  <h3>分割子标签页的新布局</h3>
+  <table class="comparison">
+    <tr><th>控件</th><th>说明</th></tr>
+    <tr><td><strong>启用分割</strong>（按钮）</td><td>将当前图像载入 SegmentationCanvas，进入 <code>rect</code> 模式</td></tr>
+    <tr><td>状态提示（标签）</td><td>当前模式提示："绘制矩形框选前景对象" / "左键前景 Ctrl+左键背景"</td></tr>
+    <tr><td><strong>重置</strong>（按钮）</td><td>清除所有笔触和分割结果</td></tr>
+    <tr><td>核大小（Spinbox）</td><td>形态学操作参数（保留自当前实现）</td></tr>
+    <tr><td><strong>开运算 / 闭运算</strong>（按钮）</td><td>保留自当前实现，作为后处理</td></tr>
+    <tr><td><strong>应用Mask</strong>（按钮）</td><td>将当前结果保存到 <code>current_mask</code>，生成 <code>mask_applied_result</code></td></tr>
+  </table>
+  <p>原"分割方法"、"阈值"、"应用阈值"等保留在下方（压缩为折叠区域或独立段），供需要时使用。</p>
+</section>
+
+<!-- GrabCut API 参考 -->
+<section class="card">
+  <h2>📖 OpenCV GrabCut API 参考</h2>
+  <table class="comparison">
+    <tr><th>模式</th><th>说明</th><th>迭代次数</th></tr>
+    <tr><td><code>GC_INIT_WITH_RECT</code></td><td>提供矩形 ROI，自动初始化前景/背景 GMM</td><td>首次 3 次</td></tr>
+    <tr><td><code>GC_INIT_WITH_MASK</code></td><td>提供标记 mask（FGD/BGD），结合已有 GMM 细化</td><td>笔触后 2 次</td></tr>
+  </table>
+
+  <table class="comparison">
+    <tr><th>mask 值</th><th>常量</th><th>含义</th></tr>
+    <tr><td>0</td><td><code>GC_BGD</code></td><td>确定背景（矩形外区域、用户背景笔触）</td></tr>
+    <tr><td>1</td><td><code>GC_FGD</code></td><td>确定前景（用户前景笔触）</td></tr>
+    <tr><td>2</td><td><code>GC_PR_BGD</code></td><td>可能背景（GMM 推测）</td></tr>
+    <tr><td>3</td><td><code>GC_PR_FGD</code></td><td>可能前景（GMM 推测/上轮结果）</td></tr>
+  </table>
+
+  <p><strong>关键约束：</strong> <code>GC_INIT_WITH_MASK</code> 要求 mask 必须 <strong>同时包含 GC_BGD(0) 和 GC_FGD(1) 的样本</strong>，否则 OpenCV 会因 GMM 缺少一类样本而断言失败。这就是当前代码中"只标记前景不标记背景"导致崩溃的原因。新设计中通过矩形初始化保证两类样本都存在。</p>
+</section>
+
+<!-- 文件变更清单 -->
+<section class="card">
+  <h2>📂 建议变更清单</h2>
+  <table class="comparison">
+    <tr><th>文件</th><th>变更</th><th>说明</th></tr>
+    <tr><td><code>src/ui/main_window.py</code></td><td>重构</td><td>新增 <code>SegmentationCanvas</code> 类替换 <code>InteractiveImageDisplay</code> + <code>IterativeGrabCutDisplay</code></td></tr>
+    <tr><td><code>src/ui/main_window.py</code></td><td>重构</td><td><code>_create_preprocess_seg_tab()</code> 精简为 4 个主要按钮</td></tr>
+    <tr><td><code>src/ui/main_window.py</code></td><td>重构</td><td>删除 <code>_init_iterative_grabcut / _first_grabcut / _set_annotation_mode_igc / _clear_igc_annotations / _iterative_grabcut / _apply_iterative_grabcut</code> 六个专用方法</td></tr>
+    <tr><td><code>src/ui/main_window.py</code></td><td>新增</td><td><code>_enable_segmentation() / _on_seg_mouse_release() / _apply_seg_mask()</code></td></tr>
+    <tr><td><code>src/utils/segmentation.py</code></td><td>更新</td><td>新增 <code>init_and_run_grabcut()</code> 状态化方法，保留 GMM 模型</td></tr>
+    <tr><td><code>src/ui/main_window.py</code></td><td>删除</td><td>移除 <code>igc_display_visible</code> 和 <code>IterativeGrabCutDisplay</code> 实例创建</td></tr>
+  </table>
+</section>
+
+<!-- 测试策略 -->
+<section class="card">
+  <h2>✅ 测试策略</h2>
+  <ol>
+    <li><strong>矩形分割</strong> — 加载图像，启用分割，绘制矩形 → 自动显示分割结果（蓝色半透明覆盖）</li>
+    <li><strong>前景笔触</strong> — 左键涂抹 → 每笔释放后结果即时更新</li>
+    <li><strong>背景笔触</strong> — Ctrl+左键涂抹 → 背景区域从 mask 移除</li>
+    <li><strong>应用Mask</strong> — 点击"应用Mask" → <code>current_mask</code> 写入，图案生成可用</li>
+    <li><strong>重置</strong> — 点击重置 → 所有状态清空，回到原始图像</li>
+    <li><strong>退出的分割流程兼容</strong> — 原有阈值/形态学/自动分割按钮保持可用</li>
+  </ol>
+
+  <h3>代码验证</h3>
+  <pre><code><span class="cm"># GrabCut 矩形初始化 + 笔触细化验证（可直接用 python 运行）</span>
+<span class="kw">import</span> cv2
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+img = np.zeros((<span class="num">200</span>, <span class="num">300</span>, <span class="num">3</span>), dtype=np.uint8)
+img[<span class="num">40</span>:<span class="num">160</span>, <span class="num">50</span>:<span class="num">250</span>] = (<span class="num">0</span>, <span class="num">200</span>, <span class="num">0</span>)  <span class="cm"># 绿色前景</span>
+img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+mask = np.zeros(img.shape[:<span class="num">2</span>], dtype=np.uint8)
+bgd = np.zeros((<span class="num">1</span>, <span class="num">65</span>), np.float64)
+fgd = np.zeros((<span class="num">1</span>, <span class="num">65</span>), np.float64)
+
+<span class="cm"># 第一步：矩形初始化</span>
+cv2.grabCut(img_bgr, mask, (<span class="num">30</span>, <span class="num">30</span>, <span class="num">240</span>, <span class="num">140</span>), bgd, fgd, <span class="num">3</span>, cv2.GC_INIT_WITH_RECT)
+
+<span class="cm"># 第二步：背景笔触 + 迭代</span>
+mask[<span class="num">100</span>:<span class="num">110</span>, <span class="num">30</span>:<span class="num">270</span>] = cv2.GC_BGD
+cv2.grabCut(img_bgr, mask, <span class="kw">None</span>, bgd, fgd, <span class="num">2</span>, cv2.GC_INIT_WITH_MASK)
+
+result = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), <span class="num">255</span>, <span class="num">0</span>).astype(np.uint8)
+<span class="fn">assert</span> result[<span class="num">50</span>, <span class="num">80</span>] == <span class="num">255</span>, <span class="str">"前景应保留"</span>
+<span class="fn">assert</span> result[<span class="num">105</span>, <span class="num">80</span>] == <span class="num">0</span>, <span class="str">"背景笔触应移除"</span>
+<span class="fn">print</span>(<span class="str">"Segmentation test PASSED"</span>)</code></pre>
+</section>
+
+<!-- 总结 -->
+<section class="card">
+  <h2>🎯 总结</h2>
+  <p>本次优化将 <strong>6 步 7 按钮的分割流程精简为 3 步核心操作</strong>，核心变化：</p>
+  <ol>
+    <li><strong>两组件合一</strong> — 消除 <code>InteractiveImageDisplay</code> 和 <code>IterativeGrabCutDisplay</code> 的重复代码与显示切换</li>
+    <li><strong>矩形即分割</strong> — 绘制矩形后自动执行 GrabCut，无需额外点击</li>
+    <li><strong>笔触自动迭代</strong> — 左键/左键+Ctrl 区分前/背景，每笔释放自动 GMM 迭代</li>
+    <li><strong>GMM 持久化</strong> — <code>bgdModel / fgdModel</code> 在交互周期内保留，每次迭代从上次状态继续学习</li>
+    <li><strong>任意步骤可用</strong> — 矩形分割后的结果可直接"应用Mask"，笔触修正后的结果也可直接"应用Mask"</li>
+  </ol>
+  <p>保留阈值/形态学等现有分割方法作为辅助功能，不影响已有代码的使用。</p>
+</section>
+
+<footer>
+  报告生成日期: 2026-07-08 &nbsp;|&nbsp; 项目: PerlerBeadsDesigner &nbsp;|&nbsp; v1.1.0
+</footer>
+
+</div>
+</body>
+</html>
