@@ -36,11 +36,16 @@ class Color:
 
     @staticmethod
     def _rgb_to_lab(rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
-        """Convert RGB to CIE LAB color space"""
+        """Convert RGB to standardized CIE LAB color space
+        (L: 0-100, a: -128~127, b: -128~127)"""
         rgb_array = np.uint8([[rgb]])
         lab_array = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2Lab)
-        lab_values = tuple(float(x) for x in lab_array[0, 0])
-        return lab_values
+        # OpenCV LAB output: L 0-255, a 0-255, b 0-255
+        # Standardize to: L 0-100, a -128~127, b -128~127
+        L = lab_array[0, 0, 0] * 100.0 / 255.0
+        a = float(lab_array[0, 0, 1]) - 128.0
+        b = float(lab_array[0, 0, 2]) - 128.0
+        return (L, a, b)
 
     def distance_to(self, other_rgb: Tuple[int, int, int],
                    metric: str = "weighted") -> float:
@@ -190,9 +195,14 @@ class ColorManager:
         if self.colors_file:
             try:
                 if os.path.exists(self.colors_file):
-                    self.palette = ColorPalette.load_from_json(self.colors_file)
+                    with open(self.colors_file, 'r', encoding='utf-8-sig') as f:
+                        data = json.load(f)
+                    self.palette = ColorPalette.from_dict(data)
                     self.palette.set_color_metric(self.color_metric)
-                    print(f"成功加载颜色表: {self.colors_file} ({len(self.palette.colors)} 种颜色)")
+                    count = len(self.palette.colors)
+                    print(f"成功加载颜色表: {self.colors_file} ({count} 种颜色)")
+                    if count < 50:
+                        print(f"警告: 加载的颜色数量偏少 ({count})，可能使用了回退调色板")
                 else:
                     print(f"颜色表文件不存在: {self.colors_file}，使用默认颜色库")
                     self._create_default_palette()

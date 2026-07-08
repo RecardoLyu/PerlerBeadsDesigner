@@ -191,14 +191,39 @@ class ImageProcessor:
         """Apply Gaussian blur"""
         if self.current_image is None:
             raise ValueError("未加载图像")
-        
+
         # Ensure kernel size is odd
         if kernel_size % 2 == 0:
             kernel_size += 1
-        
+
         blurred = cv2.GaussianBlur(self.current_image, (kernel_size, kernel_size), 0)
         self.current_image = blurred
         return self.current_image.copy()
+
+    @staticmethod
+    def suggest_kernel_size(image_shape, divisor: int = 150) -> int:
+        """
+        Suggest a suitable Gaussian blur kernel size based on image dimensions.
+
+        For perler bead patterns, mild blur is preferred to avoid losing
+        edge detail needed for bead color quantization.
+
+        Args:
+            image_shape: (height, width) tuple
+            divisor: Smaller = stronger blur (default 150 for mild blur)
+
+        Returns:
+            Odd kernel size >= 3
+        """
+        h, w = image_shape[:2]
+        base = min(h, w) // divisor
+        kernel = max(3, base)
+        # Ensure odd
+        if kernel % 2 == 0:
+            kernel += 1
+        # Clamp to reasonable range
+        kernel = min(kernel, 15)
+        return kernel
     
     def apply_bilateral_filter(self, diameter: int = 9, 
                                sigma_color: float = 75, 
