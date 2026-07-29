@@ -17,6 +17,8 @@ class PatternConfig:
     dpi: int = 300  # Resolution for output
     bead_size_mm: float = 5.0  # Physical size of one bead in mm
     allow_color_mixing: bool = False  # Whether to mix colors for better results
+    salience_strength: float = 1.0  # Detail-preservation weight (0-2)
+    dither: bool = False  # Floyd-Steinberg error diffusion
 
 
 class PatternGenerator:
@@ -28,113 +30,61 @@ class PatternGenerator:
         self.bom = None  # Bill of materials
         self.config = None
     
-    def generate_pattern(self, image: np.ndarray, palette, 
-                        config: PatternConfig) -> Tuple[np.ndarray, Dict]:
+    def generate_pattern(self, image: np.ndarray, palette,
+                        config: PatternConfig, color_manager=None) -> Tuple[np.ndarray, Dict]:
         """
         Generate pattern from image
-        
+
         Args:
             image: Input image (RGB)
-            palette: ColorPalette instance
+            palette: ColorPalette instance (used for color map / BOM)
             config: PatternConfig for generation
-        
+            color_manager: ColorManager for quantization (preferred). If None,
+                falls back to a temporary ColorManager built around palette.
+
         Returns:
             Tuple of (pattern array, bill of materials)
         """
         self.config = config
-        
+
         # Ensure image is RGB
         if len(image.shape) != 3 or image.shape[2] != 3:
             raise ValueError("请提供RGB格式的图像")
-        
+
         # Resize to bead dimensions
-        resized = cv2.resize(image, (config.width_beads, config.height_beads), 
+        resized = cv2.resize(image, (config.width_beads, config.height_beads),
                             interpolation=cv2.INTER_LINEAR)
-        
-        # Quantize to palette colors
-        if config.max_colors:
-            quantized, color_usage = self._quantize_with_limit(resized, palette, config.max_colors)
-        else:
-            quantized = resized.copy()
-            color_usage = self._quantize(quantized, palette)
-        
+
+        # Quantize via ColorManager (salience-weighted when max_colors set)
+        if color_manager is None:
+            from .color_manager import ColorManager
+            color_manager = ColorManager()
+            color_manager.palette = palette
+
+        quantized, color_usage = color_manager.quantize_image(
+            resized,
+            color_limit=config.max_colors,
+            salience_strength=config.salience_strength,
+            dither=config.dither,
+        )
+
         # Create pattern with color codes
         self.pattern = quantized.copy()
         self.color_map = self._create_color_map(quantized, palette)
         self.bom = self._create_bom(color_usage, palette)
-        
+
         return self.pattern.copy(), self.bom
-    
-    def _quantize(self, image: np.ndarray, palette) -> Dict:
-        """Quantize image to palette colors"""
-        h, w = image.shape[:2]
-        pixels = image.reshape(-1, 3)
-        color_usage = {}
-        
-        output = np.zeros_like(pixels)
-        for i, pixel in enumerate(pixels):
-            closest = palette.get_closest_color(tuple(pixel))
-            code = closest.code
-            output[i] = closest.rgb
-            color_usage[code] = color_usage.get(code, 0) + 1
-        
-        image[:] = output.reshape(h, w, 3)
-        return color_usage
-    
-    def _quantize_with_limit(self, image: np.ndarray, palette, 
-                            max_colors: int) -> Tuple[np.ndarray, Dict]:
-        """Quantize with color limit"""
-        h, w = image.shape[:2]
-        
-        # First pass - find all used colors
-        pixels = image.reshape(-1, 3)
-        temp_usage = {}
-        
-        for pixel in pixels:
-            closest = palette.get_closest_color(tuple(pixel))
-            code = closest.code
-            temp_usage[code] = temp_usage.get(code, 0) + 1
-        
-        # Select top N colors
-        sorted_colors = sorted(temp_usage.items(), key=lambda x: x[1], reverse=True)
-        top_codes = set([code for code, _ in sorted_colors[:max_colors]])
-        
-        # Second pass - quantize using only top colors
-        output = np.zeros_like(pixels)
-        color_usage = {}
-        
-        for i, pixel in enumerate(pixels):
-            closest = palette.get_closest_color(tuple(pixel))
-            
-            # If color not in top list, find closest top color
-            if closest.code not in top_codes:
-                min_dist = float('inf')
-                closest = None
-                for code in top_codes:
-                    color = palette.get_color(code)
-                    dist = color.distance_to(tuple(pixel))
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest = color
-            
-            if closest:
-                output[i] = closest.rgb
-                color_usage[closest.code] = color_usage.get(closest.code, 0) + 1
-        
-        quantized = output.reshape(h, w, 3).astype(np.uint8)
-        return quantized, color_usage
     
     def _create_color_map(self, pattern: np.ndarray, palette) -> np.ndarray:
         """Create map of color codes for each pixel"""
         h, w = pattern.shape[:2]
         color_map = np.empty((h, w), dtype=object)
-        
-        for y in range(h):
-            for x in range(w):
-                pixel_color = tuple(pattern[y, x])
-                closest = palette.get_closest_color(pixel_color)
-                color_map[y, x] = closest.code
-        
+
+        pixels = pattern.reshape(-1, 3)
+        idx = palette.get_closest_indices_batch(pixels)
+        codes = [palette.colors[i].code for i in idx]
+        color_map = np.array(codes, dtype=object).reshape(h, w)
+
         return color_map
     
     def _create_bom(self, color_usage: Dict, palette) -> Dict:

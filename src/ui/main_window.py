@@ -20,6 +20,7 @@ from src.core.color_manager import ColorManager
 from src.core.pattern_generator import PatternGenerator, PatternConfig
 from src.utils.segmentation import ImageSegmentation
 from src.utils.export import PatternExporter
+from src.ui.tooltip import attach_tooltip
 # Note: remote web scraper disabled to prefer local colors.json
 
 
@@ -715,25 +716,54 @@ class IterativeGrabCutDisplay(tk.Frame):
 class ImageDisplay(tk.Frame):
     """Basic image display (non-interactive)"""
     
-    def __init__(self, parent, fill_mode=False, **kwargs):
+    def __init__(self, parent, fill_mode=False, enable_zoom=False, **kwargs):
         super().__init__(parent, **kwargs)
         self.image = None
         self.photo = None
         self.last_width = -1
         self.last_height = -1
         self.fill_mode = fill_mode
-        
+        self.enable_zoom = enable_zoom
+        self.zoom = 1.0
+
         self.label = tk.Label(self, bg="white", relief="solid", borderwidth=1)
         self.label.pack(fill="both", expand=True)
-        
+
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
-    
+
+        if self.enable_zoom:
+            for w in (self, self.label):
+                w.bind("<Control-MouseWheel>", self._on_zoom_wheel, add="+")
+                w.bind("<Control-plus>", self._on_zoom_key, add="+")
+                w.bind("<Control-equal>", self._on_zoom_key, add="+")
+                w.bind("<Control-KP_Add>", self._on_zoom_key, add="+")
+                w.bind("<Control-minus>", self._on_zoom_key, add="+")
+                w.bind("<Control-KP_Subtract>", self._on_zoom_key, add="+")
+            # Keyboard events need focus
+            self.label.bind("<Enter>", lambda e: self.label.focus_set(), add="+")
+
+    def _on_zoom_wheel(self, event):
+        if event.delta > 0:
+            self.zoom = min(8.0, self.zoom * 1.15)
+        else:
+            self.zoom = max(0.2, self.zoom / 1.15)
+        self._update_display()
+
+    def _on_zoom_key(self, event):
+        if event.keysym in ("plus", "equal", "KP_Add"):
+            self.zoom = min(8.0, self.zoom * 1.15)
+        else:
+            self.zoom = max(0.2, self.zoom / 1.15)
+        self._update_display()
+
     def set_image(self, image_array: np.ndarray):
         """Display image"""
         if image_array is None:
             return
         self.image = image_array.copy()
+        if self.enable_zoom:
+            self.zoom = 1.0
         self._update_display()
     
     def _on_frame_configure(self, event):
@@ -774,7 +804,7 @@ class ImageDisplay(tk.Frame):
 
         # Resize to fill available space (stretch to fit, no borders)
         # In fill_mode, always resize to fill the window completely
-        ratio = min(max_width / w, max_height / h)
+        ratio = min(max_width / w, max_height / h) * (self.zoom if self.enable_zoom else 1.0)
         new_w = int(w * ratio)
         new_h = int(h * ratio)
         if new_w != w or new_h != h or self.fill_mode:
@@ -1003,33 +1033,55 @@ class MainWindow(tk.Tk):
 
         f_btn = ttk.Frame(frame)
         f_btn.pack(fill="x", pady=1)
-        ttk.Button(f_btn, text="启用", command=self._enable_interactive_selection).pack(side="left", padx=1)
-        ttk.Button(f_btn, text="撤销", command=self._undo_last_mark).pack(side="left", padx=1)
-        ttk.Button(f_btn, text="重置", command=self._reset_interactive_selection).pack(side="left", padx=1)
+        b_enable = ttk.Button(f_btn, text="启用", command=self._enable_interactive_selection)
+        b_enable.pack(side="left", padx=1)
+        attach_tooltip(b_enable, "启用后可在图像上框选/椭圆/涂抹标记前景区域,再点'执行分割'提取前景")
+        b_undo = ttk.Button(f_btn, text="撤销", command=self._undo_last_mark)
+        b_undo.pack(side="left", padx=1)
+        attach_tooltip(b_undo, "撤销上一次标记")
+        b_reset = ttk.Button(f_btn, text="重置", command=self._reset_interactive_selection)
+        b_reset.pack(side="left", padx=1)
+        attach_tooltip(b_reset, "清除所有标记,重新开始")
 
-        ttk.Button(frame, text="执行分割", command=self._segmentate_interactive).pack(fill="x", pady=1)
+        b_seg = ttk.Button(frame, text="执行分割", command=self._segmentate_interactive)
+        b_seg.pack(fill="x", pady=1)
+        attach_tooltip(b_seg, "根据已标记的前景区域运行GrabCut分割,提取前景")
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
         # Iterative GrabCut section
         ttk.Label(frame, text="迭代GrabCut:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
 
-        ttk.Button(frame, text="1. 绘制初始矩形",
-                  command=self._init_iterative_grabcut).pack(fill="x", pady=1)
-        ttk.Button(frame, text="2. 第一次分割",
-                  command=self._first_grabcut).pack(fill="x", pady=1)
+        b_rect = ttk.Button(frame, text="1. 绘制初始矩形",
+                  command=self._init_iterative_grabcut)
+        b_rect.pack(fill="x", pady=1)
+        attach_tooltip(b_rect, "进入框选模式:在图像上拖出矩形圈住前景大致范围")
+        b_first = ttk.Button(frame, text="2. 第一次分割",
+                  command=self._first_grabcut)
+        b_first.pack(fill="x", pady=1)
+        attach_tooltip(b_first, "基于所画矩形运行首次GrabCut图割,得到初步前景")
 
         f_anno = ttk.Frame(frame)
         f_anno.pack(fill="x", pady=1)
-        ttk.Button(f_anno, text="前景(红)", command=lambda: self._set_annotation_mode_igc('fgd')).pack(side="left", padx=1)
-        ttk.Button(f_anno, text="背景(绿)", command=lambda: self._set_annotation_mode_igc('bgd')).pack(side="left", padx=1)
+        b_fgd = ttk.Button(f_anno, text="前景(红)", command=lambda: self._set_annotation_mode_igc('fgd'))
+        b_fgd.pack(side="left", padx=1)
+        attach_tooltip(b_fgd, "切换为前景标注:涂抹应保留为前景的区域(红色)")
+        b_bgd = ttk.Button(f_anno, text="背景(绿)", command=lambda: self._set_annotation_mode_igc('bgd'))
+        b_bgd.pack(side="left", padx=1)
+        attach_tooltip(b_bgd, "切换为背景标注:涂抹应去除的背景区域(绿色)")
 
-        ttk.Button(frame, text="3. 迭代分割",
-                  command=self._iterative_grabcut).pack(fill="x", pady=1)
-        ttk.Button(frame, text="清除标注",
-                  command=self._clear_igc_annotations).pack(fill="x", pady=1)
-        ttk.Button(frame, text="应用分割结果",
-                  command=self._apply_iterative_grabcut).pack(fill="x", pady=1)
+        b_iter = ttk.Button(frame, text="3. 迭代分割",
+                  command=self._iterative_grabcut)
+        b_iter.pack(fill="x", pady=1)
+        attach_tooltip(b_iter, "结合前景/背景标注迭代优化分割结果,可反复涂抹+迭代")
+        b_clear = ttk.Button(frame, text="清除标注",
+                  command=self._clear_igc_annotations)
+        b_clear.pack(fill="x", pady=1)
+        attach_tooltip(b_clear, "清除所有前景/背景涂抹标注")
+        b_apply_igc = ttk.Button(frame, text="应用分割结果",
+                  command=self._apply_iterative_grabcut)
+        b_apply_igc.pack(fill="x", pady=1)
+        attach_tooltip(b_apply_igc, "将当前迭代分割的Mask应用为最终前景结果")
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
@@ -1068,8 +1120,12 @@ class MainWindow(tk.Tk):
 
         f_morph = ttk.Frame(frame)
         f_morph.pack(fill="x", pady=1)
-        ttk.Button(f_morph, text="开运算", command=self._morph_open).pack(side="left", padx=1)
-        ttk.Button(f_morph, text="闭运算", command=self._morph_close).pack(side="left", padx=1)
+        b_open = ttk.Button(f_morph, text="开运算", command=self._morph_open)
+        b_open.pack(side="left", padx=1)
+        attach_tooltip(b_open, "先腐蚀后膨胀:去除前景Mask中的小噪点/毛刺,平滑边缘")
+        b_close = ttk.Button(f_morph, text="闭运算", command=self._morph_close)
+        b_close.pack(side="left", padx=1)
+        attach_tooltip(b_close, "先膨胀后腐蚀:填补前景Mask中的小孔洞/缝隙,连通断裂")
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
@@ -1103,7 +1159,7 @@ class MainWindow(tk.Tk):
     def _create_pattern_tab(self):
         """Create pattern generation tab"""
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="图案生成")
+        self.notebook.add(frame, text="图纸生成")
         
         # Left panel
         left_panel = ttk.Frame(frame, width=120)
@@ -1118,7 +1174,7 @@ class MainWindow(tk.Tk):
         ttk.Label(frame_h, text="高:", width=3).pack(side="left")
         self.pattern_height = tk.Spinbox(frame_h, from_=10, to=300, width=8)
         self.pattern_height.delete(0, tk.END)
-        self.pattern_height.insert(0, '100')
+        self.pattern_height.insert(0, '50')
         self.pattern_height.bind('<FocusOut>', self._on_height_changed)
         self.pattern_height.pack(side="left", padx=2)
         
@@ -1143,24 +1199,60 @@ class MainWindow(tk.Tk):
         self.color_limit.delete(0, tk.END)
         self.color_limit.insert(0, '0')
         self.color_limit.pack(side="left", padx=2)
-        tk.Label(frame_c, text="(0=无限)", font=("Arial", 7), fg="gray").pack(side="left", padx=2)
+        tk.Label(frame_c, text="(0=无限制)", font=("Arial", 7), fg="blue").pack(side="left", padx=2)
         
         # Color space metric selector
-        ttk.Label(left_panel, text="色彩空间:").pack()
-        self.color_metric_var = tk.StringVar(value="weighted")
-        self.color_metric_combo = ttk.Combobox(left_panel, 
+        frame_metric = ttk.Frame(left_panel)
+        frame_metric.pack(fill="x")
+        ttk.Label(frame_metric, text="色彩空间:").pack(side="left")
+        help_lbl = tk.Label(frame_metric, text="?", fg="blue", cursor="question_arrow",
+                            font=("Arial", 9, "bold"))
+        help_lbl.pack(side="left", padx=3)
+        attach_tooltip(help_lbl,
+            "颜色匹配度量说明:\n"
+            "• 加权距离: 按3:6:1加权RGB,快但较粗略\n"
+            "• 欧氏距离: RGB直线距离,简单直观\n"
+            "• Lab色空: 感知均匀空间,适合拼豆匹配\n"
+            "• CIE76: Lab空间标准色差公式\n"
+            "• CIEDE2000: 最接近人眼感知,浅色/肤色最准,稍慢(推荐)")
+        self.color_metric_var = tk.StringVar(value="ciede2000")
+        self.color_metric_combo = ttk.Combobox(left_panel,
                                               textvariable=self.color_metric_var,
-                                              values=["加权距离", "欧氏距离", "Lab色空", "CIE76"],
+                                              values=["加权距离", "欧氏距离", "Lab色空", "CIE76", "CIEDE2000"],
                                               state="readonly", width=15)
+        self.color_metric_combo.set("CIEDE2000")
         self.color_metric_combo.pack(fill="x", pady=2)
         self.color_metric_combo.bind("<<ComboboxSelected>>", self._on_color_metric_changed)
+
+        # Detail preservation (salience) slider
+        frame_sal = ttk.Frame(left_panel)
+        frame_sal.pack(fill="x", pady=2)
+        ttk.Label(frame_sal, text="细节保留:", width=8).pack(side="left")
+        self.salience_var = tk.DoubleVar(value=1.0)
+        self.salience_scale = tk.Scale(frame_sal, from_=0.0, to=2.0, resolution=0.1,
+                                       orient="horizontal", variable=self.salience_var,
+                                       length=70, showvalue=True)
+        self.salience_scale.pack(side="left", padx=2)
+        attach_tooltip(self.salience_scale,
+            "限制颜色时保留稀有细节色的强度。\n"
+            "值越大,小面积但突出的颜色(如眼睛/嘴)越容易被保留。\n"
+            "仅在设置颜色限制时生效,默认1.0。")
+
+        # Dithering checkbox
+        self.dither_var = tk.BooleanVar(value=False)
+        dither_cb = ttk.Checkbutton(left_panel, text="抖动(Floyd-Steinberg)",
+                       variable=self.dither_var)
+        dither_cb.pack(fill="x", pady=1)
+        attach_tooltip(dither_cb,
+            "通过误差扩散在空间上混合颜色,保留渐变/柔边观感。\n"
+            "会让拼装时换色更频繁,网格图显'花'。默认关闭。")
         
         # Use mask processed result
         self.use_mask_result_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left_panel, text="使用Mask处理结果", 
                        variable=self.use_mask_result_var).pack(fill="x", pady=2)
         
-        ttk.Button(left_panel, text="生成图案", 
+        ttk.Button(left_panel, text="生成图纸",
                   command=self._generate_pattern).pack(fill="x", pady=1)
         
         ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
@@ -1186,7 +1278,7 @@ class MainWindow(tk.Tk):
         self.bom_list.pack(fill="both", expand=True, pady=2)
         
         # Right panel
-        self.pattern_display = ImageDisplay(frame, fill_mode=True, bg="white")
+        self.pattern_display = ImageDisplay(frame, fill_mode=True, enable_zoom=True, bg="white")
         self.pattern_display.pack(side="right", fill="both", expand=True, padx=2, pady=5)
     
     def _create_export_tab(self):
@@ -1286,7 +1378,10 @@ class MainWindow(tk.Tk):
                 
                 # Display original
                 self.image_display.set_image(image)
-                
+                # Refresh preprocessing display immediately
+                if hasattr(self, 'seg_display'):
+                    self.seg_display.set_image(image)
+
                 # Store aspect ratio and filename
                 h, w = image.shape[:2]
                 self.aspect_ratio = h / w if w > 0 else 1.0
@@ -1295,7 +1390,7 @@ class MainWindow(tk.Tk):
                 # Auto-fill filename in export tab
                 self.export_filename.delete(0, tk.END)
                 self.export_filename.insert(0, f"{self.loaded_filename}_拼豆图纸")
-                
+
                 # Reset brightness/contrast sliders
                 if hasattr(self, 'brightness_slider'):
                     self.brightness_slider.set(100)
@@ -1307,10 +1402,27 @@ class MainWindow(tk.Tk):
                     self.rescale_width.insert(0, str(w))
                     self.rescale_height.delete(0, tk.END)
                     self.rescale_height.insert(0, str(h))
-                
+
+                # Auto-fill bead dimensions based on image aspect (height=50 default)
+                self._auto_fill_bead_size()
+
                 self.status_var.set(f"已加载: {os.path.basename(filepath)} ({w}x{h})")
             except Exception as e:
                 messagebox.showerror("错误", f"加载图像失败: {e}")
+
+    def _auto_fill_bead_size(self, base_height: int = 50):
+        """Auto-fill bead height/width from image aspect ratio, height=base_height."""
+        if not hasattr(self, 'pattern_height') or self.image_processor.current_image is None:
+            return
+        h, w = self.image_processor.current_image.shape[:2]
+        if h <= 0 or w <= 0:
+            return
+        new_h = base_height
+        new_w = max(10, int(round(base_height * w / h)))
+        self.pattern_height.delete(0, tk.END)
+        self.pattern_height.insert(0, str(new_h))
+        self.pattern_width.delete(0, tk.END)
+        self.pattern_width.insert(0, str(new_w))
     
     def _reset_image(self):
         """Reset to original image"""
@@ -1716,10 +1828,11 @@ class MainWindow(tk.Tk):
             "加权距离": "weighted",
             "欧氏距离": "euclidean",
             "Lab色空": "lab",
-            "CIE76": "ciede76"
+            "CIE76": "ciede76",
+            "CIEDE2000": "ciede2000"
         }
         selected = self.color_metric_var.get()
-        metric = metric_display_to_internal.get(selected, "weighted")
+        metric = metric_display_to_internal.get(selected, "ciede2000")
         if self.color_manager:
             self.color_manager.set_color_metric(metric)
             self.status_var.set(f"色彩空间已切换: {selected}")
@@ -1889,17 +2002,23 @@ class MainWindow(tk.Tk):
                 
                 color_limit = int(self.color_limit.get())
                 color_limit = color_limit if color_limit > 0 else None
-                
+
+                salience = float(self.salience_var.get()) if hasattr(self, 'salience_var') else 1.0
+                dither = bool(self.dither_var.get()) if hasattr(self, 'dither_var') else False
+
                 config = PatternConfig(
                     width_beads=w_val,
                     height_beads=h_val,
-                    max_colors=color_limit
+                    max_colors=color_limit,
+                    salience_strength=salience,
+                    dither=dither
                 )
-                
+
                 pattern, bom = self.pattern_generator.generate_pattern(
                     image,
                     self.color_manager.get_palette(),
-                    config
+                    config,
+                    color_manager=self.color_manager
                 )
                 
                 self.current_pattern = pattern
