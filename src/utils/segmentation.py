@@ -222,35 +222,104 @@ class ImageSegmentation:
         self.mask = mask
         return mask
     
-    def morph_close(self, mask: np.ndarray, kernel_size: int = 5) -> np.ndarray:
+    @staticmethod
+    def get_kernel(shape: str, kernel_size: int) -> np.ndarray:
+        """
+        Build a structuring element of the given shape.
+
+        Args:
+            shape: One of 'ellipse','rect','cross','vline','hline',
+                   'diag1' (backslash), 'diag2' (slash), 'diamond'
+            kernel_size: Size of the kernel (px)
+
+        Returns:
+            uint8 structuring element
+        """
+        k = max(1, int(kernel_size))
+        if shape == 'rect':
+            return cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+        if shape == 'cross':
+            return cv2.getStructuringElement(cv2.MORPH_CROSS, (k, k))
+        if shape == 'vline':
+            return np.ones((k, 1), dtype=np.uint8)
+        if shape == 'hline':
+            return np.ones((1, k), dtype=np.uint8)
+        if shape == 'diag1':  # backslash \
+            return np.eye(k, dtype=np.uint8)
+        if shape == 'diag2':  # slash /
+            return np.fliplr(np.eye(k, dtype=np.uint8))
+        if shape == 'diamond':
+            r = k // 2
+            y, x = np.ogrid[-r:k - r, -r:k - r]
+            return ((np.abs(x) + np.abs(y)) <= r).astype(np.uint8)
+        # default: ellipse (disk)
+        return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+
+    def morph_close(self, mask: np.ndarray, kernel_size: int = 5, shape: str = 'ellipse') -> np.ndarray:
         """
         Morphological closing to fill holes
-        
+
         Args:
             mask: Binary mask
             kernel_size: Size of morphological kernel
-        
+            shape: Structuring element shape (see get_kernel)
+
         Returns:
             Processed mask
         """
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        kernel = self.get_kernel(shape, kernel_size)
         result = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
         self.mask = result
         return result
-    
-    def morph_open(self, mask: np.ndarray, kernel_size: int = 5) -> np.ndarray:
+
+    def morph_open(self, mask: np.ndarray, kernel_size: int = 5, shape: str = 'ellipse') -> np.ndarray:
         """
         Morphological opening to remove noise
-        
+
         Args:
             mask: Binary mask
             kernel_size: Size of morphological kernel
-        
+            shape: Structuring element shape (see get_kernel)
+
         Returns:
             Processed mask
         """
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        kernel = self.get_kernel(shape, kernel_size)
         result = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        self.mask = result
+        return result
+
+    def morph_erode(self, mask: np.ndarray, kernel_size: int = 5, shape: str = 'ellipse') -> np.ndarray:
+        """
+        Erosion: shrink foreground, remove thin connections/spurs
+
+        Args:
+            mask: Binary mask
+            kernel_size: Size of morphological kernel
+            shape: Structuring element shape (see get_kernel)
+
+        Returns:
+            Processed mask
+        """
+        kernel = self.get_kernel(shape, kernel_size)
+        result = cv2.erode(mask, kernel, iterations=1)
+        self.mask = result
+        return result
+
+    def morph_dilate(self, mask: np.ndarray, kernel_size: int = 5, shape: str = 'ellipse') -> np.ndarray:
+        """
+        Dilation: grow foreground, connect nearby regions, fill small gaps
+
+        Args:
+            mask: Binary mask
+            kernel_size: Size of morphological kernel
+            shape: Structuring element shape (see get_kernel)
+
+        Returns:
+            Processed mask
+        """
+        kernel = self.get_kernel(shape, kernel_size)
+        result = cv2.dilate(mask, kernel, iterations=1)
         self.mask = result
         return result
     

@@ -414,18 +414,17 @@ class InteractiveImageDisplay(tk.Frame):
         self.label.config(image=self.photo)
 
     def _draw_minimap(self, base_img, display_img, label_width, label_height, display_w, display_h):
-        """Overlay a small overview map (鹰眼) with a highlight of the visible region."""
+        """Overlay a small overview map (鹰眼); view region clear, rest greyed, black border."""
         from PIL import ImageDraw
         margin = 8
         minimap_w = 120
         ih, iw = display_img.shape[0], display_img.shape[1]
         minimap_h = max(1, int(minimap_w * ih / iw))
-        thumb = Image.fromarray(display_img).resize((minimap_w, minimap_h), Image.LANCZOS).convert("RGBA")
+        clear = Image.fromarray(display_img).resize((minimap_w, minimap_h), Image.LANCZOS).convert("RGBA")
 
         # Visible region fraction of the displayed image
         fx = min(1.0, label_width / display_w)
         fy = min(1.0, label_height / display_h)
-        # Image center is at (label_center + pan); visible-center offset in fraction
         cx = 0.5 - (self.pan_x / display_w)
         cy = 0.5 - (self.pan_y / display_h)
         rx = (cx - fx / 2) * minimap_w
@@ -438,12 +437,16 @@ class InteractiveImageDisplay(tk.Frame):
         rw = max(2, min(rw, minimap_w - rx))
         rh = max(2, min(rh, minimap_h - ry))
 
-        # Border + translucent highlight
-        draw = ImageDraw.Draw(thumb, "RGBA")
+        # Grey translucent mask over whole map, view region pasted back clear
+        masked = Image.alpha_composite(clear, Image.new("RGBA", clear.size, (90, 90, 90, 130)))
+        view_box = (int(rx), int(ry), int(rx + rw), int(ry + rh))
+        masked.paste(clear.crop(view_box), (view_box[0], view_box[1]))
+        draw = ImageDraw.Draw(masked)
+        draw.rectangle([view_box[0], view_box[1], view_box[2] - 1, view_box[3] - 1],
+                       outline=(0, 0, 0, 255), width=2)
         draw.rectangle([0, 0, minimap_w - 1, minimap_h - 1], outline=(0, 0, 0, 255))
-        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=(255, 255, 0, 90), outline=(255, 0, 0, 255), width=2)
 
-        base_img.paste(thumb, (margin, margin), thumb)
+        base_img.paste(masked, (margin, margin), masked)
 
     def _draw_crop_overlay(self, display_img, preview_display):
         """Draw crop overlay: dim outside, yellow border inside"""
@@ -967,41 +970,46 @@ class ImageDisplay(tk.Frame):
             self._draw_minimap(canvas, canvas_w, canvas_h, new_w, new_h, display_img)
 
     def _draw_minimap(self, canvas, canvas_w, canvas_h, new_w, new_h, display_img):
-        """Draw a small overview map with a highlight of the visible region."""
+        """Draw a small overview map (鹰眼) with the visible region kept clear."""
+        from PIL import ImageDraw
         margin = 8
         minimap_w = 120
         h, w = display_img.shape[:2]
         minimap_h = max(1, int(minimap_w * h / w))
 
-        mini = cv2.resize(display_img, (minimap_w, minimap_h),
-                          interpolation=cv2.INTER_AREA)
-        self._minimap_photo = ImageTk.PhotoImage(Image.fromarray(mini))
-        x0 = margin
-        y0 = margin
-        canvas.create_image(x0, y0, anchor="nw",
-                            image=self._minimap_photo, tags="minimap")
-        canvas.create_rectangle(x0, y0, x0 + minimap_w, y0 + minimap_h,
-                                outline="black", tags="minimap")
-
         # Visible fraction of the displayed image
         fx = min(1.0, canvas_w / new_w)
         fy = min(1.0, canvas_h / new_h)
-
         rx = (0.5 - self.pan_x / new_w - fx / 2) * minimap_w
         ry = (0.5 - self.pan_y / new_h - fy / 2) * minimap_h
         rw = fx * minimap_w
         rh = fy * minimap_h
-
         # Clamp within minimap
-        rx = max(0, min(rx, minimap_w))
-        ry = max(0, min(ry, minimap_h))
-        rw = max(0, min(rw, minimap_w - rx))
-        rh = max(0, min(rh, minimap_h - ry))
+        rx = max(0, min(rx, minimap_w - 2))
+        ry = max(0, min(ry, minimap_h - 2))
+        rw = max(2, min(rw, minimap_w - rx))
+        rh = max(2, min(rh, minimap_h - ry))
 
-        canvas.create_rectangle(x0 + rx, y0 + ry, x0 + rx + rw, y0 + ry + rh,
-                                outline="red", width=2,
-                                fill="yellow", stipple="gray50",
-                                tags="minimap")
+        # Clear thumbnail, then grey translucent mask over the whole map,
+        # with the current-view region cut back to clear, black border.
+        clear = Image.fromarray(display_img).resize((minimap_w, minimap_h), Image.LANCZOS).convert("RGBA")
+        masked = clear.copy()
+        grey = Image.new("RGBA", masked.size, (90, 90, 90, 130))
+        masked = Image.alpha_composite(masked, grey)
+        # Paste the clear view region back
+        view_box = (int(rx), int(ry), int(rx + rw), int(ry + rh))
+        clear_region = clear.crop(view_box)
+        masked.paste(clear_region, (view_box[0], view_box[1]))
+        # Black border around the view region and the whole map
+        draw = ImageDraw.Draw(masked)
+        draw.rectangle([view_box[0], view_box[1], view_box[2] - 1, view_box[3] - 1],
+                       outline=(0, 0, 0, 255), width=2)
+        draw.rectangle([0, 0, minimap_w - 1, minimap_h - 1], outline=(0, 0, 0, 255))
+
+        self._minimap_photo = ImageTk.PhotoImage(masked)
+        x0 = margin
+        y0 = margin
+        canvas.create_image(x0, y0, anchor="nw", image=self._minimap_photo, tags="minimap")
 
 
 class MainWindow(tk.Tk):
@@ -1289,6 +1297,25 @@ class MainWindow(tk.Tk):
         self.kernel_spin.insert(0, '5')
         self.kernel_spin.pack(fill="x", pady=1)
 
+        # Structuring element shape (名称-示意图)
+        ttk.Label(frame, text="结构元素:").pack(fill="x")
+        self.kernel_shape_var = tk.StringVar(value="椭圆 ●")
+        shape_combo = ttk.Combobox(frame, textvariable=self.kernel_shape_var,
+                                   state="readonly", width=12,
+                                   values=["椭圆 ●", "矩形 ■", "十字 ┼",
+                                           "垂直线 │", "水平线 ─",
+                                           "斜线 \\", "斜线 /", "菱形 ◆"])
+        shape_combo.pack(fill="x", pady=1)
+        attach_tooltip(shape_combo,
+            "结构元素形状:\n"
+            "椭圆 ● 平滑各向同性(默认,原圆盘)\n"
+            "矩形 ■ 四方向均匀,边角明显\n"
+            "十字 ┼ 仅上下左右,保留直角\n"
+            "垂直线 │ / 水平线 ─ 只沿单方向作用\n"
+            "斜线 \\ / 斜线 / 沿对角方向作用\n"
+            "菱形 ◆ 曼哈顿距离,介于圆与方之间")
+
+        # Row 1: open / close
         f_morph = ttk.Frame(frame)
         f_morph.pack(fill="x", pady=1)
         b_open = ttk.Button(f_morph, text="开运算", command=self._morph_open)
@@ -1297,6 +1324,16 @@ class MainWindow(tk.Tk):
         b_close = ttk.Button(f_morph, text="闭运算", command=self._morph_close)
         b_close.pack(side="left", padx=1)
         attach_tooltip(b_close, "先膨胀后腐蚀:填补前景Mask中的小孔洞/缝隙,连通断裂")
+
+        # Row 2: erode / dilate
+        f_morph2 = ttk.Frame(frame)
+        f_morph2.pack(fill="x", pady=1)
+        b_erode = ttk.Button(f_morph2, text="腐蚀", command=self._morph_erode)
+        b_erode.pack(side="left", padx=1)
+        attach_tooltip(b_erode, "收缩前景:去除细小连接/毛刺,缩小Mask区域")
+        b_dilate = ttk.Button(f_morph2, text="膨胀", command=self._morph_dilate)
+        b_dilate.pack(side="left", padx=1)
+        attach_tooltip(b_dilate, "扩张前景:连接邻近区域,填补小缝隙,扩大Mask区域")
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
@@ -1914,37 +1951,68 @@ class MainWindow(tk.Tk):
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
+    def _get_morph_shape(self):
+        """Map the shape combobox display text to an internal shape key."""
+        text = self.kernel_shape_var.get() if hasattr(self, 'kernel_shape_var') else "椭圆 ●"
+        if "矩形" in text: return "rect"
+        if "十字" in text: return "cross"
+        if "垂直线" in text: return "vline"
+        if "水平线" in text: return "hline"
+        if "菱形" in text: return "diamond"
+        if "斜线" in text:
+            return "diag2" if "/" in text else "diag1"  # \ = diag1, / = diag2
+        return "ellipse"
+
+    def _apply_morph_result(self, mask, op_name):
+        """Shared: store mask, refresh display, set status."""
+        self.current_mask = mask
+        mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+        self.seg_display.set_image(mask_display)
+        self.seg_display_var.set("Mask")
+        self.seg_display_label.config(text="Mask")
+        self.status_var.set(f"{op_name}完成")
+
     def _morph_open(self):
         """Morphological opening"""
         try:
             if not hasattr(self, 'current_mask') or self.current_mask is None:
                 raise ValueError("请先执行分割")
             kernel = int(self.kernel_spin.get())
-            mask = self.segmentation.morph_open(self.current_mask, kernel)
-            self.current_mask = mask
-            
-            mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-            self.seg_display.set_image(mask_display)
-            self.seg_display_var.set("Mask")
-            self.seg_display_label.config(text="Mask")
-            self.status_var.set("开运算完成")
+            mask = self.segmentation.morph_open(self.current_mask, kernel, self._get_morph_shape())
+            self._apply_morph_result(mask, "开运算")
         except Exception as e:
             messagebox.showerror("错误", str(e))
-    
+
     def _morph_close(self):
         """Morphological closing"""
         try:
             if not hasattr(self, 'current_mask') or self.current_mask is None:
                 raise ValueError("请先执行分割")
             kernel = int(self.kernel_spin.get())
-            mask = self.segmentation.morph_close(self.current_mask, kernel)
-            self.current_mask = mask
-            
-            mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-            self.seg_display.set_image(mask_display)
-            self.seg_display_var.set("Mask")
-            self.seg_display_label.config(text="Mask")
-            self.status_var.set("闭运算完成")
+            mask = self.segmentation.morph_close(self.current_mask, kernel, self._get_morph_shape())
+            self._apply_morph_result(mask, "闭运算")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def _morph_erode(self):
+        """Morphological erosion"""
+        try:
+            if not hasattr(self, 'current_mask') or self.current_mask is None:
+                raise ValueError("请先执行分割")
+            kernel = int(self.kernel_spin.get())
+            mask = self.segmentation.morph_erode(self.current_mask, kernel, self._get_morph_shape())
+            self._apply_morph_result(mask, "腐蚀")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def _morph_dilate(self):
+        """Morphological dilation"""
+        try:
+            if not hasattr(self, 'current_mask') or self.current_mask is None:
+                raise ValueError("请先执行分割")
+            kernel = int(self.kernel_spin.get())
+            mask = self.segmentation.morph_dilate(self.current_mask, kernel, self._get_morph_shape())
+            self._apply_morph_result(mask, "膨胀")
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
