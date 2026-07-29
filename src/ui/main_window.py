@@ -66,6 +66,7 @@ class InteractiveImageDisplay(tk.Frame):
         self.pan_y = 0.0
         self._pan_start = None
         self._minimap_photo = None
+        self._pan_redraw_after = None
 
         # Bind mouse events
         self.label.bind("<Button-1>", self._on_mouse_press)
@@ -113,15 +114,25 @@ class InteractiveImageDisplay(tk.Frame):
         self._pan_start = (event.x - self.pan_x, event.y - self.pan_y)
 
     def _on_pan_move(self, event):
-        """Middle-button drag: pan view"""
+        """Middle-button drag: pan view (throttled to avoid flicker)"""
         if self._pan_start:
             self.pan_x = event.x - self._pan_start[0]
             self.pan_y = event.y - self._pan_start[1]
-            self._update_display()
+            # Coalesce rapid motion events into one redraw per ~30ms.
+            if self._pan_redraw_after is None:
+                self._pan_redraw_after = self.after(30, self._do_pan_redraw)
+
+    def _do_pan_redraw(self):
+        self._pan_redraw_after = None
+        self._update_display()
 
     def _on_pan_release(self, event):
         """Middle-button release: end pan"""
         self._pan_start = None
+        if self._pan_redraw_after is not None:
+            self.after_cancel(self._pan_redraw_after)
+            self._pan_redraw_after = None
+        self._update_display()
 
     def set_image(self, image_array: np.ndarray):
         """Set image and initialize masks"""
@@ -830,6 +841,7 @@ class ImageDisplay(tk.Frame):
         self.pan_y = 0.0
         self._pan_start = None
         self._minimap_photo = None
+        self._minimap_after = None
 
         if self.enable_zoom:
             self.canvas = tk.Canvas(self, bg="white", highlightthickness=1,
@@ -875,15 +887,6 @@ class ImageDisplay(tk.Frame):
 
     def _on_pan_press(self, event):
         self._pan_start = (event.x - self.pan_x, event.y - self.pan_y)
-
-    def _on_pan_move(self, event):
-        if self._pan_start:
-            self.pan_x = event.x - self._pan_start[0]
-            self.pan_y = event.y - self._pan_start[1]
-            self._update_display()
-
-    def _on_pan_release(self, event):
-        self._pan_start = None
 
     def set_image(self, image_array: np.ndarray):
         """Display image"""
@@ -951,6 +954,51 @@ class ImageDisplay(tk.Frame):
         else:
             self.label.config(image=self.photo)
 
+    def _on_pan_press(self, event):
+        self._pan_start = (event.x - self.pan_x, event.y - self.pan_y)
+
+    def _on_pan_move(self, event):
+        # Pan without re-rendering the PhotoImage: just move the canvas item.
+        if self._pan_start:
+            new_pan_x = event.x - self._pan_start[0]
+            new_pan_y = event.y - self._pan_start[1]
+            dx = new_pan_x - self.pan_x
+            dy = new_pan_y - self.pan_y
+            self.pan_x = new_pan_x
+            self.pan_y = new_pan_y
+            if self.enable_zoom and hasattr(self, 'canvas'):
+                self.canvas.move("main_image", dx, dy)
+                self._schedule_minimap_refresh()
+            else:
+                self._update_display()
+
+    def _schedule_minimap_refresh(self):
+        """Throttle minimap redraw during a pan drag to avoid flicker."""
+        if self._minimap_after is not None:
+            return
+        self._minimap_after = self.after(50, self._do_minimap_refresh)
+
+    def _do_minimap_refresh(self):
+        self._minimap_after = None
+        canvas = self.canvas
+        canvas.delete("minimap")
+        canvas.update_idletasks()
+        canvas_w = canvas.winfo_width()
+        canvas_h = canvas.winfo_height()
+        # Recompute displayed image size from the main canvas item bbox.
+        bbox = canvas.bbox("main_image")
+        if not bbox:
+            return
+        new_w = bbox[2] - bbox[0]
+        new_h = bbox[3] - bbox[1]
+        if (new_w > canvas_w or new_h > canvas_h) and self.image is not None:
+            self._draw_minimap(canvas, canvas_w, canvas_h, new_w, new_h, self.image)
+
+    def _on_pan_release(self, event):
+        self._pan_start = None
+        # Final full redraw to keep everything consistent.
+        self._update_display()
+
     def _draw_on_canvas(self, new_w, new_h, display_img):
         """Draw the PhotoImage on the canvas with pan offset + minimap."""
         canvas = self.canvas
@@ -963,6 +1011,7 @@ class ImageDisplay(tk.Frame):
         canvas.delete("main_image")
         canvas.create_image(cx + self.pan_x, cy + self.pan_y, anchor="center",
                             image=self.photo, tags="main_image")
+        canvas.tag_lower("main_image")  # keep minimap above the image
 
         # Minimap (鹰眼)
         canvas.delete("minimap")
