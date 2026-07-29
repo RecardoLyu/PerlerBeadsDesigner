@@ -725,9 +725,20 @@ class ImageDisplay(tk.Frame):
         self.fill_mode = fill_mode
         self.enable_zoom = enable_zoom
         self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self._pan_start = None
+        self._minimap_photo = None
 
-        self.label = tk.Label(self, bg="white", relief="solid", borderwidth=1)
-        self.label.pack(fill="both", expand=True)
+        if self.enable_zoom:
+            self.canvas = tk.Canvas(self, bg="white", highlightthickness=1,
+                                    highlightbackground="black")
+            self.canvas.pack(fill="both", expand=True)
+            # Keep a label reference for backward compatibility
+            self.label = self.canvas
+        else:
+            self.label = tk.Label(self, bg="white", relief="solid", borderwidth=1)
+            self.label.pack(fill="both", expand=True)
 
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
@@ -740,6 +751,10 @@ class ImageDisplay(tk.Frame):
                 w.bind("<Control-KP_Add>", self._on_zoom_key, add="+")
                 w.bind("<Control-minus>", self._on_zoom_key, add="+")
                 w.bind("<Control-KP_Subtract>", self._on_zoom_key, add="+")
+                # Middle-drag pan
+                w.bind("<Button-2>", self._on_pan_press, add="+")
+                w.bind("<B2-Motion>", self._on_pan_move, add="+")
+                w.bind("<ButtonRelease-2>", self._on_pan_release, add="+")
             # Keyboard events need focus
             self.label.bind("<Enter>", lambda e: self.label.focus_set(), add="+")
 
@@ -757,6 +772,18 @@ class ImageDisplay(tk.Frame):
             self.zoom = max(0.2, self.zoom / 1.15)
         self._update_display()
 
+    def _on_pan_press(self, event):
+        self._pan_start = (event.x - self.pan_x, event.y - self.pan_y)
+
+    def _on_pan_move(self, event):
+        if self._pan_start:
+            self.pan_x = event.x - self._pan_start[0]
+            self.pan_y = event.y - self._pan_start[1]
+            self._update_display()
+
+    def _on_pan_release(self, event):
+        self._pan_start = None
+
     def set_image(self, image_array: np.ndarray):
         """Display image"""
         if image_array is None:
@@ -764,6 +791,8 @@ class ImageDisplay(tk.Frame):
         self.image = image_array.copy()
         if self.enable_zoom:
             self.zoom = 1.0
+            self.pan_x = 0.0
+            self.pan_y = 0.0
         self._update_display()
     
     def _on_frame_configure(self, event):
@@ -815,7 +844,66 @@ class ImageDisplay(tk.Frame):
         # Convert to PIL and then to PhotoImage
         pil_img = Image.fromarray(display_img)
         self.photo = ImageTk.PhotoImage(pil_img)
-        self.label.config(image=self.photo)
+
+        if self.enable_zoom:
+            self._draw_on_canvas(new_w, new_h, display_img)
+        else:
+            self.label.config(image=self.photo)
+
+    def _draw_on_canvas(self, new_w, new_h, display_img):
+        """Draw the PhotoImage on the canvas with pan offset + minimap."""
+        canvas = self.canvas
+        canvas.update_idletasks()
+        canvas_w = canvas.winfo_width()
+        canvas_h = canvas.winfo_height()
+        cx = canvas_w / 2
+        cy = canvas_h / 2
+
+        canvas.delete("main_image")
+        canvas.create_image(cx + self.pan_x, cy + self.pan_y, anchor="center",
+                            image=self.photo, tags="main_image")
+
+        # Minimap (鹰眼)
+        canvas.delete("minimap")
+        if (new_w > canvas_w or new_h > canvas_h) and new_w > 0 and new_h > 0:
+            self._draw_minimap(canvas, canvas_w, canvas_h, new_w, new_h, display_img)
+
+    def _draw_minimap(self, canvas, canvas_w, canvas_h, new_w, new_h, display_img):
+        """Draw a small overview map with a highlight of the visible region."""
+        margin = 8
+        minimap_w = 120
+        h, w = display_img.shape[:2]
+        minimap_h = max(1, int(minimap_w * h / w))
+
+        mini = cv2.resize(display_img, (minimap_w, minimap_h),
+                          interpolation=cv2.INTER_AREA)
+        self._minimap_photo = ImageTk.PhotoImage(Image.fromarray(mini))
+        x0 = margin
+        y0 = margin
+        canvas.create_image(x0, y0, anchor="nw",
+                            image=self._minimap_photo, tags="minimap")
+        canvas.create_rectangle(x0, y0, x0 + minimap_w, y0 + minimap_h,
+                                outline="black", tags="minimap")
+
+        # Visible fraction of the displayed image
+        fx = min(1.0, canvas_w / new_w)
+        fy = min(1.0, canvas_h / new_h)
+
+        rx = (0.5 - self.pan_x / new_w - fx / 2) * minimap_w
+        ry = (0.5 - self.pan_y / new_h - fy / 2) * minimap_h
+        rw = fx * minimap_w
+        rh = fy * minimap_h
+
+        # Clamp within minimap
+        rx = max(0, min(rx, minimap_w))
+        ry = max(0, min(ry, minimap_h))
+        rw = max(0, min(rw, minimap_w - rx))
+        rh = max(0, min(rh, minimap_h - ry))
+
+        canvas.create_rectangle(x0 + rx, y0 + ry, x0 + rx + rw, y0 + ry + rh,
+                                outline="red", width=2,
+                                fill="yellow", stipple="gray50",
+                                tags="minimap")
 
 
 class MainWindow(tk.Tk):
@@ -890,7 +978,7 @@ class MainWindow(tk.Tk):
                   font=("Arial", 8), foreground="gray").pack(fill="x", pady=10)
 
         # Right panel - image display
-        self.image_display = ImageDisplay(frame, bg="white")
+        self.image_display = ImageDisplay(frame, fill_mode=False, enable_zoom=True, bg="white")
         self.image_display.pack(side="right", fill="both", expand=True, padx=2, pady=5)
     
     def _create_preprocess_tab(self):
@@ -1195,11 +1283,16 @@ class MainWindow(tk.Tk):
         frame_c = ttk.Frame(left_panel)
         frame_c.pack(fill="x", pady=2)
         ttk.Label(frame_c, text="颜色限制:", width=8).pack(side="left")
-        self.color_limit = tk.Spinbox(frame_c, from_=0, to=100, width=6)
+        self.color_limit = tk.Spinbox(frame_c, from_=0, to=100, width=6,
+                                      command=self._update_color_limit_hint)
         self.color_limit.delete(0, tk.END)
         self.color_limit.insert(0, '0')
         self.color_limit.pack(side="left", padx=2)
-        tk.Label(frame_c, text="(0=无限制)", font=("Arial", 7), fg="blue").pack(side="left", padx=2)
+        self.color_limit.bind("<KeyRelease>", lambda e: self._update_color_limit_hint())
+        self.color_limit.bind("<FocusOut>", lambda e: self._update_color_limit_hint())
+        self.color_limit_hint = tk.Label(frame_c, text="", font=("Arial", 7), fg="blue")
+        self.color_limit_hint.pack(side="left", padx=2)
+        self._update_color_limit_hint()
         
         # Color space metric selector
         frame_metric = ttk.Frame(left_panel)
@@ -1231,8 +1324,11 @@ class MainWindow(tk.Tk):
         self.salience_var = tk.DoubleVar(value=1.0)
         self.salience_scale = tk.Scale(frame_sal, from_=0.0, to=2.0, resolution=0.1,
                                        orient="horizontal", variable=self.salience_var,
-                                       length=70, showvalue=True)
+                                       length=70, showvalue=False,
+                                       command=lambda v: self.salience_val_label.config(text=f"{float(v):.1f}"))
         self.salience_scale.pack(side="left", padx=2)
+        self.salience_val_label = ttk.Label(frame_sal, text="1.0", width=4)
+        self.salience_val_label.pack(side="left")
         attach_tooltip(self.salience_scale,
             "限制颜色时保留稀有细节色的强度。\n"
             "值越大,小面积但突出的颜色(如眼睛/嘴)越容易被保留。\n"
@@ -1258,14 +1354,7 @@ class MainWindow(tk.Tk):
         ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
         
         ttk.Label(left_panel, text="渲染选项:").pack()
-        frame_size = ttk.Frame(left_panel)
-        frame_size.pack(fill="x", pady=2)
-        ttk.Label(frame_size, text="像素大小:", width=8).pack(side="left")
-        self.bead_size = tk.Spinbox(frame_size, from_=5, to=100, width=6)
-        self.bead_size.delete(0, tk.END)
-        self.bead_size.insert(0, '20')
-        self.bead_size.pack(side="left", padx=2)
-        
+
         self.show_codes_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left_panel, text="带编码渲染",
                        variable=self.show_codes_var,
@@ -1822,6 +1911,14 @@ class MainWindow(tk.Tk):
         except:
             pass
     
+    def _update_color_limit_hint(self):
+        """Show '无限制' hint when color limit is 0 or empty"""
+        val = self.color_limit.get().strip()
+        if val in ("0", ""):
+            self.color_limit_hint.config(text="无限制", fg="blue")
+        else:
+            self.color_limit_hint.config(text="")
+
     def _on_color_metric_changed(self, event=None):
         """Color metric (color space) changed"""
         metric_display_to_internal = {
@@ -2044,7 +2141,7 @@ class MainWindow(tk.Tk):
             if pattern is None:
                 raise ValueError("请先生成图案")
             
-            bead_size = int(self.bead_size.get())
+            bead_size = 20
             rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
             
             self.pattern_display.set_image(rendered)
@@ -2060,7 +2157,7 @@ class MainWindow(tk.Tk):
                 self.show_codes_var.set(False)
                 return
 
-            bead_size = int(self.bead_size.get())
+            bead_size = 20
             if self.show_codes_var.get():
                 rendered = self.pattern_generator.render_pattern_with_codes_and_grid(bead_size)
                 self.status_var.set("编码显示: 开")
@@ -2074,7 +2171,7 @@ class MainWindow(tk.Tk):
             self.show_codes_var.set(False)
             # Fall back to grid
             try:
-                bead_size = int(self.bead_size.get())
+                bead_size = 20
                 rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
                 self.pattern_display.set_image(rendered)
             except:
@@ -2100,7 +2197,7 @@ class MainWindow(tk.Tk):
                 raise ValueError("请先生成图案")
 
             scale = int(self.png_scale.get())
-            bead_size = int(self.bead_size.get())
+            bead_size = 20
             filename = self.export_filename.get() or f"{self.loaded_filename}_拼豆图纸"
             page_size = self.page_size.get()
 
