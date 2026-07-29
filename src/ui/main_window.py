@@ -59,21 +59,78 @@ class InteractiveImageDisplay(tk.Frame):
         self.scale_y = 1.0
         self.last_width = -1
         self.last_height = -1
-        
+
+        # Zoom / pan (active in 'view' mode)
+        self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self._pan_start = None
+        self._minimap_photo = None
+
         # Bind mouse events
         self.label.bind("<Button-1>", self._on_mouse_press)
         self.label.bind("<B1-Motion>", self._on_mouse_drag)
         self.label.bind("<ButtonRelease-1>", self._on_mouse_release)
         self.label.bind("<Motion>", self._on_mouse_move)
-        
+        # Zoom (Ctrl+wheel / Ctrl +/-)
+        self.label.bind("<Control-MouseWheel>", self._on_zoom_wheel, add="+")
+        self.label.bind("<Control-plus>", self._on_zoom_key, add="+")
+        self.label.bind("<Control-equal>", self._on_zoom_key, add="+")
+        self.label.bind("<Control-minus>", self._on_zoom_key, add="+")
+        self.label.bind("<Control-KP_Add>", self._on_zoom_key, add="+")
+        self.label.bind("<Control-KP_Subtract>", self._on_zoom_key, add="+")
+        # Middle-drag pan
+        self.label.bind("<Button-2>", self._on_pan_press, add="+")
+        self.label.bind("<B2-Motion>", self._on_pan_move, add="+")
+        self.label.bind("<ButtonRelease-2>", self._on_pan_release, add="+")
+        self.label.bind("<Enter>", lambda e: self.label.focus_set(), add="+")
+
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
-    
+
+    def _on_zoom_wheel(self, event):
+        """Ctrl + mouse wheel zoom"""
+        if self.image is None:
+            return
+        if event.delta > 0:
+            self.zoom = min(8.0, self.zoom * 1.15)
+        else:
+            self.zoom = max(0.2, self.zoom / 1.15)
+        self._update_display()
+
+    def _on_zoom_key(self, event):
+        """Ctrl + +/- zoom"""
+        if self.image is None:
+            return
+        if event.keysym in ("plus", "equal", "KP_Add"):
+            self.zoom = min(8.0, self.zoom * 1.15)
+        else:
+            self.zoom = max(0.2, self.zoom / 1.15)
+        self._update_display()
+
+    def _on_pan_press(self, event):
+        """Middle-button press: start pan"""
+        self._pan_start = (event.x - self.pan_x, event.y - self.pan_y)
+
+    def _on_pan_move(self, event):
+        """Middle-button drag: pan view"""
+        if self._pan_start:
+            self.pan_x = event.x - self._pan_start[0]
+            self.pan_y = event.y - self._pan_start[1]
+            self._update_display()
+
+    def _on_pan_release(self, event):
+        """Middle-button release: end pan"""
+        self._pan_start = None
+
     def set_image(self, image_array: np.ndarray):
         """Set image and initialize masks"""
         if image_array is None:
             return
         self.image = image_array.copy()
+        self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
         h, w = image_array.shape[:2]
         self.accumulated_mask = np.zeros((h, w), dtype=np.uint8)
         self.preview_mask = np.zeros((h, w), dtype=np.uint8)
@@ -297,20 +354,22 @@ class InteractiveImageDisplay(tk.Frame):
             label_width, label_height = 800, 600
         
         img_h, img_w = display_img.shape[:2]
-        
+
         # Calculate scaling to fit image in label while maintaining aspect ratio
-        scale = min((label_width - 10) / img_w, (label_height - 10) / img_h)
-        scale = min(scale, 1.0)  # Don't upscale
-        
-        if scale < 1.0:
-            new_w = int(img_w * scale)
-            new_h = int(img_h * scale)
-            display_img = cv2.resize(display_img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-            
-            # Scale masks too
+        # Allow upscaling when zooming (zoom > 1)
+        fit_scale = min((label_width - 10) / img_w, (label_height - 10) / img_h)
+        if self.zoom <= 1.0:
+            scale = min(fit_scale, 1.0) * self.zoom
+        else:
+            scale = fit_scale * self.zoom
+
+        new_w = max(1, int(img_w * scale))
+        new_h = max(1, int(img_h * scale))
+        if abs(scale - 1.0) > 1e-6:
+            interp = cv2.INTER_LINEAR if scale >= 1.0 else cv2.INTER_AREA
+            display_img = cv2.resize(display_img, (new_w, new_h), interpolation=interp)
             preview_display = cv2.resize(self.preview_mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
             accumulated_display = cv2.resize(self.accumulated_mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-            
             self.scale_x = 1.0 / scale
             self.scale_y = 1.0 / scale
         else:
@@ -318,12 +377,12 @@ class InteractiveImageDisplay(tk.Frame):
             accumulated_display = self.accumulated_mask
             self.scale_x = 1.0
             self.scale_y = 1.0
-        
-        # Calculate actual display position in label
+
+        # Calculate actual display position in label (with pan offset)
         display_w = display_img.shape[1]
         display_h = display_img.shape[0]
-        x0 = max(5, (label_width - display_w) // 2)
-        y0 = max(5, (label_height - display_h) // 2)
+        x0 = int(max(5, (label_width - display_w) // 2) + self.pan_x)
+        y0 = int(max(5, (label_height - display_h) // 2) + self.pan_y)
         self.display_rect = (x0, y0, display_w, display_h)
         
         # Overlay accumulated mask in blue
@@ -342,10 +401,49 @@ class InteractiveImageDisplay(tk.Frame):
                 preview_display_rgb[preview_display > 0] = [0, 255, 0]
                 display_img = cv2.addWeighted(display_img, 0.8, preview_display_rgb, 0.2, 0)
 
-        # Convert to PhotoImage
-        pil_img = Image.fromarray(display_img)
-        self.photo = ImageTk.PhotoImage(pil_img)
+        # Convert to PhotoImage and composite with a minimap (鹰眼) when zoomed in
+        img_rgba = Image.fromarray(display_img).convert("RGBA")
+        out = Image.new("RGBA", (label_width, label_height), (255, 255, 255, 255))
+        out.paste(img_rgba, (x0, y0))
+
+        display_w, display_h = display_img.shape[1], display_img.shape[0]
+        if display_w > label_width or display_h > label_height:
+            self._draw_minimap(out, display_img, label_width, label_height, display_w, display_h)
+
+        self.photo = ImageTk.PhotoImage(out.convert("RGB"))
         self.label.config(image=self.photo)
+
+    def _draw_minimap(self, base_img, display_img, label_width, label_height, display_w, display_h):
+        """Overlay a small overview map (鹰眼) with a highlight of the visible region."""
+        from PIL import ImageDraw
+        margin = 8
+        minimap_w = 120
+        ih, iw = display_img.shape[0], display_img.shape[1]
+        minimap_h = max(1, int(minimap_w * ih / iw))
+        thumb = Image.fromarray(display_img).resize((minimap_w, minimap_h), Image.LANCZOS).convert("RGBA")
+
+        # Visible region fraction of the displayed image
+        fx = min(1.0, label_width / display_w)
+        fy = min(1.0, label_height / display_h)
+        # Image center is at (label_center + pan); visible-center offset in fraction
+        cx = 0.5 - (self.pan_x / display_w)
+        cy = 0.5 - (self.pan_y / display_h)
+        rx = (cx - fx / 2) * minimap_w
+        ry = (cy - fy / 2) * minimap_h
+        rw = fx * minimap_w
+        rh = fy * minimap_h
+        # Clamp
+        rx = max(0, min(rx, minimap_w - 2))
+        ry = max(0, min(ry, minimap_h - 2))
+        rw = max(2, min(rw, minimap_w - rx))
+        rh = max(2, min(rh, minimap_h - ry))
+
+        # Border + translucent highlight
+        draw = ImageDraw.Draw(thumb, "RGBA")
+        draw.rectangle([0, 0, minimap_w - 1, minimap_h - 1], outline=(0, 0, 0, 255))
+        draw.rectangle([rx, ry, rx + rw, ry + rh], fill=(255, 255, 0, 90), outline=(255, 0, 0, 255), width=2)
+
+        base_img.paste(thumb, (margin, margin), thumb)
 
     def _draw_crop_overlay(self, display_img, preview_display):
         """Draw crop overlay: dim outside, yellow border inside"""
@@ -948,7 +1046,6 @@ class MainWindow(tk.Tk):
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
         
         # Create tabs
-        self._create_image_tab()
         self._create_preprocess_tab()
         self._create_pattern_tab()
         self._create_export_tab()
@@ -959,37 +1056,17 @@ class MainWindow(tk.Tk):
                              anchor="w", bg="lightgray")
         status_bar.pack(side="bottom", fill="x")
     
-    def _create_image_tab(self):
-        """Create image loading tab (load + display only)"""
-        frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="图像加载")
-
-        # Left panel - narrow control panel
-        left_panel = ttk.Frame(frame, width=120)
-        left_panel.pack(side="left", fill="y", padx=2, pady=5)
-        left_panel.pack_propagate(False)
-
-        ttk.Label(left_panel, text="图像操作:", font=("Arial", 10, "bold")).pack(fill="x", pady=5)
-        ttk.Button(left_panel, text="加载图像",
-                  command=self._load_image).pack(fill="x", pady=1)
-
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-        ttk.Label(left_panel, text="提示: 亮度/对比度、\n缩放、裁剪、模糊等\n功能已移至「预处理」\n标签页",
-                  font=("Arial", 8), foreground="gray").pack(fill="x", pady=10)
-
-        # Right panel - image display
-        self.image_display = ImageDisplay(frame, fill_mode=False, enable_zoom=True, bg="white")
-        self.image_display.pack(side="right", fill="both", expand=True, padx=2, pady=5)
-    
     def _create_preprocess_tab(self):
         """Create preprocessing tab with sub-tabs: 基本调整, 分割, 裁剪"""
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="预处理")
 
+        # Resizable paned layout: left controls | right display
+        paned = ttk.PanedWindow(frame, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+
         # Left panel with sub-notebook
-        left_panel = ttk.Frame(frame, width=140)
-        left_panel.pack(side="left", fill="y", padx=2, pady=5)
-        left_panel.pack_propagate(False)
+        left_panel = ttk.Frame(paned, width=180)
 
         # Create sub-notebook for left panel
         self.preprocess_notebook = ttk.Notebook(left_panel)
@@ -1001,12 +1078,18 @@ class MainWindow(tk.Tk):
         self._create_preprocess_crop_tab()
 
         # Right panel - interactive display with dropdown menu
-        right_frame = ttk.Frame(frame)
-        right_frame.pack(side="right", fill="both", expand=True, padx=2, pady=5)
+        right_frame = ttk.Frame(paned)
+
+        # Add both panes (left resizable, right expands)
+        paned.add(left_panel, weight=0)
+        paned.add(right_frame, weight=1)
 
         # Top panel with dropdown menu
         top_panel = ttk.Frame(right_frame)
         top_panel.pack(fill="x", padx=2, pady=2)
+
+        ttk.Button(top_panel, text="加载图像",
+                  command=self._load_image).pack(side="left", padx=5)
 
         ttk.Label(top_panel, text="显示:").pack(side="left", padx=5)
         self.seg_display_var = tk.StringVar(value="原图")
@@ -1248,11 +1331,13 @@ class MainWindow(tk.Tk):
         """Create pattern generation tab"""
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="图纸生成")
-        
+
+        # Resizable paned layout
+        paned = ttk.PanedWindow(frame, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+
         # Left panel
-        left_panel = ttk.Frame(frame, width=120)
-        left_panel.pack(side="left", fill="y", padx=2, pady=5)
-        left_panel.pack_propagate(False)
+        left_panel = ttk.Frame(paned, width=180)
         
         ttk.Label(left_panel, text="拼豆数量:").pack()
         ttk.Label(left_panel, text="(高, 宽)", font=("Arial", 8)).pack()
@@ -1327,8 +1412,9 @@ class MainWindow(tk.Tk):
                                        length=70, showvalue=False,
                                        command=lambda v: self.salience_val_label.config(text=f"{float(v):.1f}"))
         self.salience_scale.pack(side="left", padx=2)
-        self.salience_val_label = ttk.Label(frame_sal, text="1.0", width=4)
-        self.salience_val_label.pack(side="left")
+        self.salience_val_label = tk.Label(frame_sal, text="1.0", width=4,
+                                           font=("Arial", 9, "bold"), fg="blue")
+        self.salience_val_label.pack(side="left", padx=2)
         attach_tooltip(self.salience_scale,
             "限制颜色时保留稀有细节色的强度。\n"
             "值越大,小面积但突出的颜色(如眼睛/嘴)越容易被保留。\n"
@@ -1367,17 +1453,22 @@ class MainWindow(tk.Tk):
         self.bom_list.pack(fill="both", expand=True, pady=2)
         
         # Right panel
-        self.pattern_display = ImageDisplay(frame, fill_mode=True, enable_zoom=True, bg="white")
-        self.pattern_display.pack(side="right", fill="both", expand=True, padx=2, pady=5)
+        self.pattern_display = ImageDisplay(paned, fill_mode=True, enable_zoom=True, bg="white")
+
+        # Add panes
+        paned.add(left_panel, weight=0)
+        paned.add(self.pattern_display, weight=1)
     
     def _create_export_tab(self):
         """Create export tab"""
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="导出")
 
-        left_panel = ttk.Frame(frame, width=120)
-        left_panel.pack(side="left", fill="y", padx=2, pady=5)
-        left_panel.pack_propagate(False)
+        # Resizable paned layout
+        paned = ttk.PanedWindow(frame, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+
+        left_panel = ttk.Frame(paned, width=180)
 
         ttk.Label(left_panel, text="文件名:").pack()
         self.export_filename = tk.Entry(left_panel)
@@ -1442,6 +1533,11 @@ class MainWindow(tk.Tk):
         self.output_path_label = tk.Label(left_panel, text=self.exporter.output_dir,
                                          wraplength=110, fg="blue", font=("Arial", 8))
         self.output_path_label.pack(fill="x", pady=3)
+
+        # Right panel - export preview / info area
+        right_frame = ttk.Frame(paned)
+        paned.add(left_panel, weight=0)
+        paned.add(right_frame, weight=1)
     
     # ===== Event handlers =====
     
@@ -1465,9 +1561,7 @@ class MainWindow(tk.Tk):
                 self.current_image = image.copy()
                 self.original_loaded_image = image.copy()  # Save for brightness/contrast reset
                 
-                # Display original
-                self.image_display.set_image(image)
-                # Refresh preprocessing display immediately
+                # Display in preprocessing interactive display (merged image-load view)
                 if hasattr(self, 'seg_display'):
                     self.seg_display.set_image(image)
 
@@ -1522,7 +1616,6 @@ class MainWindow(tk.Tk):
             image = self.image_processor.original_image.copy()
             self.image_processor.current_image = image.copy()
             self.current_image = image.copy()
-            self.image_display.set_image(image)
             if hasattr(self, 'seg_display'):
                 self.seg_display.set_image(image)
             self.status_var.set("已重置为原图")
@@ -1552,7 +1645,6 @@ class MainWindow(tk.Tk):
             adjusted_image = np.clip(image, 0, 255).astype(np.uint8)
             self.image_processor.current_image = adjusted_image
             self.current_image = adjusted_image
-            self.image_display.set_image(adjusted_image)
             # Also update preprocessing display
             if hasattr(self, 'seg_display'):
                 self.seg_display.set_image(adjusted_image)
@@ -1957,7 +2049,6 @@ class MainWindow(tk.Tk):
                 raise ValueError("尺寸必须大于0")
             self.image_processor.resize_image(target_w, target_h, interpolation='bilinear')
             self.current_image = self.image_processor.current_image.copy()
-            self.image_display.set_image(self.current_image)
             if hasattr(self, 'seg_display'):
                 self.seg_display.set_image(self.current_image)
             h, w = self.current_image.shape[:2]
@@ -1991,7 +2082,6 @@ class MainWindow(tk.Tk):
                 self.blur_kernel.insert(0, str(kernel))
             self.image_processor.apply_gaussian_blur(kernel)
             self.current_image = self.image_processor.current_image.copy()
-            self.image_display.set_image(self.current_image)
             if hasattr(self, 'seg_display'):
                 self.seg_display.set_image(self.current_image)
             self.status_var.set(f"高斯模糊已应用 (核大小: {kernel}x{kernel})")
@@ -2022,7 +2112,6 @@ class MainWindow(tk.Tk):
                 self.seg_display.set_mode('view')
                 self.seg_display.reset_selection()
             # Update all displays
-            self.image_display.set_image(self.current_image)
             if hasattr(self, 'pattern_display'):
                 self.pattern_display.image = None
                 self.pattern_display.photo = None
@@ -2055,7 +2144,6 @@ class MainWindow(tk.Tk):
                 raise ValueError("裁剪区域过小")
             self.image_processor.crop_region(x1, y1, x2, y2)
             self.current_image = self.image_processor.current_image.copy()
-            self.image_display.set_image(self.current_image)
             self.seg_display.set_image(self.current_image)
             self.seg_display.set_mode('view')
             self.seg_display.crop_rect = None
