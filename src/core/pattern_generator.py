@@ -19,6 +19,7 @@ class PatternConfig:
     allow_color_mixing: bool = False  # Whether to mix colors for better results
     salience_strength: float = 1.0  # Detail-preservation weight (0-2)
     dither: bool = False  # Floyd-Steinberg error diffusion
+    dither_strength: float = 1.0  # Error-diffusion strength (0-1)
 
 
 class PatternGenerator:
@@ -51,9 +52,11 @@ class PatternGenerator:
         if len(image.shape) != 3 or image.shape[2] != 3:
             raise ValueError("请提供RGB格式的图像")
 
-        # Resize to bead dimensions
+        # Resize to bead dimensions. INTER_AREA (box average) downscales with
+        # far less moiré/transition-color bleeding than INTER_LINEAR, which is
+        # what produced the grid-like artifacts at high color limits.
         resized = cv2.resize(image, (config.width_beads, config.height_beads),
-                            interpolation=cv2.INTER_LINEAR)
+                            interpolation=cv2.INTER_AREA)
 
         # Quantize via ColorManager (salience-weighted when max_colors set)
         if color_manager is None:
@@ -66,6 +69,7 @@ class PatternGenerator:
             color_limit=config.max_colors,
             salience_strength=config.salience_strength,
             dither=config.dither,
+            dither_strength=config.dither_strength,
         )
 
         # Create pattern with color codes

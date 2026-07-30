@@ -89,6 +89,9 @@ class InteractiveImageDisplay(tk.Frame):
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
 
+        # Don't let the pasted image resize this frame (keeps window stable).
+        self.pack_propagate(False)
+
     def _on_zoom_wheel(self, event):
         """Ctrl + mouse wheel zoom"""
         if self.image is None:
@@ -362,7 +365,10 @@ class InteractiveImageDisplay(tk.Frame):
         label_height = self.label.winfo_height()
         
         if label_width < 50 or label_height < 50:
-            label_width, label_height = 800, 600
+            # Label not laid out yet; defer to avoid pasting an oversized image
+            # that would stretch the window.
+            self.after(30, self._update_display)
+            return
         
         img_h, img_w = display_img.shape[:2]
 
@@ -530,7 +536,10 @@ class IterativeGrabCutDisplay(tk.Frame):
         
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
-    
+
+        # Don't let the pasted image resize this frame (keeps window stable).
+        self.pack_propagate(False)
+
     def set_image(self, image_array: np.ndarray):
         """Set source image and reset"""
         if image_array is None:
@@ -744,9 +753,12 @@ class IterativeGrabCutDisplay(tk.Frame):
         self.label.update_idletasks()
         label_width = self.label.winfo_width()
         label_height = self.label.winfo_height()
-        
+
         if label_width < 50 or label_height < 50:
-            label_width, label_height = 800, 600
+            # Label not laid out yet; don't paste an oversized image that would
+            # stretch the window. Retry once the container has a real size.
+            self.after(30, self._update_display)
+            return
         
         img_h, img_w = display_img.shape[:2]
         scale = min((label_width - 10) / img_w, (label_height - 10) / img_h)
@@ -856,6 +868,9 @@ class ImageDisplay(tk.Frame):
         # Bind Configure event to handle resize
         self.bind("<Configure>", self._on_frame_configure)
 
+        # Don't let the pasted image resize this frame (keeps window stable).
+        self.pack_propagate(False)
+
         if self.enable_zoom:
             for w in (self, self.label):
                 w.bind("<Control-MouseWheel>", self._on_zoom_wheel, add="+")
@@ -927,11 +942,11 @@ class ImageDisplay(tk.Frame):
         max_width = self.label.winfo_width() - 10
         max_height = self.label.winfo_height() - 10
 
-        # Fallback to default if not yet rendered
-        if max_width < 50:
-            max_width = 800
-        if max_height < 50:
-            max_height = 600
+        # Not laid out yet: defer instead of pasting an oversized image that
+        # would stretch the window via geometry propagation.
+        if max_width < 50 or max_height < 50:
+            self.after(30, self._update_display)
+            return
 
         h, w = display_img.shape[:2]
 
@@ -1068,6 +1083,9 @@ class MainWindow(tk.Tk):
         super().__init__()
         self.title("拼豆图纸设计器 - Perler Beads Designer")
         self.geometry("1300x800")
+        # Lock a sensible minimum so loading an image can never shrink the
+        # window, and prevent geometry propagation from stretching it.
+        self.minsize(1000, 650)
         
         # Get colors file path
         colors_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
@@ -1160,6 +1178,9 @@ class MainWindow(tk.Tk):
         # Display area
         display_frame = ttk.Frame(right_frame)
         display_frame.pack(fill="both", expand=True, padx=2, pady=2)
+        # Don't let the inner image label resize this container (prevents the
+        # whole window from being stretched when an image is pasted).
+        display_frame.pack_propagate(False)
         self.seg_display_label = ttk.Label(display_frame, text="原图")
         self.seg_display_label.pack()
 
@@ -1507,13 +1528,31 @@ class MainWindow(tk.Tk):
             "仅在设置颜色限制时生效,默认1.0。")
 
         # Dithering checkbox
-        self.dither_var = tk.BooleanVar(value=False)
+        self.dither_var = tk.BooleanVar(value=True)
         dither_cb = ttk.Checkbutton(left_panel, text="抖动(Floyd-Steinberg)",
                        variable=self.dither_var)
         dither_cb.pack(fill="x", pady=1)
         attach_tooltip(dither_cb,
-            "通过误差扩散在空间上混合颜色,保留渐变/柔边观感。\n"
-            "会让拼装时换色更频繁,网格图显'花'。默认关闭。")
+            "在Lab空间做误差扩散,感知上混合颜色、保留渐变/柔边观感。\n"
+            "强度过高会在规则网格上产生'洒点'。默认开启。")
+
+        # Dither strength slider
+        frame_dith = ttk.Frame(left_panel)
+        frame_dith.pack(fill="x", pady=2)
+        ttk.Label(frame_dith, text="抖动强度:", width=8).pack(side="left")
+        self.dither_strength_var = tk.DoubleVar(value=1.0)
+        self.dither_strength_scale = tk.Scale(frame_dith, from_=0.0, to=1.0, resolution=0.05,
+                                       orient="horizontal", variable=self.dither_strength_var,
+                                       length=70, showvalue=False,
+                                       command=lambda v: self.dither_strength_val_label.config(text=f"{float(v):.2f}"))
+        self.dither_strength_scale.pack(side="left", padx=2)
+        self.dither_strength_val_label = tk.Label(frame_dith, text="1.00", width=4,
+                                           font=("Arial", 9, "bold"), fg="blue")
+        self.dither_strength_val_label.pack(side="left", padx=2)
+        attach_tooltip(self.dither_strength_scale,
+            "误差扩散的强度(0-1)。\n"
+            "1.0=完整Floyd-Steinberg;降低可减少网格'洒点',\n"
+            "同时保留部分平滑效果。仅在开启抖动时生效。")
         
         # Use mask processed result
         self.use_mask_result_var = tk.BooleanVar(value=False)
@@ -2307,13 +2346,15 @@ class MainWindow(tk.Tk):
 
                 salience = float(self.salience_var.get()) if hasattr(self, 'salience_var') else 1.0
                 dither = bool(self.dither_var.get()) if hasattr(self, 'dither_var') else False
+                dither_strength = float(self.dither_strength_var.get()) if hasattr(self, 'dither_strength_var') else 1.0
 
                 config = PatternConfig(
                     width_beads=w_val,
                     height_beads=h_val,
                     max_colors=color_limit,
                     salience_strength=salience,
-                    dither=dither
+                    dither=dither,
+                    dither_strength=dither_strength
                 )
 
                 pattern, bom = self.pattern_generator.generate_pattern(

@@ -13,11 +13,14 @@ import cv2
 class Color:
     """Represents a single perler bead color"""
 
-    def __init__(self, code: str, name: str, hex_value: str):
+    def __init__(self, code: str, name: str, hex_value: str, lab: Tuple[float, float, float] = None):
         self.code = code
         self.name = name
         self.hex = hex_value
         self.rgb = self._hex_to_rgb(hex_value)
+        # Optional measured CIE LAB (L 0-100, a/b -128~127). When provided it
+        # is used instead of computing from hex, improving match accuracy.
+        self.lab = tuple(lab) if lab is not None else None
 
     @staticmethod
     def _hex_to_rgb(hex_value: str) -> Tuple[int, int, int]:
@@ -185,10 +188,15 @@ class ColorPalette:
         """Precompute palette RGB and LAB matrices for vectorized matching"""
         if self.colors:
             self._palette_rgb = np.array([c.rgb for c in self.colors], dtype=np.uint8)
-            lab = cv2.cvtColor(self._palette_rgb.reshape(1, -1, 3), cv2.COLOR_RGB2Lab).reshape(-1, 3).astype(np.float64)
-            lab[:, 0] = lab[:, 0] * 100.0 / 255.0
-            lab[:, 1] = lab[:, 1] - 128.0
-            lab[:, 2] = lab[:, 2] - 128.0
+            computed = cv2.cvtColor(self._palette_rgb.reshape(1, -1, 3), cv2.COLOR_RGB2Lab).reshape(-1, 3).astype(np.float64)
+            computed[:, 0] = computed[:, 0] * 100.0 / 255.0
+            computed[:, 1] = computed[:, 1] - 128.0
+            computed[:, 2] = computed[:, 2] - 128.0
+            # Prefer a measured LAB value when a color provides one.
+            lab = computed.copy()
+            for i, c in enumerate(self.colors):
+                if c.lab is not None:
+                    lab[i] = np.asarray(c.lab, dtype=np.float64)
             self._palette_lab = lab
         else:
             self._palette_rgb = np.zeros((0, 3), dtype=np.uint8)
@@ -273,19 +281,18 @@ class ColorPalette:
 
     def to_dict(self) -> List[Dict]:
         """Convert palette to list of dictionaries"""
-        return [
-            {
-                'code': c.code,
-                'name': c.name,
-                'hex': c.hex
-            }
-            for c in self.colors
-        ]
+        out = []
+        for c in self.colors:
+            d = {'code': c.code, 'name': c.name, 'hex': c.hex}
+            if c.lab is not None:
+                d['lab'] = [round(float(v), 3) for v in c.lab]
+            out.append(d)
+        return out
 
     @staticmethod
     def from_dict(data: List[Dict]) -> 'ColorPalette':
-        """Create palette from list of dictionaries"""
-        colors = [Color(d['code'], d['name'], d['hex']) for d in data]
+        """Create palette from list of dictionaries (optional 'lab' = measured LAB)"""
+        colors = [Color(d['code'], d['name'], d['hex'], lab=d.get('lab')) for d in data]
         return ColorPalette(colors)
 
     def save_to_json(self, filepath: str):
@@ -379,7 +386,7 @@ class ColorManager:
 
     def quantize_image(self, image_array: np.ndarray, color_limit: int = None,
                        salience_strength: float = 1.0, dither: bool = False,
-                       metric: str = None) -> Tuple[np.ndarray, Dict]:
+                       metric: str = None, dither_strength: float = 1.0) -> Tuple[np.ndarray, Dict]:
         """Quantize image to palette colors.
 
         With color_limit set, uses salience-weighted K-means in LAB space so that
@@ -403,13 +410,18 @@ class ColorManager:
 
         palette_rgb = self.palette._palette_rgb
 
-        if not color_limit or color_limit <= 0:
+        unique_count = np.unique(pixels, axis=0).shape[0]
+
+        if not color_limit or color_limit <= 0 or int(color_limit) >= unique_count:
+            # Unlimited, OR the requested limit meets/exceeds the number of
+            # distinct colors actually present. In the latter case K-means would
+            # degenerate to one-cluster-per-color and, with forced de-dup, invent
+            # spurious extra bead colors. Just map every pixel to its nearest
+            # bead color directly (uses all real colors, no extras).
             idx = self.palette.get_closest_indices_batch(pixels, metric)
             output = palette_rgb[idx]
             if dither:
-                output = self._floyd_steinberg(img, palette_rgb, metric)
-                idx = self.palette.get_closest_indices_batch(output.reshape(-1, 3), metric)
-                output = palette_rgb[idx]
+                output = self._floyd_steinberg(img, palette_rgb, metric, dither_strength)
             usage = self._usage_from_indices(idx)
             return output.reshape(h, w, 3).astype(np.uint8), usage
 
@@ -418,9 +430,7 @@ class ColorManager:
         Z = self.palette._rgb_batch_to_lab(pixels)          # (N,3) LAB float
         weights = self._salience_weights(img, salience_strength)  # (N,)
 
-        # Limit K to number of unique colors present
-        unique_count = np.unique(pixels, axis=0).shape[0]
-        K = max(1, min(K, unique_count))
+        K = max(1, K)
 
         centers = self._weighted_kmeans(Z, weights, K, iters=20, seed=42)  # (K,3) LAB
 
@@ -437,7 +447,7 @@ class ColorManager:
         output = palette_rgb[mapped_idx]
 
         if dither:
-            output = self._floyd_steinberg_to_set(img, bead_rgb, labels, Z, metric)
+            output = self._floyd_steinberg_to_set(img, bead_rgb, labels, Z, metric, dither_strength)
 
         usage = self._usage_from_indices(mapped_idx)
         return output.reshape(h, w, 3).astype(np.uint8), usage
@@ -490,11 +500,16 @@ class ColorManager:
         for _ in range(iters):
             dist = ((Z[:, None, :] - C[None]) ** 2).sum(-1)
             labels = dist.argmin(1)
+            min_d = dist[np.arange(len(Z)), labels]
             for k in range(K):
                 mask = labels == k
                 if mask.any():
                     wk = w[mask][:, None]
                     C[k] = (Z[mask] * wk).sum(0) / (wk.sum() + 1e-9)
+                else:
+                    # Empty cluster: reseed at the worst-served pixel so the
+                    # center is not frozen as a stale "orphan" centroid.
+                    C[k] = Z[int(np.argmax(min_d))]
         return C
 
     @staticmethod
@@ -518,9 +533,13 @@ class ColorManager:
         seen = set()
         for i, ind in enumerate(idx):
             if ind in seen:
-                # find next nearest distinct palette color for this centroid
+                # find next nearest distinct palette color for this centroid,
+                # using the SAME metric as the main mapping for consistency.
                 lab = self.palette._rgb_batch_to_lab(centers_rgb[i][None, :])
-                d = ((lab[:, None, :] - self.palette._palette_lab[None, :, :]) ** 2).sum(-1)[0]
+                if metric == "ciede2000":
+                    d = _ciede2000(lab, self.palette._palette_lab)[0]
+                else:
+                    d = ((lab[:, None, :] - self.palette._palette_lab[None, :, :]) ** 2).sum(-1)[0]
                 order = np.argsort(d)
                 for cand in order:
                     if cand not in seen:
@@ -529,17 +548,33 @@ class ColorManager:
             seen.add(idx[i])
         return idx
 
-    def _floyd_steinberg(self, img: np.ndarray, palette_rgb: np.ndarray, metric: str) -> np.ndarray:
-        """Error diffusion toward full palette. Returns float RGB image."""
+    def _floyd_steinberg(self, img: np.ndarray, palette_rgb: np.ndarray,
+                         metric: str, strength: float = 1.0) -> np.ndarray:
+        """Error diffusion toward the full palette, computed in LAB space.
+
+        Working in LAB (rather than RGB) makes the diffused error perceptually
+        meaningful, avoiding the hue shifts RGB diffusion causes in dark and
+        highly-saturated regions. `strength` (0-1) scales how much error is
+        propagated, so partial diffusion softens banding without speckle.
+
+        Returns the quantized image in palette colors (uint8 RGB).
+        """
         h, w = img.shape[:2]
-        work = img.astype(np.float64).copy()
+        s = float(np.clip(strength, 0.0, 1.0))
+        # Pixel -> LAB working buffer; palette LAB is precomputed.
+        work = self.palette._rgb_batch_to_lab(img.reshape(-1, 3)).reshape(h, w, 3)
+        pal_lab = self.palette._palette_lab
+        out = np.zeros((h * w,), dtype=np.int64)
         for y in range(h):
             for x in range(w):
                 old = work[y, x]
-                idx = self.palette.get_closest_indices_batch(np.clip(old, 0, 255).astype(np.uint8)[None, :], metric)[0]
-                new = palette_rgb[idx].astype(np.float64)
-                work[y, x] = new
-                err = old - new
+                if metric == "ciede2000":
+                    d = _ciede2000(old[None, :], pal_lab)[0]
+                else:
+                    d = ((pal_lab - old) ** 2).sum(-1)
+                k = int(d.argmin())
+                out[y * w + x] = k
+                err = (old - pal_lab[k]) * s
                 if x + 1 < w:
                     work[y, x + 1] += err * 7 / 16
                 if y + 1 < h:
@@ -548,12 +583,14 @@ class ColorManager:
                     work[y + 1, x] += err * 5 / 16
                     if x + 1 < w:
                         work[y + 1, x + 1] += err * 1 / 16
-        return np.clip(work, 0, 255).astype(np.uint8)
+        return palette_rgb[out].reshape(h, w, 3).astype(np.uint8)
 
     def _floyd_steinberg_to_set(self, img: np.ndarray, bead_rgb: np.ndarray,
-                                labels: np.ndarray, Z: np.ndarray, metric: str) -> np.ndarray:
+                                labels: np.ndarray, Z: np.ndarray, metric: str,
+                                strength: float = 1.0) -> np.ndarray:
         """Error diffusion constrained to the selected bead color set (LAB matching)."""
         h, w = img.shape[:2]
+        s = float(np.clip(strength, 0.0, 1.0))
         bead_lab = self.palette._rgb_batch_to_lab(bead_rgb)
         work_lab = Z.reshape(h, w, 3).astype(np.float64).copy()
         out = np.zeros((h * w,), dtype=np.int64)
@@ -564,7 +601,7 @@ class ColorManager:
                 k = int(d.argmin())
                 out[y * w + x] = k
                 new = bead_lab[k]
-                err = old - new
+                err = (old - new) * s
                 if x + 1 < w:
                     work_lab[y, x + 1] += err * 7 / 16
                 if y + 1 < h:
