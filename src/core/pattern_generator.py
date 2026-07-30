@@ -371,6 +371,239 @@ class PatternGenerator:
         
         return output
     
+    def render_standard_chart(self, bead_pixel_size: int = 20, major_every: int = 5,
+                              palette=None) -> np.ndarray:
+        """
+        Render a standard perler-bead chart (the exported/printed form).
+
+        Layout:
+          - bead cells filled with their color + per-cell color code
+          - minor grid line every cell (light gray)
+          - major grid line every `major_every` cells (bold dark) + coordinate
+            tick number on the left + top (5, 10, 15, ...)
+          - bottom usage bar: for each used color a swatch + code + bead count,
+            sorted by count descending, wrapping to multiple rows.
+
+        Args:
+            bead_pixel_size: Size of each bead cell in pixels
+            major_every: Draw a major grid line / coordinate tick every N cells
+            palette: ColorPalette for resolving swatch RGB/name (falls back to
+                the pattern pixel color when a code cannot be resolved)
+
+        Returns:
+            Rendered standard chart as an RGB ndarray
+        """
+        if self.color_map is None or self.pattern is None:
+            raise ValueError("未生成图案")
+
+        from PIL import Image, ImageDraw, ImageFont
+        import os
+
+        h, w = self.color_map.shape[:2]
+        cell = bead_pixel_size
+
+        # --- font (shared SimHei with export; fallback to default bitmap) ---
+        def _load_font(size):
+            for path in ("C:/Windows/Fonts/SimHei.ttf",
+                         "C:/Windows/Fonts/simsun.ttc",
+                         "C:/Windows/Fonts/msyh.ttc"):
+                if os.path.exists(path):
+                    try:
+                        return ImageFont.truetype(path, size)
+                    except Exception:
+                        pass
+            try:
+                return ImageFont.load_default()
+            except Exception:
+                return None
+
+        # --- geometry ---
+        left_margin = cell * 2 + 6   # room for 2-3 digit tick numbers on the left
+        top_margin = cell + 10       # room for tick numbers on the top
+        grid_w = w * cell
+        grid_h = h * cell
+
+        # usage-bar metrics
+        sw = cell                      # swatch size
+        bar_font_size = max(10, int(cell * 0.7))
+        bar_pad_x = cell // 2
+        bar_row_h = sw + 8
+
+        tick_font = _load_font(max(10, int(cell * 0.8)))
+        bar_font = _load_font(bar_font_size)
+
+        # measure usage-bar width requirement to decide row wrapping
+        usage = self._sorted_usage(palette)
+
+        # build swatch color lookup
+        code_to_rgb = self._code_rgb_lookup(palette)
+
+        # probe text widths for wrapping
+        probe = Image.new("RGB", (10, 10))
+        probe_draw = ImageDraw.Draw(probe)
+
+        def text_width(s, font):
+            if font is None:
+                return len(s) * 8
+            try:
+                return font.getlength(s)
+            except Exception:
+                bbox = probe_draw.textbbox((0, 0), s, font=font)
+                return bbox[2] - bbox[0]
+
+        # layout the usage bar rows within grid width (+ margins)
+        bar_area_width = grid_w + left_margin + 6
+        rows = []
+        cur = []
+        cur_w = 0
+        for code, count in usage:
+            label = f"{code} {count}"
+            item_w = sw + 6 + text_width(label, bar_font) + bar_pad_x * 2
+            if cur and cur_w + item_w > bar_area_width:
+                rows.append(cur)
+                cur = []
+                cur_w = 0
+            cur.append((code, count, item_w))
+            cur_w += item_w
+        if cur:
+            rows.append(cur)
+
+        bar_top = top_margin + grid_h + 14
+        bar_height = len(rows) * bar_row_h + (10 if rows else 0)
+
+        total_w = left_margin + grid_w + 8
+        total_h = bar_top + bar_height + 8
+
+        canvas = Image.new("RGB", (total_w, total_h), (255, 255, 255))
+        draw = ImageDraw.Draw(canvas)
+
+        # --- bead cells ---
+        for y in range(h):
+            for x in range(w):
+                code = str(self.color_map[y, x])
+                rgb = code_to_rgb.get(code, tuple(int(c) for c in self.pattern[y, x][:3]))
+                x1 = left_margin + x * cell
+                y1 = top_margin + y * cell
+                draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
+
+                # per-cell code (adaptive, contrast-colored)
+                lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                txt_color = (0, 0, 0) if lum > 128 else (255, 255, 255)
+                cf = _load_font(max(7, int(cell * 0.45)))
+                if cf is not None:
+                    try:
+                        tb = draw.textbbox((0, 0), code, font=cf)
+                        tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                        draw.text((x1 + (cell - tw) / 2 - tb[0],
+                                   y1 + (cell - th) / 2 - tb[1]),
+                                  code, fill=txt_color, font=cf)
+                    except Exception:
+                        pass
+
+        # --- grid lines (minor light, major bold) ---
+        minor_color = (200, 200, 200)
+        major_color = (90, 90, 90)
+        minor_w = 1
+        major_w = 3 if cell >= 16 else 2
+
+        for xi in range(w + 1):
+            x = left_margin + xi * cell
+            major = (xi % major_every == 0)
+            draw.line([x, top_margin, x, top_margin + grid_h],
+                      fill=major_color if major else minor_color,
+                      width=major_w if major else minor_w)
+        for yi in range(h + 1):
+            y = top_margin + yi * cell
+            major = (yi % major_every == 0)
+            draw.line([left_margin, y, left_margin + grid_w, y],
+                      fill=major_color if major else minor_color,
+                      width=major_w if major else minor_w)
+
+        # --- coordinate ticks: left + top, every major_every ---
+        if tick_font is not None:
+            for xi in range(major_every, w + 1, major_every):
+                x = left_margin + xi * cell
+                s = str(xi)
+                try:
+                    tb = draw.textbbox((0, 0), s, font=tick_font)
+                    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                    draw.text((x - tw / 2 - tb[0], top_margin - th - 4 - tb[1]),
+                              s, fill=(40, 40, 40), font=tick_font)
+                except Exception:
+                    pass
+            for yi in range(major_every, h + 1, major_every):
+                y = top_margin + yi * cell
+                s = str(yi)
+                try:
+                    tb = draw.textbbox((0, 0), s, font=tick_font)
+                    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                    draw.text((left_margin - tw - 8 - tb[0], y - th / 2 - tb[1]),
+                              s, fill=(40, 40, 40), font=tick_font)
+                except Exception:
+                    pass
+
+        # --- bottom usage bar ---
+        if rows:
+            yy = bar_top + 5
+            # section label
+            if bar_font is not None:
+                try:
+                    draw.text((left_margin, bar_top - 2), "色卡用量:",
+                              fill=(30, 30, 30), font=bar_font)
+                    yy = bar_top + bar_row_h
+                except Exception:
+                    yy = bar_top
+            for row in rows:
+                xx = left_margin
+                for code, count, item_w in row:
+                    rgb = code_to_rgb.get(code, (128, 128, 128))
+                    # swatch
+                    draw.rectangle([xx, yy, xx + sw, yy + sw],
+                                   fill=rgb, outline=(60, 60, 60), width=1)
+                    # label
+                    label = f"{code} {count}"
+                    if bar_font is not None:
+                        try:
+                            tb = draw.textbbox((0, 0), label, font=bar_font)
+                            th = tb[3] - tb[1]
+                            draw.text((xx + sw + 6, yy + (sw - th) / 2 - tb[1]),
+                                      label, fill=(20, 20, 20), font=bar_font)
+                        except Exception:
+                            pass
+                    xx += item_w
+                yy += bar_row_h
+
+        return np.array(canvas, dtype=np.uint8)
+
+    def _sorted_usage(self, palette=None) -> List[Tuple[str, int]]:
+        """Return [(code, count)] sorted by count desc. Uses bom if present,
+        else counts the color_map directly."""
+        if self.bom is not None and 'colors' in self.bom:
+            items = [(code, info['count']) for code, info in self.bom['colors'].items()]
+        else:
+            counts = {}
+            for row in self.color_map:
+                for c in row:
+                    counts[str(c)] = counts.get(str(c), 0) + 1
+            items = list(counts.items())
+        items.sort(key=lambda kv: (-kv[1], kv[0]))
+        return items
+
+    def _code_rgb_lookup(self, palette=None) -> Dict[str, Tuple[int, int, int]]:
+        """Map color code -> RGB tuple for swatch fills."""
+        lookup = {}
+        if palette is not None and getattr(palette, 'colors', None):
+            for c in palette.colors:
+                lookup[str(c.code)] = tuple(int(v) for v in c.rgb[:3])
+        # fill any missing codes from the pattern itself
+        if self.pattern is not None and self.color_map is not None:
+            for y in range(self.color_map.shape[0]):
+                for x in range(self.color_map.shape[1]):
+                    code = str(self.color_map[y, x])
+                    if code not in lookup:
+                        lookup[code] = tuple(int(v) for v in self.pattern[y, x][:3])
+        return lookup
+
     @staticmethod
     def _is_light_color(rgb: np.ndarray) -> bool:
         """Determine if color is light or dark"""

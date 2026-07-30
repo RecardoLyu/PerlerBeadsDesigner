@@ -207,6 +207,38 @@ class PatternExporter:
         
         return filepath
     
+    def export_png_standard(self, chart_image: np.ndarray, filename: str,
+                            scale: int = 1) -> str:
+        """
+        Export a pre-rendered standard chart image as PNG.
+
+        Args:
+            chart_image: Image produced by PatternGenerator.render_standard_chart (RGB)
+            filename: Output filename (without extension)
+            scale: Scale factor
+
+        Returns:
+            Path to saved file
+        """
+        if chart_image is None:
+            raise ValueError("图纸图像不能为空")
+
+        out = chart_image
+        if scale > 1:
+            h, w = out.shape[:2]
+            out = cv2.resize(out, (w * scale, h * scale),
+                             interpolation=cv2.INTER_NEAREST)
+
+        out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
+        filepath = os.path.join(self.output_dir, f"{filename}.png")
+        try:
+            is_success, buffer = cv2.imencode('.png', out_bgr)
+            with open(filepath, 'wb') as f:
+                f.write(buffer)
+        except Exception:
+            cv2.imwrite(filepath, out_bgr)
+        return filepath
+
     def export_pdf(self, pattern_image: np.ndarray, bom: Dict,
                    filename: str, page_size_name: str = 'A4', title: str = None) -> str:
         """
@@ -261,11 +293,17 @@ class PatternExporter:
             elements.append(Paragraph(title, title_style))
             elements.append(Spacer(1, 2*mm))
 
-            # Pattern image - fill available width
-            img_width = page_w - 30*mm
+            # Standard chart image - fit within available page area (proportional)
+            avail_w = page_w - 30*mm
+            avail_h = page_h - 70*mm   # leave room for title / BOM / footer
             try:
-                img = RLImage(temp_pattern_path, width=img_width, height=img_width,
-                             keepProportions=True)
+                img_h, img_w_px = pattern_image.shape[:2]
+                # scale to fit both width and height, keep aspect
+                scale = min(avail_w / img_w_px, avail_h / img_h)
+                disp_w = img_w_px * scale
+                disp_h = img_h * scale
+                img = RLImage(temp_pattern_path, width=disp_w, height=disp_h)
+                img.hAlign = 'CENTER'
                 elements.append(img)
                 elements.append(Spacer(1, 5*mm))
             except Exception as e:
