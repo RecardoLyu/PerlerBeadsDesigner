@@ -1147,10 +1147,9 @@ class MainWindow(tk.Tk):
         self.preprocess_notebook = ttk.Notebook(left_panel)
         self.preprocess_notebook.pack(fill="both", expand=True)
 
-        # Create three sub-tabs
+        # Create two sub-tabs (裁剪已合并进"基本调整")
         self._create_preprocess_basic_tab()
         self._create_preprocess_seg_tab()
-        self._create_preprocess_crop_tab()
 
         # Right panel - interactive display with dropdown menu
         right_frame = ttk.Frame(paned)
@@ -1194,7 +1193,7 @@ class MainWindow(tk.Tk):
         self.igc_display_visible = False
 
     def _create_preprocess_basic_tab(self):
-        """Create basic adjustment sub-tab: rescale, brightness/contrast, blur, restore"""
+        """Create basic adjustment sub-tab: brightness/contrast, blur, crop, restore"""
         frame = ttk.Frame(self.preprocess_notebook)
         self.preprocess_notebook.add(frame, text="基本调整")
 
@@ -1215,32 +1214,6 @@ class MainWindow(tk.Tk):
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
-        # === Re-scale section ===
-        ttk.Label(frame, text="图像缩放:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
-
-        size_frame = ttk.Frame(frame)
-        size_frame.pack(fill="x", pady=1)
-        ttk.Label(size_frame, text="宽:", width=3).pack(side="left")
-        self.rescale_width = tk.Spinbox(size_frame, from_=1, to=10000, width=8)
-        self.rescale_width.pack(side="left", padx=2)
-
-        size_frame2 = ttk.Frame(frame)
-        size_frame2.pack(fill="x", pady=1)
-        ttk.Label(size_frame2, text="高:", width=3).pack(side="left")
-        self.rescale_height = tk.Spinbox(size_frame2, from_=1, to=10000, width=8)
-        self.rescale_height.pack(side="left", padx=2)
-
-        self.rescale_aspect_lock = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="保持比例",
-                       variable=self.rescale_aspect_lock).pack(fill="x")
-
-        ttk.Button(frame, text="获取当前尺寸",
-                  command=self._fill_current_dimensions).pack(fill="x", pady=1)
-        ttk.Button(frame, text="重新缩放",
-                  command=self._rescale_image).pack(fill="x", pady=1)
-
-        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
-
         # === Gaussian Blur section ===
         ttk.Label(frame, text="高斯模糊:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
 
@@ -1249,13 +1222,35 @@ class MainWindow(tk.Tk):
         ttk.Label(blur_size, text="核大小:", width=6).pack(side="left")
         self.blur_kernel = tk.Spinbox(blur_size, from_=1, to=31, increment=2, width=5)
         self.blur_kernel.delete(0, tk.END)
-        self.blur_kernel.insert(0, '5')
+        self.blur_kernel.insert(0, '20')
         self.blur_kernel.pack(side="left", padx=2)
 
         ttk.Button(frame, text="自动建议",
                   command=self._suggest_blur_kernel).pack(fill="x", pady=1)
         ttk.Button(frame, text="应用模糊",
                   command=self._apply_gaussian_blur).pack(fill="x", pady=1)
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
+
+        # === 图像裁剪 (合并自"裁剪"子tab) ===
+        ttk.Label(frame, text="图像裁剪:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
+
+        instructions = (
+            "操作说明:\n"
+            "• 拖拽: 矩形裁剪\n"
+            "• Ctrl+拖拽: 从中心\n"
+            "• Shift+拖拽: 正方形\n"
+            "• Ctrl+Shift: 中心正方形"
+        )
+        ttk.Label(frame, text=instructions, justify="left",
+                 font=("Arial", 8), foreground="gray").pack(fill="x", pady=2)
+
+        ttk.Button(frame, text="启用裁剪",
+                  command=self._enable_crop_mode).pack(fill="x", pady=1)
+        ttk.Button(frame, text="应用裁剪",
+                  command=self._apply_crop).pack(fill="x", pady=1)
+        ttk.Button(frame, text="取消裁剪",
+                  command=self._cancel_crop).pack(fill="x", pady=1)
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
@@ -1410,30 +1405,6 @@ class MainWindow(tk.Tk):
         ttk.Button(frame, text="应用Mask",
                   command=self._apply_mask_to_image).pack(fill="x", pady=1)
 
-    def _create_preprocess_crop_tab(self):
-        """Create crop sub-tab"""
-        frame = ttk.Frame(self.preprocess_notebook)
-        self.preprocess_notebook.add(frame, text="裁剪")
-
-        ttk.Label(frame, text="图像裁剪", font=("Arial", 9, "bold")).pack(fill="x", pady=5)
-
-        instructions = (
-            "操作说明:\n"
-            "• 拖拽: 矩形裁剪\n"
-            "• Ctrl+拖拽: 从中心\n"
-            "• Shift+拖拽: 正方形\n"
-            "• Ctrl+Shift: 中心正方形\n"
-        )
-        ttk.Label(frame, text=instructions, justify="left",
-                 font=("Arial", 8), foreground="gray").pack(fill="x", pady=5)
-
-        ttk.Button(frame, text="启用裁剪",
-                  command=self._enable_crop_mode).pack(fill="x", pady=2)
-        ttk.Button(frame, text="应用裁剪",
-                  command=self._apply_crop).pack(fill="x", pady=2)
-        ttk.Button(frame, text="取消裁剪",
-                  command=self._cancel_crop).pack(fill="x", pady=2)
-    
     def _create_pattern_tab(self):
         """Create pattern generation tab"""
         frame = ttk.Frame(self.notebook)
@@ -1732,13 +1703,6 @@ class MainWindow(tk.Tk):
                 if hasattr(self, 'brightness_slider'):
                     self.brightness_slider.set(100)
                     self.contrast_slider.set(100)
-
-                # Auto-fill rescale fields
-                if hasattr(self, 'rescale_width'):
-                    self.rescale_width.delete(0, tk.END)
-                    self.rescale_width.insert(0, str(w))
-                    self.rescale_height.delete(0, tk.END)
-                    self.rescale_height.insert(0, str(h))
 
                 # Auto-fill bead dimensions based on image aspect (height=50 default)
                 self._auto_fill_bead_size()
@@ -2216,36 +2180,7 @@ class MainWindow(tk.Tk):
             self.color_manager.set_color_metric(metric)
             self.status_var.set(f"色彩空间已切换: {selected}")
 
-    # ===== 预处理：Rescale / Blur / Restore =====
-
-    def _fill_current_dimensions(self):
-        """Fill rescale spinboxes with current image dimensions"""
-        if self.image_processor.current_image is None:
-            return
-        h, w = self.image_processor.current_image.shape[:2]
-        self.rescale_width.delete(0, tk.END)
-        self.rescale_width.insert(0, str(w))
-        self.rescale_height.delete(0, tk.END)
-        self.rescale_height.insert(0, str(h))
-
-    def _rescale_image(self):
-        """Rescale image to target dimensions"""
-        try:
-            if self.image_processor.current_image is None:
-                raise ValueError("请先加载图像")
-            target_w = int(self.rescale_width.get())
-            target_h = int(self.rescale_height.get())
-            if target_w < 1 or target_h < 1:
-                raise ValueError("尺寸必须大于0")
-            self.image_processor.resize_image(target_w, target_h, interpolation='bilinear')
-            self.current_image = self.image_processor.current_image.copy()
-            if hasattr(self, 'seg_display'):
-                self.seg_display.set_image(self.current_image)
-            h, w = self.current_image.shape[:2]
-            self.aspect_ratio = h / w if w > 0 else 1.0
-            self.status_var.set(f"图像已缩放: {target_w}x{target_h}")
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
+    # ===== 预处理：Blur / Restore =====
 
     def _suggest_blur_kernel(self):
         """Auto-calculate suitable kernel size based on image dimensions"""
@@ -2288,13 +2223,8 @@ class MainWindow(tk.Tk):
             self.current_mask = None
             self.mask_applied_result = None
             self.current_pattern = None
-            # Reset rescale fields
+            # Reset aspect ratio
             h, w = self.current_image.shape[:2]
-            if hasattr(self, 'rescale_width'):
-                self.rescale_width.delete(0, tk.END)
-                self.rescale_width.insert(0, str(w))
-                self.rescale_height.delete(0, tk.END)
-                self.rescale_height.insert(0, str(h))
             self.aspect_ratio = h / w if w > 0 else 1.0
             # Reset segmentation display
             if hasattr(self, 'seg_display'):
@@ -2443,11 +2373,12 @@ class MainWindow(tk.Tk):
 
             bead_size = 20
             if self.show_codes_var.get():
-                rendered = self.pattern_generator.render_pattern_with_codes_and_grid(bead_size)
-                self.status_var.set("编码显示: 开")
+                rendered = self.pattern_generator.render_standard_chart(
+                    bead_size, palette=self.color_manager.get_palette())
+                self.status_var.set("标准图纸预览")
             else:
                 rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
-                self.status_var.set("编码显示: 关")
+                self.status_var.set("网格预览")
 
             self.pattern_display.set_image(rendered)
         except Exception as e:
@@ -2488,24 +2419,25 @@ class MainWindow(tk.Tk):
             export_any = False
             export_paths = []
 
-            # 预先渲染两个版本: 网格版(无编码) 和 编码+网格版
+            # 预先渲染两个版本: 网格版(无编码) 和 标准图纸(编码+粗细分网格+刻度+用量条)
             rendered_grid = self.pattern_generator.render_pattern_with_grid(bead_size)
-            rendered_codes_grid = self.pattern_generator.render_pattern_with_codes_and_grid(bead_size)
+            rendered_chart = self.pattern_generator.render_standard_chart(
+                bead_size, palette=self.color_manager.get_palette())
 
             if self.export_png_var.get():
-                # PNG: 导出两张 — 网格版 + 编码网格版
+                # PNG: 导出两张 — 网格版 + 标准图纸
                 p1 = self.exporter.export_png(rendered_grid,
                     f"{filename}_grid", scale)
                 export_paths.append(f"PNG网格版: {p1}")
-                p2 = self.exporter.export_png(rendered_codes_grid,
-                    f"{filename}_codes", scale)
-                export_paths.append(f"PNG编码版: {p2}")
+                p2 = self.exporter.export_png_standard(rendered_chart,
+                    f"{filename}_图纸", scale)
+                export_paths.append(f"PNG标准图纸: {p2}")
                 export_any = True
 
             if self.export_pdf_var.get():
-                # PDF: 使用带编码+网格的完整版本
+                # PDF: 使用标准图纸图像
                 filepath = self.exporter.export_pdf(
-                    rendered_codes_grid, bom, filename, page_size, title=filename)
+                    rendered_chart, bom, filename, page_size, title=filename)
                 export_paths.append(f"PDF: {filepath}")
                 export_any = True
 
