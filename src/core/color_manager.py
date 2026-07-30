@@ -432,25 +432,36 @@ class ColorManager:
             usage = self._usage_from_indices(idx)
             return output.reshape(h, w, 3).astype(np.uint8), usage
 
-        # ---- Color-limited: salience-weighted K-means ----
+        # ---- Color-limited: salience-weighted palette K-center selection ----
         K = int(color_limit)
         Z = self.palette._rgb_batch_to_lab(pixels)          # (N,3) LAB float
         weights = self._salience_weights(img, salience_strength)  # (N,)
 
-        K = max(1, K)
-
-        centers = self._weighted_kmeans(Z, weights, K, iters=20, seed=42)  # (K,3) LAB
-
-        # Map each LAB centroid back to a real palette bead color
-        centers_rgb = self._lab_batch_to_rgb(centers)       # (K,3) uint8
-        center_idx = self.palette.get_closest_indices_batch(centers_rgb, metric)
-        # De-duplicate: ensure at most K distinct colors
-        center_idx = self._dedupe_indices(center_idx, centers_rgb, metric, K)
+        # Select up to K physical bead colors directly from the palette,
+        # preserving chroma so a vivid region keeps a vivid bead (no hue shift).
+        center_idx = self._select_palette_colors(img, Z, weights, K, metric)
+        K = len(center_idx)
         bead_rgb = palette_rgb[center_idx]                  # (K,3)
+        centers = pal_lab = self.palette._palette_lab[center_idx]  # (K,3) LAB
 
-        # Assign each pixel to nearest centroid, then to that centroid's bead color
-        labels = self._assign_labels(Z, centers)            # (N,)
-        mapped_idx = center_idx[labels]                     # (N,) palette index per pixel
+        # Assign each pixel to its nearest selected bead (chroma-penalized), so
+        # a vivid pixel is not captured by a grey bead merely on raw distance.
+        if metric == "ciede2000":
+            Dc = _ciede2000(Z, centers)                     # (N,K)
+        else:
+            Dc = ((Z[:, None, :] - centers[None, :, :]) ** 2).sum(-1)
+        src_c = np.hypot(Z[:, 1], Z[:, 2])
+        cen_c = np.hypot(centers[:, 1], centers[:, 2])[None, :]
+        sat = src_c >= self._CHROMA_SAT_MIN
+        pen = np.zeros_like(Dc)
+        if sat.any():
+            floor = (src_c[sat] - self._CHROMA_MATCH_TOL)[:, None]
+            pen[sat] = np.maximum(0.0, floor - cen_c) * self._CHROMA_SOFT_PENALTY
+        if (~sat).any():
+            allow = (src_c[~sat] + self._CHROMA_ALLOW_BOOST)[:, None]
+            pen[~sat] = np.maximum(0.0, cen_c - allow) * self._CHROMA_SOFT_PENALTY
+        labels = (Dc + pen).argmin(axis=1)                  # (N,) which bead
+        mapped_idx = center_idx[labels]                     # (N,) palette index
 
         # ICM spatial-coherence refinement operates on the per-pixel palette
         # assignment to merge fragmented regions and remove isolated speckles.
@@ -470,6 +481,167 @@ class ColorManager:
         return output.reshape(h, w, 3).astype(np.uint8), usage
 
     # ---- helpers ---------------------------------------------------------
+
+    # Chroma-preservation tuning for palette selection. Real bead colors that a
+    # painter perceives as "the same hue" rarely differ by more than ~12 chroma
+    # units from the source; letting a vivid source collapse to a much greyer
+    # bead (or a pastel source jump to a vivid bead) is exactly the hue-shift
+    # failure seen in the wild (yellow->orange, blue->purple, pink->gray).
+    _CHROMA_SAT_MIN = 30.0        # below this a source counts as unsaturated
+    _CHROMA_MATCH_TOL = 12.0      # saturated source: keep candidate chroma >= src - tol
+    _CHROMA_ALLOW_BOOST = 15.0    # unsaturated source: allow up to src + boost
+    _CHROMA_SOFT_PENALTY = 0.6    # per-chroma-unit dE penalty beyond allowance
+    _CHROMA_RELAX = 1.12          # multiplicative slack before accepting a worse pick
+
+    def _chroma_aware_pick(self, lab: np.ndarray, d: np.ndarray) -> int:
+        """Pick a palette index for a single LAB color with chroma preservation.
+
+        `d` is the (P,) delta-E (or LAB-sq) distance from the source to every
+        palette color. A pure argmin can pick a lower-chroma bead when its dE is
+        marginally smaller, which reads as a hue shift. For a saturated source we
+        re-rank: prefer candidates whose chroma stays within tolerance of the
+        source, only accepting a lower-chroma pick if it is clearly closer.
+        Returns a palette index.
+        """
+        d = np.asarray(d, dtype=np.float64)
+        best = int(np.argmin(d))
+        pal_lab = self.palette._palette_lab
+        src_c = float(np.hypot(lab[1], lab[2]))
+        pal_c = np.hypot(pal_lab[:, 1], pal_lab[:, 2])
+
+        if src_c < self._CHROMA_SAT_MIN:
+            # Unsaturated source: discourage jumping to a much MORE saturated
+            # bead (pastel pink -> vivid pink) unless clearly closer.
+            allowed = src_c + self._CHROMA_ALLOW_BOOST
+            pen = np.maximum(0.0, pal_c - allowed) * self._CHROMA_SOFT_PENALTY
+            return int(np.argmin(d + pen))
+
+        # Saturated source: prefer candidates that keep the chroma up.
+        floor = src_c - self._CHROMA_MATCH_TOL
+        keep = pal_c >= floor
+        if keep.any():
+            kidx = int(np.flatnonzero(keep)[np.argmin(d[keep])])
+            # Only fall back to a lower-chroma bead if it is decisively closer.
+            if d[best] <= d[kidx] * (self._CHROMA_RELAX - 0.12):  # ~equal
+                return best
+            return kidx
+        return best
+
+    def _top_palette_colors(self, lab: np.ndarray, K: int, metric: str,
+                            extra: int = 8) -> List[int]:
+        """Shortlist of promising palette indices for a single LAB color.
+
+        Combines raw delta-E proximity with chroma preservation so the candidate
+        pool for K-center selection already contains the "right hue" beads rather
+        than only the closest-by-dE (which skew low-chroma).
+        """
+        pal_lab = self.palette._palette_lab
+        if metric == "ciede2000":
+            d = _ciede2000(np.atleast_2d(lab), pal_lab)[0]
+        else:
+            d = ((pal_lab - lab) ** 2).sum(-1)
+        pick = self._chroma_aware_pick(lab, d)
+        order = np.argsort(d)[: max(extra, K)]
+        cand = [pick] + [int(i) for i in order]
+        # de-dup preserve order
+        seen, out = set(), []
+        for i in cand:
+            if i not in seen:
+                seen.add(i)
+                out.append(int(i))
+        return out
+
+    def _chroma_penalty(self, lab: np.ndarray) -> np.ndarray:
+        """(P,) additive penalty discouraging chroma mismatch for a source color.
+
+        Used to re-weight the palette histogram selection so a grey bead is not
+        chosen to represent a vivid region (and vice versa).
+        """
+        pal_lab = self.palette._palette_lab
+        src_c = float(np.hypot(lab[1], lab[2]))
+        pal_c = np.hypot(pal_lab[:, 1], pal_lab[:, 2])
+        if src_c < self._CHROMA_SAT_MIN:
+            excess = np.maximum(0.0, pal_c - (src_c + self._CHROMA_ALLOW_BOOST))
+        else:
+            excess = np.maximum(0.0, (src_c - self._CHROMA_MATCH_TOL) - pal_c)
+        return excess * self._CHROMA_SOFT_PENALTY
+
+    def _select_palette_colors(self, img: np.ndarray, Z: np.ndarray,
+                               weights: np.ndarray, K: int, metric: str) -> np.ndarray:
+        """Choose up to K physical palette bead colors directly (no LAB-centroid
+        averaging). This replaces the "K-means centroid -> map to bead" step whose
+        averaging produced shifted, lower-chroma source colors and thus wrong-hue
+        beads.
+
+        Approach: build a salience-weighted histogram of per-pixel nearest
+        palette colors (chroma-aware), seed with the dominant color, then greedily
+        add the candidate that maximizes (weighted error if used) — a farthest-
+        point style K-centers over palette candidates. Returns (K,) palette idx.
+        """
+        pal_lab = self.palette._palette_lab
+        P = len(self.palette.colors)
+        K = max(1, min(int(K), P))
+
+        # Per-pixel nearest bead (chroma-aware) + histogram of weights.
+        if metric == "ciede2000":
+            dpix = _ciede2000(Z, pal_lab)                       # (N,P)
+        else:
+            dpix = ((Z[:, None, :] - pal_lab[None, :, :]) ** 2).sum(-1)
+        nearest = dpix.argmin(axis=1)
+        hist = np.bincount(nearest, weights=weights, minlength=P).astype(np.float64)
+
+        # Candidate pool: top colors by weighted support + chroma-aware picks
+        # for the heaviest bins (ensures the right-hue variant is present).
+        order = np.argsort(-hist)
+        support = order[: max(K * 3, K + 6)]
+        cand = list(dict.fromkeys([int(i) for i in support if hist[i] > 0]))
+
+        if not cand:
+            cand = [int(order[0])]
+
+        # Distance from every pixel to each candidate, chroma-penalized so a
+        # vivid region is not "served" by a grey bead and counted as satisfied.
+        def penalized_d(cidx):
+            sub = dpix[:, cidx]                                  # (N,C)
+            # penalty per candidate chroma vs pixel chroma
+            src_c = np.hypot(Z[:, 1], Z[:, 2])                   # (N,)
+            pen_c = np.hypot(pal_lab[cidx, 1], pal_lab[cidx, 2]) # (C,)
+            sat = src_c >= self._CHROMA_SAT_MIN
+            pen = np.zeros((len(Z), len(cidx)), dtype=np.float64)
+            # vivid pixels want vivid candidates
+            if sat.any():
+                floor = (src_c[sat] - self._CHROMA_MATCH_TOL)[:, None]
+                pen[sat] = np.maximum(0.0, floor - pen_c[None, :]) * self._CHROMA_SOFT_PENALTY
+            # dull pixels want dull candidates
+            if (~sat).any():
+                allow = (src_c[~sat] + self._CHROMA_ALLOW_BOOST)[:, None]
+                pen[~sat] = np.maximum(0.0, pen_c[None, :] - allow) * self._CHROMA_SOFT_PENALTY
+            return sub + pen
+
+        D = penalized_d(cand)                                    # (N,C) penalized
+        # current best (penalized) distance to the chosen set
+        chosen = [int(np.argmax(hist))]
+        if chosen[0] not in cand:
+            chosen = [cand[0]]
+        cpos = {c: i for i, c in enumerate(cand)}
+        best_d = D[:, cpos[chosen[0]]].copy()
+
+        while len(chosen) < K and len(chosen) < len(cand):
+            # improvement each candidate would bring = sum w * max(0, best_d - d_c)
+            gain = np.zeros(len(cand), dtype=np.float64)
+            for ci in range(len(cand)):
+                if cand[ci] in chosen:
+                    gain[ci] = -np.inf
+                    continue
+                imp = np.maximum(0.0, best_d - D[:, ci])
+                gain[ci] = float((weights * imp).sum())
+            nxt = int(np.argmax(gain))
+            if not np.isfinite(gain[nxt]):
+                break
+            chosen.append(cand[nxt])
+            best_d = np.minimum(best_d, D[:, nxt])
+
+        return np.array(chosen, dtype=np.int64)
 
     def _usage_from_indices(self, idx: np.ndarray) -> Dict:
         codes = [self.palette.colors[i].code for i in idx]
