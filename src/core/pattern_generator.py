@@ -20,6 +20,7 @@ class PatternConfig:
     salience_strength: float = 1.0  # Detail-preservation weight (0-2)
     dither: bool = False  # Floyd-Steinberg error diffusion
     dither_strength: float = 1.0  # Error-diffusion strength (0-1)
+    icm_smooth: float = 0.0  # ICM spatial-coherence refinement (0=off)
 
 
 class PatternGenerator:
@@ -70,6 +71,7 @@ class PatternGenerator:
             salience_strength=config.salience_strength,
             dither=config.dither,
             dither_strength=config.dither_strength,
+            icm_smooth=config.icm_smooth,
         )
 
         # Create pattern with color codes

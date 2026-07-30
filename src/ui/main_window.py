@@ -1475,7 +1475,7 @@ class MainWindow(tk.Tk):
         frame_c = ttk.Frame(left_panel)
         frame_c.pack(fill="x", pady=2)
         ttk.Label(frame_c, text="颜色限制:", width=8).pack(side="left")
-        self.color_limit = tk.Spinbox(frame_c, from_=0, to=100, width=6,
+        self.color_limit = tk.Spinbox(frame_c, from_=0, to=221, width=6,
                                       command=self._update_color_limit_hint)
         self.color_limit.delete(0, tk.END)
         self.color_limit.insert(0, '0')
@@ -1528,13 +1528,14 @@ class MainWindow(tk.Tk):
             "仅在设置颜色限制时生效,默认1.0。")
 
         # Dithering checkbox
-        self.dither_var = tk.BooleanVar(value=True)
+        self.dither_var = tk.BooleanVar(value=False)
         dither_cb = ttk.Checkbutton(left_panel, text="抖动(Floyd-Steinberg)",
                        variable=self.dither_var)
         dither_cb.pack(fill="x", pady=1)
         attach_tooltip(dither_cb,
-            "在Lab空间做误差扩散,感知上混合颜色、保留渐变/柔边观感。\n"
-            "强度过高会在规则网格上产生'洒点'。默认开启。")
+            "在Lab空间做误差扩散,感知上混合颜色、保留渐变观感。\n"
+            "注意: 在规则豆格上会产生'棋盘格/洒点'伪影,\n"
+            "尤其强度高时。默认关闭,需要柔边时再手动开。")
 
         # Dither strength slider
         frame_dith = ttk.Frame(left_panel)
@@ -1553,7 +1554,35 @@ class MainWindow(tk.Tk):
             "误差扩散的强度(0-1)。\n"
             "1.0=完整Floyd-Steinberg;降低可减少网格'洒点',\n"
             "同时保留部分平滑效果。仅在开启抖动时生效。")
-        
+
+        # High-order ICM spatial-coherence refinement (Huang TIP2015)
+        self.icm_var = tk.BooleanVar(value=False)
+        icm_cb = ttk.Checkbutton(left_panel, text="高阶优化(ICM空间相干)",
+                       variable=self.icm_var)
+        icm_cb.pack(fill="x", pady=1)
+        attach_tooltip(icm_cb,
+            "对每个豆格做空间相干优化: 消除孤立噪点、合并被拆散的同色区域,\n"
+            "同时保留高显著性细节(边缘/眼睛)。\n"
+            "生成较慢(大图纸明显)。默认关闭。")
+
+        # ICM strength slider
+        frame_icm = ttk.Frame(left_panel)
+        frame_icm.pack(fill="x", pady=2)
+        ttk.Label(frame_icm, text="相干强度:", width=8).pack(side="left")
+        self.icm_strength_var = tk.DoubleVar(value=0.5)
+        self.icm_strength_scale = tk.Scale(frame_icm, from_=0.1, to=1.0, resolution=0.05,
+                                       orient="horizontal", variable=self.icm_strength_var,
+                                       length=70, showvalue=False,
+                                       command=lambda v: self.icm_strength_val_label.config(text=f"{float(v):.2f}"))
+        self.icm_strength_scale.pack(side="left", padx=2)
+        self.icm_strength_val_label = tk.Label(frame_icm, text="0.50", width=4,
+                                           font=("Arial", 9, "bold"), fg="blue")
+        self.icm_strength_val_label.pack(side="left", padx=2)
+        attach_tooltip(self.icm_strength_scale,
+            "空间相干的强度(0.1-1.0)。\n"
+            "越大越平滑、噪点越少,但可能抹掉小细节。默认0.5。\n"
+            "仅在开启高阶优化时生效。")
+
         # Use mask processed result
         self.use_mask_result_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left_panel, text="使用Mask处理结果", 
@@ -2160,9 +2189,14 @@ class MainWindow(tk.Tk):
             pass
     
     def _update_color_limit_hint(self):
-        """Show '无限制' hint when color limit is 0 or empty"""
+        """Show '无限制' hint when color limit is 0/empty or >= palette size"""
         val = self.color_limit.get().strip()
-        if val in ("0", ""):
+        n_palette = len(self.color_manager.palette.colors) if getattr(self, 'color_manager', None) else 221
+        try:
+            n = int(val)
+        except (ValueError, TypeError):
+            n = 0
+        if val == "" or n <= 0 or n >= n_palette:
             self.color_limit_hint.config(text="无限制", fg="blue")
         else:
             self.color_limit_hint.config(text="")
@@ -2347,6 +2381,9 @@ class MainWindow(tk.Tk):
                 salience = float(self.salience_var.get()) if hasattr(self, 'salience_var') else 1.0
                 dither = bool(self.dither_var.get()) if hasattr(self, 'dither_var') else False
                 dither_strength = float(self.dither_strength_var.get()) if hasattr(self, 'dither_strength_var') else 1.0
+                icm_on = bool(self.icm_var.get()) if hasattr(self, 'icm_var') else False
+                icm_smooth = (float(self.icm_strength_var.get())
+                              if icm_on and hasattr(self, 'icm_strength_var') else 0.0)
 
                 config = PatternConfig(
                     width_beads=w_val,
@@ -2354,7 +2391,8 @@ class MainWindow(tk.Tk):
                     max_colors=color_limit,
                     salience_strength=salience,
                     dither=dither,
-                    dither_strength=dither_strength
+                    dither_strength=dither_strength,
+                    icm_smooth=icm_smooth
                 )
 
                 pattern, bom = self.pattern_generator.generate_pattern(
