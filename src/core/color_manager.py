@@ -386,7 +386,8 @@ class ColorManager:
 
     def quantize_image(self, image_array: np.ndarray, color_limit: int = None,
                        salience_strength: float = 1.0, dither: bool = False,
-                       metric: str = None, dither_strength: float = 1.0) -> Tuple[np.ndarray, Dict]:
+                       metric: str = None, dither_strength: float = 1.0,
+                       icm_smooth: float = 0.0) -> Tuple[np.ndarray, Dict]:
         """Quantize image to palette colors.
 
         With color_limit set, uses salience-weighted K-means in LAB space so that
@@ -412,13 +413,19 @@ class ColorManager:
 
         unique_count = np.unique(pixels, axis=0).shape[0]
 
-        if not color_limit or color_limit <= 0 or int(color_limit) >= unique_count:
+        n_palette = len(self.palette.colors)
+        if (not color_limit or color_limit <= 0
+                or int(color_limit) >= unique_count
+                or int(color_limit) >= n_palette):
             # Unlimited, OR the requested limit meets/exceeds the number of
-            # distinct colors actually present. In the latter case K-means would
-            # degenerate to one-cluster-per-color and, with forced de-dup, invent
-            # spurious extra bead colors. Just map every pixel to its nearest
+            # distinct colors actually present, OR it meets/exceeds the size of
+            # the physical palette itself (can't use more bead colors than exist).
+            # In these cases K-means would degenerate and, with forced de-dup,
+            # invent spurious extra bead colors. Map every pixel to its nearest
             # bead color directly (uses all real colors, no extras).
             idx = self.palette.get_closest_indices_batch(pixels, metric)
+            if icm_smooth and icm_smooth > 0:
+                idx = self._icm_refine(img, idx, palette_rgb, icm_smooth, metric)
             output = palette_rgb[idx]
             if dither:
                 output = self._floyd_steinberg(img, palette_rgb, metric, dither_strength)
@@ -444,6 +451,16 @@ class ColorManager:
         # Assign each pixel to nearest centroid, then to that centroid's bead color
         labels = self._assign_labels(Z, centers)            # (N,)
         mapped_idx = center_idx[labels]                     # (N,) palette index per pixel
+
+        # ICM spatial-coherence refinement operates on the per-pixel palette
+        # assignment to merge fragmented regions and remove isolated speckles.
+        if icm_smooth and icm_smooth > 0:
+            sal = self._salience_map(img)                   # (h,w) 0-1
+            mapped_idx = self._icm_refine(img, mapped_idx, palette_rgb,
+                                          icm_smooth, metric, salience=sal)
+            # Re-derive centroid labels for the optional constrained dither.
+            labels = self._assign_labels(Z, self.palette._palette_lab[mapped_idx])
+
         output = palette_rgb[mapped_idx]
 
         if dither:
@@ -460,6 +477,100 @@ class ColorManager:
         for c in codes:
             usage[c] = usage.get(c, 0) + 1
         return usage
+
+    def _salience_map(self, img: np.ndarray) -> np.ndarray:
+        """Per-pixel salience in [0,1] (saturation x local contrast), shape (h,w).
+
+        Used to relax the ICM smoothness prior on important detail regions
+        (eyes, outlines) so they are not over-smoothed away.
+        """
+        h, w = img.shape[:2]
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float64) / 255.0
+        sat = hsv[:, :, 1]
+        lab_img = self.palette._rgb_batch_to_lab(img.reshape(-1, 3)).reshape(h, w, 3)
+        blur = cv2.GaussianBlur(lab_img, (3, 3), 0)
+        contrast = np.linalg.norm(lab_img - blur, axis=2)
+        contrast = contrast / (contrast.max() + 1e-6)
+        sal = np.clip(0.5 * sat + 0.5 * contrast, 0.0, 1.0)
+        # Local (connected) salience: blur so an ISOLATED speckle's high
+        # saturation/contrast is pulled down by its bland neighbors, while a
+        # coherent detailed region (eye, outline) keeps its protection. This is
+        # what lets ICM remove single-pixel noise yet preserve real detail.
+        sal = cv2.GaussianBlur(sal, (5, 5), 0)
+        return sal
+
+    def _icm_refine(self, img: np.ndarray, idx: np.ndarray, palette_rgb: np.ndarray,
+                    strength: float, metric: str, salience: np.ndarray = None,
+                    iters: int = 3) -> np.ndarray:
+        """ICM spatial-coherence refinement (Huang et al. TIP2015-style).
+
+        Each pixel currently assigned a palette color may be re-assigned to a
+        nearby candidate color if that lowers a combined energy:
+            E = color_error(new) + strength * isolation_penalty(new)
+        where isolation_penalty counts same-color neighbors (a pixel surrounded
+        by color X pays little to also become X; an isolated speckle pays a lot
+        to stay different). Salient pixels get a reduced smoothness weight so
+        genuine details survive.
+
+        Args:
+            img: (h,w,3) uint8 RGB
+            idx: (N,) palette index per pixel (current assignment)
+            palette_rgb: (P,3) uint8 palette RGB
+            strength: smoothness weight (typical 0.3-1.0)
+            metric: distance metric for the color-error term
+            salience: optional (h,w) 0-1 map; high salience => less smoothing
+            iters: ICM passes over the image
+        Returns:
+            (N,) refined palette index per pixel
+        """
+        h, w = img.shape[:2]
+        L = idx.reshape(h, w).astype(np.int64).copy()
+        pal_lab = self.palette._palette_lab                      # (P,3)
+        pix_lab = self.palette._rgb_batch_to_lab(img.reshape(-1, 3)).reshape(h, w, 3)
+        if salience is None:
+            salience = self._salience_map(img)
+        # Per-pixel smoothness weight; salient detail gets less smoothing.
+        lam = float(strength) * (1.0 - 0.7 * salience)           # (h,w)
+        # Scale lambda into LAB-distance units so the neighbor-agreement reward
+        # can actually compete with the color error (an isolated speckle should
+        # be winnable by its neighbors). ~25 LAB units ~ a clearly visible shift.
+        lam = lam * 25.0
+
+        for _ in range(iters):
+            changed = 0
+            for y in range(h):
+                for x in range(w):
+                    # Candidate colors = current + the (distinct) neighbor colors.
+                    cand = [int(L[y, x])]
+                    for ny, nx in ((y-1, x), (y+1, x), (y, x-1), (y, x+1)):
+                        if 0 <= ny < h and 0 <= nx < w:
+                            c = int(L[ny, nx])
+                            if c not in cand:
+                                cand.append(c)
+                    if len(cand) == 1:
+                        continue  # uniform neighborhood, nothing to decide
+                    pl = pix_lab[y, x]
+                    cc = pal_lab[cand]                              # (C,3)
+                    if metric == "ciede2000":
+                        ce = _ciede2000(np.atleast_2d(pl), cc)[0]
+                    else:
+                        ce = ((cc - pl) ** 2).sum(-1)
+                    # neighbor-agreement reward per candidate
+                    match = np.zeros(len(cand), dtype=np.float64)
+                    for ny, nx in ((y-1, x), (y+1, x), (y, x-1), (y, x+1)):
+                        if 0 <= ny < h and 0 <= nx < w:
+                            nl = int(L[ny, nx])
+                            if nl in cand:
+                                match[cand.index(nl)] += 1.0
+                    energy = ce - lam[y, x] * match
+                    best_local = int(energy.argmin())
+                    best = cand[best_local]
+                    if best != int(L[y, x]):
+                        L[y, x] = best
+                        changed += 1
+            if changed == 0:
+                break
+        return L.reshape(-1)
 
     def _salience_weights(self, img: np.ndarray, strength: float) -> np.ndarray:
         """Compute per-pixel salience weight = saturation x contrast x rarity."""
@@ -479,7 +590,18 @@ class ColorManager:
         rarity = 1.0 / (counts[bins] + 1e-6)
         rarity = rarity / rarity.max()
 
-        weights = (0.4 + 0.6 * sat) * (0.5 + 0.5 * contrast) * (0.5 + strength * rarity)
+        # Salience weight: strength must genuinely separate rare-but-important
+        # detail colors from common ones. Use a contrast curve so the slider
+        # (0-2) visibly changes which colors survive clustering.
+        # - rarity pushed through sqrt() spreads the near-zero tail so the
+        #   strength term has something to act on for semi-rare colors too.
+        # - exponential (base + rarity)^strength makes strength amplify rare
+        #   colors strongly while leaving common colors near 1x.
+        r = np.sqrt(np.clip(rarity, 0.0, 1.0))
+        sat_term = 0.4 + 0.6 * sat
+        contrast_term = 0.5 + 0.5 * contrast
+        rarity_term = np.power(1.0 + 3.0 * r, strength)
+        weights = sat_term * contrast_term * rarity_term
         weights = weights / (weights.mean() + 1e-9)
         return weights
 
