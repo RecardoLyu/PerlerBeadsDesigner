@@ -44,6 +44,13 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
+# On non-Windows the EXE has no extension, so an EXE named "PerlerBeadsDesigner"
+# would be written as the file dist/PerlerBeadsDesigner — colliding with the
+# COLLECT output directory of the same name ("Resource ... is not a valid
+# file!"). Windows is spared because the EXE keeps its .exe suffix. Give the EXE
+# a distinct internal name off-Windows; the COLLECT dir stays PerlerBeadsDesigner.
+_exe_name = 'PerlerBeadsDesigner' if sys.platform == 'win32' else 'PerlerBeadsDesigner-bin'
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -51,7 +58,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='PerlerBeadsDesigner',
+    name=_exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -51,7 +51,7 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         tag="${{ github.ref_name }}"
-        chmod +x "dist/PerlerBeadsDesigner/PerlerBeadsDesigner" || true
+        chmod +x "dist/PerlerBeadsDesigner/PerlerBeadsDesigner-bin" || true
         tar -C dist -czf "${{ matrix.asset_name }}-${tag}.tar.gz" PerlerBeadsDesigner
 
     - name: Upload Release Asset (Windows)
