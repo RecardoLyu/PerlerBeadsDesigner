@@ -236,6 +236,12 @@ class ImageSegmentation:
             uint8 structuring element
         """
         k = max(1, int(kernel_size))
+        # Force odd size so custom elements (np.eye / ones / diamond) are
+        # symmetric about the anchor. An even-sized eye/line/diamond kernel has
+        # a half-pixel anchor offset, which makes dilation grow one-sided and
+        # produce spurious foreground along edges.
+        if k % 2 == 0:
+            k += 1
         if shape == 'rect':
             return cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
         if shape == 'cross':
@@ -302,7 +308,10 @@ class ImageSegmentation:
             Processed mask
         """
         kernel = self.get_kernel(shape, kernel_size)
-        result = cv2.erode(mask, kernel, iterations=1)
+        # borderValue=0: treat out-of-image as background so edge foreground
+        # cannot pull phantom foreground from the boundary constant.
+        result = cv2.erode(mask, kernel, iterations=1,
+                           borderType=cv2.BORDER_CONSTANT, borderValue=0)
         self.mask = result
         return result
 
@@ -319,7 +328,10 @@ class ImageSegmentation:
             Processed mask
         """
         kernel = self.get_kernel(shape, kernel_size)
-        result = cv2.dilate(mask, kernel, iterations=1)
+        # borderValue=0: treat out-of-image as background so dilation does not
+        # introduce phantom foreground sourced from the boundary constant.
+        result = cv2.dilate(mask, kernel, iterations=1,
+                            borderType=cv2.BORDER_CONSTANT, borderValue=0)
         self.mask = result
         return result
     

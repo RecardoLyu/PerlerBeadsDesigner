@@ -27,6 +27,8 @@ a = Analysis(
         ('src/assets', 'src/assets'),
         # App icon, resolved at runtime from the same bundle root.
         ('resources/icons', 'resources/icons'),
+        # Embedded help document, shown by the in-app 帮助 button.
+        ('HELP.md', '.'),
     ],
     hiddenimports=[
         'cv2',
