@@ -925,24 +925,37 @@ class IterativeGrabCutDisplay(tk.Frame):
         y0 = max(5, (label_height - display_h) // 2)
         self.display_rect = (x0, y0, display_w, display_h)
         
-        # Overlay GrabCut result in blue
+        # Overlay GrabCut result in orange (distinct from annotation red/green)
         if self.stage != self.STAGE_INIT_RECT and gc_display is not None and np.any(gc_display > 0):
             mask_overlay = np.zeros_like(display_img)
-            mask_overlay[gc_display > 0] = [255, 0, 0]  # Red for FGD
+            mask_overlay[gc_display > 0] = [255, 140, 0]  # Orange (RGB) for GC foreground
             display_img = cv2.addWeighted(display_img, 0.6, mask_overlay, 0.4, 0)
-        
-        # Overlay annotations
+
+        # Overlay annotations (display image is RGB)
         # Red for FGD annotation
         if fgd_disp is not None and np.any(fgd_disp > 0):
             fgd_overlay = np.zeros_like(display_img)
-            fgd_overlay[fgd_disp > 0] = [0, 0, 255]  # Bright red
+            fgd_overlay[fgd_disp > 0] = [255, 0, 0]  # Bright red (RGB)
             display_img = cv2.addWeighted(display_img, 0.7, fgd_overlay, 0.3, 0)
-        
+
         # Green for BGD annotation
         if bgd_disp is not None and np.any(bgd_disp > 0):
             bgd_overlay = np.zeros_like(display_img)
-            bgd_overlay[bgd_disp > 0] = [0, 255, 0]  # Bright green
+            bgd_overlay[bgd_disp > 0] = [0, 200, 0]  # Bright green (RGB)
             display_img = cv2.addWeighted(display_img, 0.7, bgd_overlay, 0.3, 0)
+
+        # Live-render the in-progress annotation stroke (before mouse release)
+        if (self.stage == self.STAGE_MARKING and self.annotation_mode
+                and len(self.current_stroke) >= 1):
+            stroke_color = (255, 0, 0) if self.annotation_mode == 'fgd' else (0, 200, 0)
+            brush = max(1, int(round(self.brush_width * (scale if scale < 1.0 else 1.0))))
+            pts = [(int(x * scale), int(y * scale)) if scale < 1.0 else (int(x), int(y))
+                   for x, y in self.current_stroke]
+            if len(pts) == 1:
+                cv2.circle(display_img, pts[0], max(1, brush // 2), stroke_color, -1)
+            else:
+                for i in range(len(pts) - 1):
+                    cv2.line(display_img, pts[i], pts[i + 1], stroke_color, brush)
         
         # Draw foreground-region preview in blue while in init stage
         if self.stage == self.STAGE_INIT_RECT:
@@ -1264,24 +1277,32 @@ class MainWindow(tk.Tk):
     
     def _setup_ui(self):
         """Setup user interface"""
-        # Header bar with help button (upper-right)
-        header = ttk.Frame(self)
-        header.pack(side="top", fill="x", padx=5, pady=(5, 0))
-        ttk.Button(header, text="❓ 帮助", command=self._show_help).pack(side="right")
+        # Status bar (packed first so it stays pinned to the very bottom)
+        self.status_var = tk.StringVar(value="就绪")
+        status_bar = ttk.Frame(self, relief="sunken")
+        status_bar.pack(side="bottom", fill="x")
+        # Busy indicator (bottom-left): playful kaomoji shown while computing
+        self.busy_var = tk.StringVar(value="")
+        self._busy_after_id = None
+        self._busy_count = 0
+        busy_label = tk.Label(status_bar, textvariable=self.busy_var,
+                              anchor="w", bg="lightgray", fg="#c2185b")
+        busy_label.pack(side="left", padx=(4, 2))
+        tk.Label(status_bar, textvariable=self.status_var,
+                 anchor="w", bg="lightgray").pack(side="left", fill="x", expand=True)
 
         # Create notebook (tabs)
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
 
+        # Help button overlaid on the notebook's empty top-right tab-strip area,
+        # so it shares the same row as the 图像处理/图纸生成 tab labels.
+        help_btn = ttk.Button(self.notebook, text="❓ 帮助", command=self._show_help)
+        help_btn.place(relx=1.0, x=-6, y=4, anchor="ne")
+
         # Create tabs
         self._create_preprocess_tab()
         self._create_pattern_tab()
-
-        # Status bar
-        self.status_var = tk.StringVar(value="就绪")
-        status_bar = tk.Label(self, textvariable=self.status_var, relief="sunken",
-                             anchor="w", bg="lightgray")
-        status_bar.pack(side="bottom", fill="x")
 
     def _show_help(self):
         """Open the embedded help document (HELP.md) in a scrollable window."""
@@ -1295,6 +1316,36 @@ class MainWindow(tk.Tk):
             messagebox.showwarning("帮助", "帮助文档未找到 (HELP.md)")
         except Exception as e:
             messagebox.showerror("帮助", f"无法打开帮助文档: {e}")
+
+    # ---- Busy indicator (bottom-left playful kaomoji) ----
+    _KAOMOJI = ["(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "(ง •_•)ง", "♪(´▽｀)", "(=^･ω･^=)",
+                "φ(゜▽゜*)♪", "(~‾▿‾)~", "ヾ(⌐■_■)ノ♪", "( ˘▽˘)っ♨"]
+
+    def _busy_start(self):
+        """Begin showing an animated kaomoji busy indicator (reference counted)."""
+        self._busy_count += 1
+        if self._busy_count == 1:
+            self._busy_tick()
+
+    def _busy_stop(self):
+        """Stop the busy indicator when the last running job finishes."""
+        self._busy_count = max(0, self._busy_count - 1)
+        if self._busy_count == 0:
+            if self._busy_after_id is not None:
+                try:
+                    self.after_cancel(self._busy_after_id)
+                except Exception:
+                    pass
+                self._busy_after_id = None
+            self.busy_var.set("")
+
+    def _busy_tick(self):
+        """Rotate through playful kaomoji while jobs are running."""
+        if self._busy_count <= 0:
+            return
+        import random
+        self.busy_var.set(random.choice(self._KAOMOJI) + " 计算中…")
+        self._busy_after_id = self.after(220, self._busy_tick)
 
     def _create_preprocess_tab(self):
         """Create preprocessing tab with sub-tabs: 基本调整, 分割, 裁剪"""
@@ -1512,6 +1563,24 @@ class MainWindow(tk.Tk):
         b_bgd.pack(side="left", padx=1)
         attach_tooltip(b_bgd, "切换为背景标注:涂抹应去除的背景区域(绿色)")
 
+        # Brush-thickness slider + live circular size preview
+        f_brush = ttk.Frame(frame)
+        f_brush.pack(fill="x", pady=1)
+        ttk.Label(f_brush, text="笔触:").pack(side="left", padx=(2, 0))
+        self.brush_size_var = tk.IntVar(value=12)  # matches IterativeGrabCutDisplay default
+        brush_scale = tk.Scale(f_brush, from_=2, to=40, orient="horizontal",
+                               resolution=1, length=110, showvalue=False,
+                               variable=self.brush_size_var,
+                               command=self._on_brush_size_changed)
+        brush_scale.pack(side="left", padx=2)
+        attach_tooltip(brush_scale, "拖动调整前景/背景涂抹笔触的粗细")
+        self.brush_preview = tk.Canvas(f_brush, width=44, height=44,
+                                       bg="white", highlightthickness=1,
+                                       highlightbackground="#cccccc")
+        self.brush_preview.pack(side="left", padx=3)
+        attach_tooltip(self.brush_preview, "当前笔触真实粗细(圆形)")
+        self._draw_brush_preview(12)
+
         b_iter = ttk.Button(frame, text="3. 迭代分割",
                   command=self._iterative_grabcut)
         b_iter.pack(fill="x", pady=1)
@@ -1529,6 +1598,24 @@ class MainWindow(tk.Tk):
 
         # Automatic segmentation
         ttk.Label(frame, text="自动分割:", font=("Arial", 9, "bold")).pack(fill="x")
+        # Method selector (GrabCut / Watershed / Otsu / SLIC)
+        self._seg_method_map = {
+            "GrabCut(矩形初始化)": "grabcut",
+            "分水岭 Watershed": "watershed",
+            "Otsu 自适应阈值": "otsu",
+            "SLIC 超像素": "slic",
+        }
+        self.seg_method_var = tk.StringVar(value="GrabCut(矩形初始化)")
+        method_combo = ttk.Combobox(frame, textvariable=self.seg_method_var,
+                                    state="readonly", width=18,
+                                    values=list(self._seg_method_map.keys()))
+        method_combo.pack(fill="x", pady=1)
+        attach_tooltip(method_combo,
+            "自动分割算法:\n"
+            "GrabCut(矩形初始化): 以居中矩形为初值做图割,主体居中时效果好\n"
+            "分水岭 Watershed: 自动种子分水岭,边缘贴合,适合轮廓清晰的主体\n"
+            "Otsu 自适应阈值: 一键快速二值化,适合主体与背景明暗对比强\n"
+            "SLIC 超像素: 按颜色聚成小块再聚合,适合平涂/卡通素材,边缘整齐")
         ttk.Button(frame, text="执行分割",
                   command=self._segmentate_grabcut).pack(fill="x", pady=1)
 
@@ -1587,11 +1674,6 @@ class MainWindow(tk.Tk):
         b_dilate.pack(side="left", padx=1)
         attach_tooltip(b_dilate, "扩张前景:连接邻近区域,填补小缝隙,扩大Mask区域")
 
-        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
-
-        ttk.Button(frame, text="应用Mask",
-                  command=self._apply_mask_to_image).pack(fill="x", pady=1)
-
     def _create_pattern_tab(self):
         """Create pattern generation tab"""
         frame = ttk.Frame(self.notebook)
@@ -1611,7 +1693,7 @@ class MainWindow(tk.Tk):
         ttk.Label(frame_h, text="高:", width=3).pack(side="left")
         self.pattern_height = tk.Spinbox(frame_h, from_=10, to=300, width=8)
         self.pattern_height.delete(0, tk.END)
-        self.pattern_height.insert(0, '50')
+        self.pattern_height.insert(0, '52')
         self.pattern_height.bind('<FocusOut>', self._on_height_changed)
         self.pattern_height.pack(side="left", padx=2)
         
@@ -1620,7 +1702,7 @@ class MainWindow(tk.Tk):
         ttk.Label(frame_w, text="宽:", width=3).pack(side="left")
         self.pattern_width = tk.Spinbox(frame_w, from_=10, to=300, width=8)
         self.pattern_width.delete(0, tk.END)
-        self.pattern_width.insert(0, '50')
+        self.pattern_width.insert(0, '52')
         self.pattern_width.bind('<FocusOut>', self._on_width_changed)
         self.pattern_width.pack(side="left", padx=2)
         
@@ -1998,8 +2080,10 @@ class MainWindow(tk.Tk):
 
             # Execute first GrabCut (background thread; UI stays responsive)
             self.status_var.set("第一次分割中… (可随时加载新图像打断)")
+            self._busy_start()
 
             def _on_first_done(ok):
+                self._busy_stop()
                 if ok:
                     self.igc_display.set_stage(IterativeGrabCutDisplay.STAGE_MARKING)
                     self.status_var.set("第一次分割完成。选择标注模式（前景红色/背景绿色）并在结果上标注")
@@ -2021,7 +2105,27 @@ class MainWindow(tk.Tk):
             self.status_var.set(f"标注模式: {desc} - 在图像上涂抹以标注{desc}")
         except Exception as e:
             messagebox.showerror("错误", str(e))
-    
+
+    def _on_brush_size_changed(self, value):
+        """Slider callback: update IGC brush width and refresh the preview."""
+        try:
+            w = int(float(value))
+        except (TypeError, ValueError):
+            return
+        self.igc_display.brush_width = max(1, w)
+        self._draw_brush_preview(w)
+
+    def _draw_brush_preview(self, width: int):
+        """Draw a filled circle showing the real brush thickness."""
+        c = self.brush_preview
+        c.delete("all")
+        size = 44
+        cx = cy = size // 2
+        # Canvas circle at 1:1 pixel scale, clamped to fit inside the box.
+        r = max(1, min(int(width) // 2, (size - 6) // 2))
+        c.create_oval(cx - r, cy - r, cx + r, cy + r,
+                      fill="#333333", outline="")
+
     def _clear_igc_annotations(self):
         """Clear all annotations in iterative GrabCut"""
         try:
@@ -2046,8 +2150,10 @@ class MainWindow(tk.Tk):
             
             # Execute iterative GrabCut (background thread; UI stays responsive)
             self.status_var.set("迭代分割中… (可随时加载新图像打断)")
+            self._busy_start()
 
             def _on_iter_done(ok):
+                self._busy_stop()
                 if ok:
                     self.status_var.set("迭代分割完成。可继续标注进行微调，或点击\"应用分割结果\"保存")
                 else:
@@ -2058,26 +2164,37 @@ class MainWindow(tk.Tk):
             messagebox.showerror("错误", str(e))
     
     def _apply_iterative_grabcut(self):
-        """Apply iterative GrabCut result as final mask"""
+        """Apply iterative GrabCut result: bake mask onto the original image
+        (foreground keeps color, background becomes white) and show it."""
         try:
             if self.igc_display.image is None or self.igc_display.gc_mask is None:
                 raise ValueError("没有可应用的分割结果")
-            
+
             # Save result to current_mask
             self.current_mask = self.igc_display.gc_mask.copy()
-            
-            # Switch back to normal display
+
+            # Bake the mask onto the original image -> white background
+            image = self.image_processor.current_image
+            if len(image.shape) == 2:
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            else:
+                image_rgb = image.copy()
+            mask_binary = (self.current_mask > 127).astype(np.uint8) * 255
+            result = np.ones_like(image_rgb) * 255
+            result[mask_binary == 255] = image_rgb[mask_binary == 255]
+            self.mask_applied_result = result.copy()
+
+            # Switch back to normal display and show the baked result
             if self.igc_display_visible:
                 self.igc_display.pack_forget()
                 self.seg_display.pack(fill="both", expand=True)
                 self.igc_display_visible = False
-            
-            # Display mask
-            mask_display = cv2.cvtColor(self.current_mask, cv2.COLOR_GRAY2RGB)
-            self.seg_display.set_image(mask_display)
+
+            self.seg_display.set_image(result)
             self.seg_display.set_mode("view")
-            self.seg_display_var.set("Mask")
-            self.status_var.set("迭代GrabCut分割已应用")
+            self.seg_display_var.set("Mask应用结果")
+            self.seg_display_label.config(text="Mask应用结果")
+            self.status_var.set("分割结果已应用: 前景保留彩色，背景为白色")
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -2099,10 +2216,10 @@ class MainWindow(tk.Tk):
             if self.mask_applied_result is not None:
                 self.seg_display.set_image(self.mask_applied_result)
             else:
-                messagebox.showwarning("警告", "请先执行应用Mask操作")
+                messagebox.showwarning("警告", "请先应用分割结果")
     
     def _segmentate_grabcut(self):
-        """Apply GrabCut segmentation (background thread; UI stays responsive)."""
+        """Run the selected automatic segmentation method (background thread)."""
         try:
             image = self.image_processor.current_image
             if image is None:
@@ -2110,17 +2227,30 @@ class MainWindow(tk.Tk):
 
             image = image.copy()
             h, w = image.shape[:2]
-            x1, y1 = int(w * 0.2), int(h * 0.2)
-            x2, y2 = int(w * 0.8), int(h * 0.8)
+
+            method = self._seg_method_map.get(self.seg_method_var.get(), "grabcut")
+            method_names = {"grabcut": "GrabCut", "watershed": "分水岭",
+                            "otsu": "Otsu阈值", "slic": "SLIC超像素"}
+            name = method_names[method]
 
             self._seg_token += 1
             token = self._seg_token
-            self.status_var.set("GrabCut分割中… (可随时加载新图像打断)")
+            self.status_var.set(f"{name}分割中… (可随时加载新图像打断)")
+            self._busy_start()
 
             def _work():
+                if method == "watershed":
+                    return self.segmentation.watershed_auto(image)
+                if method == "otsu":
+                    return self.segmentation.otsu_segment(image)
+                if method == "slic":
+                    return self.segmentation.slic_segment(image)
+                x1, y1 = int(w * 0.2), int(h * 0.2)
+                x2, y2 = int(w * 0.8), int(h * 0.8)
                 return self.segmentation.grabcut_rect(image, x1, y1, x2, y2)
 
             def _done(mask, err):
+                self._busy_stop()
                 if err is not None:
                     messagebox.showerror("错误", str(err))
                     return
@@ -2131,7 +2261,7 @@ class MainWindow(tk.Tk):
                 self.seg_display.set_image(image)
                 self.seg_display_var.set("原图")
                 self.seg_display_label.config(text="原图")
-                self.status_var.set("GrabCut分割完成")
+                self.status_var.set(f"{name}分割完成")
 
             self._run_async(_work, _done)
         except Exception as e:
@@ -2201,36 +2331,7 @@ class MainWindow(tk.Tk):
             self._apply_morph_result(mask, "膨胀")
         except Exception as e:
             messagebox.showerror("错误", str(e))
-    
-    def _apply_mask_to_image(self):
-        """Apply mask: foreground keeps original color, background becomes white"""
-        try:
-            image = self.image_processor.current_image
-            if not hasattr(self, 'current_mask') or self.current_mask is None:
-                raise ValueError("请先执行分割")
-            
-            # Ensure image is RGB
-            if len(image.shape) == 2:
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            else:
-                image_rgb = image.copy()
-            
-            # Convert mask to binary
-            mask_binary = (self.current_mask > 127).astype(np.uint8) * 255
-            
-            # Apply mask: foreground keeps original color, background is white
-            result = np.ones_like(image_rgb) * 255
-            result[mask_binary == 255] = image_rgb[mask_binary == 255]
-            
-            # Store result and update display
-            self.mask_applied_result = result.copy()
-            self.seg_display.set_image(result)
-            self.seg_display_var.set("Mask应用结果")
-            self.seg_display_label.config(text="Mask应用结果")
-            self.status_var.set("Mask已应用: 前景保留彩色，背景为白色")
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-    
+
     def _on_height_changed(self, event=None):
         """Height changed - update width to maintain aspect ratio"""
         if not self.aspect_lock_var.get():

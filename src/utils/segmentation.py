@@ -134,6 +134,157 @@ class ImageSegmentation:
         
         return mask
     
+    def watershed_auto(self, image: np.ndarray) -> np.ndarray:
+        """
+        Marker-based watershed with automatic seeds (no user input).
+
+        Pipeline: grayscale -> Otsu -> opening denoise -> distance transform
+        for sure-foreground seeds -> dilation for sure-background -> markers ->
+        cv2.watershed. The foreground orientation (dark vs. bright subject) is
+        auto-picked so the central image region ends up foreground.
+
+        Args:
+            image: Input image (RGB)
+
+        Returns:
+            Binary mask (0/255), foreground = 255
+        """
+        if image is None or len(image.shape) != 3:
+            raise ValueError("请提供有效的RGB图像")
+
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Auto-orient: binarize so the central region becomes foreground (white).
+        _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, bw_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        h, w = gray.shape
+        cy1, cy2, cx1, cx2 = h // 4, 3 * h // 4, w // 4, 3 * w // 4
+        center = (slice(cy1, cy2), slice(cx1, cx2))
+        fg = bw if bw[center].mean() >= bw_inv[center].mean() else bw_inv
+
+        # Denoise and derive sure foreground / sure background.
+        kernel = np.ones((3, 3), np.uint8)
+        opening = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel, iterations=2)
+        sure_bg = cv2.dilate(opening, kernel, iterations=3)
+        dist = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
+        max_dist = dist.max() if dist.max() > 0 else 1.0
+        _, sure_fg = cv2.threshold(dist, 0.4 * max_dist, 255, cv2.THRESH_BINARY)
+        sure_fg = sure_fg.astype(np.uint8)
+        unknown = cv2.subtract(sure_bg, sure_fg)
+
+        # Build markers: background = 1, foreground components >= 2.
+        num, markers = cv2.connectedComponents(sure_fg)
+        markers = markers + 1
+        markers[unknown == 255] = 0
+
+        cv2.watershed(image_bgr, markers)
+
+        # Foreground = all marker labels >= 2.
+        mask = np.where(markers >= 2, 255, 0).astype(np.uint8)
+        self.mask = mask
+        return mask
+
+    def otsu_segment(self, image: np.ndarray) -> np.ndarray:
+        """
+        Otsu automatic thresholding, auto-oriented so the central subject is
+        foreground. Very fast; best for high subject/background contrast.
+
+        Args:
+            image: Input image (RGB)
+
+        Returns:
+            Binary mask (0/255), foreground = 255
+        """
+        if image is None or len(image.shape) != 3:
+            raise ValueError("请提供有效的RGB图像")
+
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, bw_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        h, w = gray.shape
+        center = (slice(h // 4, 3 * h // 4), slice(w // 4, 3 * w // 4))
+        mask = bw if bw[center].mean() >= bw_inv[center].mean() else bw_inv
+
+        # Light closing to fill pinholes.
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        self.mask = mask
+        return mask
+
+    def slic_segment(self, image: np.ndarray, n_segments: int = 150) -> np.ndarray:
+        """
+        SLIC superpixel segmentation aggregated into a foreground mask.
+
+        Over-segments with SLIC (Lab space), then labels each superpixel
+        foreground/background via Otsu on the per-superpixel mean brightness,
+        auto-oriented so the central region is foreground. Good for flat-color
+        perler-bead source images with tidy edges.
+
+        Args:
+            image: Input image (RGB)
+            n_segments: Approximate number of superpixels
+
+        Returns:
+            Binary mask (0/255), foreground = 255
+        """
+        if image is None or len(image.shape) != 3:
+            raise ValueError("请提供有效的RGB图像")
+
+        from skimage.segmentation import slic
+
+        segments = slic(image, n_segments=n_segments, compactness=10,
+                        start_label=0, channel_axis=-1)
+
+        # Score each superpixel by how "subject-like" it is. Perler-bead
+        # subjects are usually colorful; plain backgrounds are flat/gray, so
+        # saturation separates them well. Fall back to brightness when the
+        # image is near-grayscale (saturation carries no signal).
+        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        sat = hsv[:, :, 1].astype(np.float32)
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float32)
+
+        flat_seg = segments.ravel()
+        counts = np.bincount(flat_seg)
+        counts[counts == 0] = 1
+
+        def per_superpixel(feat):
+            return np.bincount(flat_seg, weights=feat.ravel()) / counts
+
+        sat_m = per_superpixel(sat)
+        gray_m = per_superpixel(gray)
+        feature = sat_m if sat_m.max() - sat_m.min() > 25 else gray_m
+
+        # Split superpixels into foreground/background. Otsu degenerates when
+        # the split is very lopsided (tiny within-class variance -> threshold
+        # at the min -> everything foreground). Detect that and use a midpoint
+        # split between the two clusters instead.
+        feat_u8 = np.clip(feature, 0, 255).astype(np.uint8)
+        thresh, _ = cv2.threshold(feat_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        frac = float((feature >= thresh).mean())
+        if frac < 0.02 or frac > 0.98:
+            thresh = (float(feature.min()) + float(feature.max())) / 2.0
+        high_fg = feature >= thresh  # candidate: high-feature superpixels = subject
+
+        # Auto-orient: compare the total feature mass captured in the central
+        # region between the two orientations; pick the one that concentrates
+        # the subject in the center. (Majority-of-labels fails when the subject
+        # is over-segmented into many small superpixels.)
+        h, w = gray.shape
+        center_mask = np.zeros((h, w), dtype=bool)
+        center_mask[h // 4:3 * h // 4, w // 4:3 * w // 4] = True
+        feat_img = feature[segments]
+        total = float(feat_img.sum())
+        central_mass = float(feat_img[center_mask].sum()) / total if total > 0 else 0.0
+        fg_labels = high_fg if central_mass >= 0.5 else ~high_fg
+
+        mask = (fg_labels[segments]).astype(np.uint8) * 255
+        self.mask = mask
+        return mask
+
     def simple_threshold(self, image: np.ndarray, 
                         threshold_value: int = 127, 
                         use_otsu: bool = False) -> np.ndarray:
