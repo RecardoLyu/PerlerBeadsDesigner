@@ -17,10 +17,14 @@ if project_root not in sys.path:
 
 from src.core.image_processor import ImageProcessor
 from src.core.color_manager import ColorManager
-from src.core.pattern_generator import PatternGenerator, PatternConfig
+from src.core.pattern_generator import PatternGenerator, PatternConfig, CHART_BEAD_PX
 from src.utils.segmentation import ImageSegmentation
 from src.utils.export import PatternExporter
 from src.ui.tooltip import attach_tooltip
+
+# Bead cell size used for the standard-chart / grid previews and exports.
+# Matches pattern_generator.CHART_BEAD_PX so preview and export stay consistent.
+CHART_BEAD_SIZE = CHART_BEAD_PX
 # Note: remote web scraper disabled to prefer local colors.json
 
 
@@ -2360,6 +2364,13 @@ class MainWindow(tk.Tk):
                     bead_mask = (m > 127)
                 self.pattern_generator.bead_mask = bead_mask
 
+                # When masked, rebuild the BOM counting only foreground beads so
+                # the masked-out background is excluded everywhere (sidebar BOM
+                # list, exported JSON/CSV, and the chart's BOM chip bar).
+                if bead_mask is not None:
+                    bom = self.pattern_generator.rebuild_bom_with_mask(
+                        bead_mask, self.color_manager.get_palette())
+
                 self.current_pattern = pattern
                 self.current_bom = bom
 
@@ -2383,7 +2394,7 @@ class MainWindow(tk.Tk):
             if pattern is None:
                 raise ValueError("请先生成图案")
             
-            bead_size = 20
+            bead_size = CHART_BEAD_SIZE
             rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
             
             self.pattern_display.set_image(rendered)
@@ -2399,7 +2410,7 @@ class MainWindow(tk.Tk):
                 self.show_codes_var.set(False)
                 return
 
-            bead_size = 20
+            bead_size = CHART_BEAD_SIZE
             if self.show_codes_var.get():
                 rendered = self.pattern_generator.render_standard_chart(
                     bead_size, palette=self.color_manager.get_palette())
@@ -2414,7 +2425,7 @@ class MainWindow(tk.Tk):
             self.show_codes_var.set(False)
             # Fall back to grid
             try:
-                bead_size = 20
+                bead_size = CHART_BEAD_SIZE
                 rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
                 self.pattern_display.set_image(rendered)
             except:
@@ -2440,7 +2451,7 @@ class MainWindow(tk.Tk):
                 raise ValueError("请先生成图案")
 
             scale = int(self.png_scale.get())
-            bead_size = 20
+            bead_size = CHART_BEAD_SIZE
             filename = self.export_filename.get() or f"{self.loaded_filename}_拼豆图纸"
             page_size = self.page_size.get()
 
