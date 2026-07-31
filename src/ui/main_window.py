@@ -594,84 +594,111 @@ class IterativeGrabCutDisplay(tk.Frame):
         """Set annotation mode: 'fgd' (red) or 'bgd' (green)"""
         self.annotation_mode = mode
     
-    def init_grabcut_with_rect(self):
-        """Initialize and run first GrabCut with rectangle"""
+    def init_grabcut_with_rect(self, on_done):
+        """Initialize and run first GrabCut with rectangle, on a background thread.
+
+        on_done(success: bool) is invoked on the Tk main thread when finished.
+        Heavy OpenCV work runs in a worker; display updates happen in on_done."""
         if self.image is None or self.init_rect is None:
-            return False
-        
+            on_done(False)
+            return
+
         x1, y1, x2, y2 = self.init_rect
         x1, x2 = min(x1, x2), max(x1, x2)
         y1, y2 = min(y1, y2), max(y1, y2)
-        
+
         # 确保矩形有效
         if x2 - x1 < 10 or y2 - y1 < 10:
-            return False
-        
-        # 执行初始GrabCut
-        mask = np.zeros(self.image.shape[:2], dtype=np.uint8)
-        self.bgd_model = np.zeros((1, 65), np.float64)
-        self.fgd_model = np.zeros((1, 65), np.float64)
-        
-        cv2.grabCut(
-            self.image,
-            mask,
-            (x1, y1, x2 - x1, y2 - y1),
-            self.bgd_model,
-            self.fgd_model,
-            5,
-            cv2.GC_INIT_WITH_RECT
-        )
-        
-        self.gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-        self.stage = self.STAGE_MARKING
-        self._update_display()
-        return True
-    
-    def apply_grabcut_with_annotation(self):
-        """Apply GrabCut using accumulated annotations"""
+            on_done(False)
+            return
+
+        image = self.image
+
+        def _work():
+            mask = np.zeros(image.shape[:2], dtype=np.uint8)
+            bgd_model = np.zeros((1, 65), np.float64)
+            fgd_model = np.zeros((1, 65), np.float64)
+            cv2.grabCut(image, mask, (x1, y1, x2 - x1, y2 - y1),
+                        bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
+            gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+                               255, 0).astype(np.uint8)
+            return gc_mask, bgd_model, fgd_model
+
+        def _done(result, err):
+            if err is not None:
+                on_done(False)
+                return
+            gc_mask, bgd_model, fgd_model = result
+            self.gc_mask = gc_mask
+            self.bgd_model = bgd_model
+            self.fgd_model = fgd_model
+            self.stage = self.STAGE_MARKING
+            self._update_display()
+            on_done(True)
+
+        self._run_bg(_work, _done)
+
+    def apply_grabcut_with_annotation(self, on_done):
+        """Apply GrabCut using accumulated annotations, on a background thread.
+
+        on_done(success: bool) is invoked on the Tk main thread when finished."""
         if self.image is None or self.gc_mask is None:
-            return False
-        
-        # 创建GrabCut初始化掩码
-        mask = np.zeros(self.image.shape[:2], dtype=np.uint8)
-        mask[:, :] = cv2.GC_PR_BGD  # 默认可能背景
-        
-        # 应用前景标注
-        if self.fgd_annotation is not None:
-            mask[self.fgd_annotation > 0] = cv2.GC_FGD
-        
-        # 应用背景标注
-        if self.bgd_annotation is not None:
-            mask[self.bgd_annotation > 0] = cv2.GC_BGD
-        
-        # 应用上一次结果作为先验
-        mask[self.gc_mask > 0] = cv2.GC_PR_FGD
-        
-        # 执行迭代GrabCut
-        if self.bgd_model is None:
-            self.bgd_model = np.zeros((1, 65), np.float64)
-        if self.fgd_model is None:
-            self.fgd_model = np.zeros((1, 65), np.float64)
-        
-        cv2.grabCut(
-            self.image,
-            mask,
-            None,
-            self.bgd_model,
-            self.fgd_model,
-            3,
-            cv2.GC_INIT_WITH_MASK
-        )
-        
-        self.gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-        
-        # 清除标注，进入结果查看阶段
-        self.fgd_annotation[:] = 0
-        self.bgd_annotation[:] = 0
-        self.current_stroke = []
-        self.stage = self.STAGE_MARKING
-        self._update_display()
-        return True
+            on_done(False)
+            return
+
+        image = self.image
+        fgd_annotation = None if self.fgd_annotation is None else self.fgd_annotation.copy()
+        bgd_annotation = None if self.bgd_annotation is None else self.bgd_annotation.copy()
+        prev_gc = self.gc_mask.copy()
+        bgd_model = self.bgd_model if self.bgd_model is not None else np.zeros((1, 65), np.float64)
+        fgd_model = self.fgd_model if self.fgd_model is not None else np.zeros((1, 65), np.float64)
+
+        def _work():
+            # 创建GrabCut初始化掩码
+            mask = np.full(image.shape[:2], cv2.GC_PR_BGD, dtype=np.uint8)
+            if fgd_annotation is not None:
+                mask[fgd_annotation > 0] = cv2.GC_FGD
+            if bgd_annotation is not None:
+                mask[bgd_annotation > 0] = cv2.GC_BGD
+            # 应用上一次结果作为先验
+            mask[prev_gc > 0] = cv2.GC_PR_FGD
+            cv2.grabCut(image, mask, None, bgd_model, fgd_model, 3,
+                        cv2.GC_INIT_WITH_MASK)
+            gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+                               255, 0).astype(np.uint8)
+            return gc_mask, bgd_model, fgd_model
+
+        def _done(result, err):
+            if err is not None:
+                on_done(False)
+                return
+            gc_mask, bgd_model, fgd_model = result
+            self.gc_mask = gc_mask
+            self.bgd_model = bgd_model
+            self.fgd_model = fgd_model
+            # 清除标注，进入结果查看阶段
+            if self.fgd_annotation is not None:
+                self.fgd_annotation[:] = 0
+            if self.bgd_annotation is not None:
+                self.bgd_annotation[:] = 0
+            self.current_stroke = []
+            self.stage = self.STAGE_MARKING
+            self._update_display()
+            on_done(True)
+
+        self._run_bg(_work, _done)
+
+    def _run_bg(self, work_fn, done_fn):
+        """Run work_fn() in a daemon thread, then done_fn(result, err) on the
+        Tk main thread. work_fn must not touch Tk widgets."""
+        import threading
+        def _job():
+            try:
+                result = work_fn()
+                self.after(0, lambda: done_fn(result, None))
+            except Exception as e:
+                self.after(0, lambda: done_fn(None, e))
+        threading.Thread(target=_job, daemon=True).start()
     
     def clear_annotations(self):
         """Clear all annotations"""
@@ -1129,6 +1156,10 @@ class MainWindow(tk.Tk):
         self.current_pattern = None
         self.current_bom = None
         self.aspect_ratio = 1.0
+        # Token to invalidate in-flight background segmentation results. Each
+        # segmentation run captures the current value; when it changes (new
+        # image loaded or a new run started) a stale worker's result is dropped.
+        self._seg_token = 0
         self.loaded_filename = 'pattern'  # Original loaded filename (without extension)
         
         # Setup UI
@@ -1658,14 +1689,6 @@ class MainWindow(tk.Tk):
         ttk.Checkbutton(left_panel, text="导出PDF",
                        variable=self.export_pdf_var).pack(fill="x", pady=1)
 
-        self.export_bom_json_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left_panel, text="导出物料清单(JSON)",
-                       variable=self.export_bom_json_var).pack(fill="x", pady=1)
-
-        self.export_bom_csv_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left_panel, text="导出物料清单(CSV)",
-                       variable=self.export_bom_csv_var).pack(fill="x", pady=1)
-
         ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
 
         # One-click export button
@@ -1688,7 +1711,22 @@ class MainWindow(tk.Tk):
         paned.add(right_frame, weight=1)
     
     # ===== Event handlers =====
-    
+
+    def _run_async(self, work_fn, on_done):
+        """Run work_fn() on a background thread, then call on_done(result) back
+        on the Tk main thread. Keeps the UI responsive during long OpenCV work
+        (e.g. GrabCut) so the user can keep interacting / load a new image.
+
+        work_fn runs in the worker (OpenCV/numpy only, no Tk calls). on_done
+        runs on the main thread and receives whatever work_fn returned."""
+        def _job():
+            try:
+                result = work_fn()
+                self.after(0, lambda: on_done(result, None))
+            except Exception as e:
+                self.after(0, lambda: on_done(None, e))
+        threading.Thread(target=_job, daemon=True).start()
+
     def _load_image(self):
         """Load image file - supports Chinese paths"""
         filepath = filedialog.askopenfilename(
@@ -1712,6 +1750,10 @@ class MainWindow(tk.Tk):
                 # Display in preprocessing interactive display (merged image-load view)
                 if hasattr(self, 'seg_display'):
                     self.seg_display.set_image(image)
+
+                # Invalidate any in-flight background segmentation from the
+                # previous image so its result can't overwrite the new state.
+                self._seg_token += 1
 
                 # Store aspect ratio and filename
                 h, w = image.shape[:2]
@@ -1849,40 +1891,52 @@ class MainWindow(tk.Tk):
             self.status_var.set("没有可撤销的标记")
     
     def _segmentate_interactive(self):
-        """Segment based on accumulated interactive selection (union of all marks)"""
+        """Segment based on accumulated interactive selection (union of all marks).
+
+        Runs GrabCut on a background thread so the UI stays responsive (the user
+        can load a new image mid-run; a stale result is discarded via token)."""
         try:
             if self.current_image is None:
                 raise ValueError("请先加载图像")
-            
+
             # Get accumulated mask (union of all marks)
             accumulated_mask = self.seg_display.get_accumulated_mask()
             mark_count = len(self.seg_display.stroke_history)
-            
+
             if accumulated_mask is None or not np.any(accumulated_mask > 0):
                 raise ValueError("请先在图像上进行标记 (矩形、椭圆或涂抹)")
-            
-            image = self.image_processor.current_image
-            
-            # Create GC_FGD/GC_BGD initialization from accumulated mask
-            gc_mask = np.zeros(image.shape[:2], dtype=np.uint8)
-            gc_mask[accumulated_mask > 0] = cv2.GC_FGD
-            
-            # Run GrabCut
-            bgd_model = np.zeros((1, 65), np.float64)
-            fgd_model = np.zeros((1, 65), np.float64)
-            cv2.grabCut(image, gc_mask, None, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_MASK)
-            
-            # Convert to binary mask
-            mask = np.where((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-            self.current_mask = mask
-            
-            # Display result
-            mask_display = cv2.cvtColor(self.current_mask, cv2.COLOR_GRAY2RGB)
-            self.seg_display.set_image(mask_display)
-            self.seg_display.set_mode("view")
-            self.seg_display_var.set("Mask")
-            self.status_var.set(f"交互式分割完成 (使用 {mark_count} 个标记的并集)")
-            
+
+            image = self.image_processor.current_image.copy()
+
+            self._seg_token += 1
+            token = self._seg_token
+            self.status_var.set("交互式分割中… (可随时加载新图像打断)")
+
+            def _work():
+                # Create GC_FGD/GC_BGD initialization from accumulated mask
+                gc_mask = np.zeros(image.shape[:2], dtype=np.uint8)
+                gc_mask[accumulated_mask > 0] = cv2.GC_FGD
+                bgd_model = np.zeros((1, 65), np.float64)
+                fgd_model = np.zeros((1, 65), np.float64)
+                cv2.grabCut(image, gc_mask, None, bgd_model, fgd_model, 5,
+                            cv2.GC_INIT_WITH_MASK)
+                return np.where((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
+                                255, 0).astype(np.uint8)
+
+            def _done(mask, err):
+                if err is not None:
+                    messagebox.showerror("错误", str(err))
+                    return
+                if token != self._seg_token:
+                    return  # superseded by a newer run / image load
+                self.current_mask = mask
+                mask_display = cv2.cvtColor(self.current_mask, cv2.COLOR_GRAY2RGB)
+                self.seg_display.set_image(mask_display)
+                self.seg_display.set_mode("view")
+                self.seg_display_var.set("Mask")
+                self.status_var.set(f"交互式分割完成 (使用 {mark_count} 个标记的并集)")
+
+            self._run_async(_work, _done)
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -1917,12 +1971,17 @@ class MainWindow(tk.Tk):
             if self.igc_display.init_rect is None:
                 raise ValueError("请在图像上绘制矩形作为初始ROI")
             
-            # Execute first GrabCut
-            if self.igc_display.init_grabcut_with_rect():
-                self.igc_display.set_stage(IterativeGrabCutDisplay.STAGE_MARKING)
-                self.status_var.set("第一次分割完成。选择标注模式（前景红色/背景绿色）并在结果上标注")
-            else:
-                messagebox.showwarning("警告", "矩形过小，请重新绘制至少 10x10 像素的矩形")
+            # Execute first GrabCut (background thread; UI stays responsive)
+            self.status_var.set("第一次分割中… (可随时加载新图像打断)")
+
+            def _on_first_done(ok):
+                if ok:
+                    self.igc_display.set_stage(IterativeGrabCutDisplay.STAGE_MARKING)
+                    self.status_var.set("第一次分割完成。选择标注模式（前景红色/背景绿色）并在结果上标注")
+                else:
+                    messagebox.showwarning("警告", "矩形过小，请重新绘制至少 10x10 像素的矩形")
+
+            self.igc_display.init_grabcut_with_rect(_on_first_done)
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -1960,11 +2019,16 @@ class MainWindow(tk.Tk):
                 messagebox.showinfo("提示", "没有标注数据。请标注前景（红色）或背景（绿色）后再执行迭代")
                 return
             
-            # Execute iterative GrabCut
-            if self.igc_display.apply_grabcut_with_annotation():
-                self.status_var.set("迭代分割完成。可继续标注进行微调，或点击\"应用分割结果\"保存")
-            else:
-                messagebox.showerror("错误", "GrabCut执行失败")
+            # Execute iterative GrabCut (background thread; UI stays responsive)
+            self.status_var.set("迭代分割中… (可随时加载新图像打断)")
+
+            def _on_iter_done(ok):
+                if ok:
+                    self.status_var.set("迭代分割完成。可继续标注进行微调，或点击\"应用分割结果\"保存")
+                else:
+                    messagebox.showerror("错误", "GrabCut执行失败")
+
+            self.igc_display.apply_grabcut_with_annotation(_on_iter_done)
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -2013,25 +2077,38 @@ class MainWindow(tk.Tk):
                 messagebox.showwarning("警告", "请先执行应用Mask操作")
     
     def _segmentate_grabcut(self):
-        """Apply GrabCut segmentation"""
+        """Apply GrabCut segmentation (background thread; UI stays responsive)."""
         try:
             image = self.image_processor.current_image
             if image is None:
                 raise ValueError("请先加载图像")
-            
+
+            image = image.copy()
             h, w = image.shape[:2]
             x1, y1 = int(w * 0.2), int(h * 0.2)
             x2, y2 = int(w * 0.8), int(h * 0.8)
-            
-            mask = self.segmentation.grabcut_rect(image, x1, y1, x2, y2)
-            self.current_mask = mask
-            
-            # Display original image
-            self.seg_display.set_image(image)
-            self.seg_display_var.set("原图")
-            self.seg_display_label.config(text="原图")
-            
-            self.status_var.set("GrabCut分割完成")
+
+            self._seg_token += 1
+            token = self._seg_token
+            self.status_var.set("GrabCut分割中… (可随时加载新图像打断)")
+
+            def _work():
+                return self.segmentation.grabcut_rect(image, x1, y1, x2, y2)
+
+            def _done(mask, err):
+                if err is not None:
+                    messagebox.showerror("错误", str(err))
+                    return
+                if token != self._seg_token:
+                    return  # superseded by a newer run / image load
+                self.current_mask = mask
+                # Display original image
+                self.seg_display.set_image(image)
+                self.seg_display_var.set("原图")
+                self.seg_display_label.config(text="原图")
+                self.status_var.set("GrabCut分割完成")
+
+            self._run_async(_work, _done)
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -2480,16 +2557,6 @@ class MainWindow(tk.Tk):
                 export_paths.append(f"PDF: {filepath}")
                 export_any = True
 
-            if self.export_bom_json_var.get():
-                filepath = self.exporter.export_bom_json(bom, filename)
-                export_paths.append(f"JSON物料清单: {filepath}")
-                export_any = True
-
-            if self.export_bom_csv_var.get():
-                filepath = self.exporter.export_bom_csv(bom, filename)
-                export_paths.append(f"CSV物料清单: {filepath}")
-                export_any = True
-
             if not export_any:
                 raise ValueError("请至少勾选一个导出格式")
 
@@ -2498,21 +2565,7 @@ class MainWindow(tk.Tk):
             self.status_var.set("一键导出完成")
         except Exception as e:
             messagebox.showerror("错误", str(e))
-    
-    def _export_bom_csv(self):
-        """Export BOM as CSV"""
-        try:
-            bom = self.pattern_generator.get_bom()
-            if bom is None:
-                raise ValueError("请先生成图案")
-            
-            filename = self.export_filename.get() or 'pattern'
-            filepath = self.exporter.export_bom_csv(bom, filename)
-            messagebox.showinfo("成功", f"已导出: {filepath}")
-            self.status_var.set("BOM (CSV)导出完成")
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-    
+
     def _select_output_dir(self):
         """Select output directory"""
         directory = filedialog.askdirectory(title="选择输出目录")
