@@ -568,7 +568,7 @@ class PatternGenerator:
                 # per-cell code (adaptive, contrast-colored)
                 lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
                 txt_color = (0, 0, 0) if lum > 128 else (255, 255, 255)
-                cf = _load_font(max(9, int(cell * 0.52)))
+                cf = _load_font(max(9, int(cell * 0.43)))
                 if cf is not None:
                     try:
                         tb = draw.textbbox((0, 0), code, font=cf)

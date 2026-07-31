@@ -15,7 +15,6 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image, ImageDraw, ImageFont
-import json
 
 # Register Chinese fonts
 def _register_chinese_fonts():
@@ -332,57 +331,7 @@ class PatternExporter:
                 pass
 
         return filepath
-    
-    def export_bom_json(self, bom: Dict, filename: str) -> str:
-        """
-        Export BOM as JSON with Chinese filename support
-        
-        Args:
-            bom: Bill of materials dictionary
-            filename: Output filename (without extension, supports Chinese)
-        
-        Returns:
-            Path to saved file
-        """
-        filepath = os.path.join(self.output_dir, f"{filename}_bom.json")
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(bom, f, ensure_ascii=False, indent=2)
-        
-        return filepath
-    
-    def export_bom_csv(self, bom: Dict, filename: str) -> str:
-        """
-        Export BOM as CSV with Chinese filename support
-        
-        Args:
-            bom: Bill of materials dictionary
-            filename: Output filename (without extension, supports Chinese)
-        
-        Returns:
-            Path to saved file
-        """
-        import csv
-        
-        filepath = os.path.join(self.output_dir, f"{filename}_bom.csv")
-        
-        with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['颜色代码', '颜色名称', 'HEX值', '数量', '百分比'])
-            
-            for code, color_info in sorted(bom['colors'].items()):
-                writer.writerow([
-                    code,
-                    color_info['name'],
-                    color_info['hex'],
-                    color_info['count'],
-                    f"{color_info['percentage']:.1f}%"
-                ])
-            
-            writer.writerow(['总计', '', '', bom['total_beads'], '100%'])
-        
-        return filepath
-    
+
     @staticmethod
     def _render_pattern_with_codes(pattern: np.ndarray, color_map: np.ndarray,
                                    bead_size: int = 20) -> np.ndarray:
