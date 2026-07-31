@@ -37,6 +37,27 @@ a = Analysis(
         'PIL.ImageTk',
         'PIL.Image',
     ],
+    # scikit-image (SLIC) pulls its optional Qt-based `skimage.future.graph`
+    # RAG tooling into the module graph, which drags BOTH PyQt5 and PyQt6 in
+    # and aborts the build ("multiple Qt bindings"). And its dependency scan
+    # imports torch, which hard-crashes (access violation) while PyInstaller
+    # loads its DLLs. We only use skimage.segmentation.slic, so exclude Qt
+    # bindings and all the heavy ML / plotting / notebook packages the app
+    # never uses.
+    excludes=[
+        'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'qtpy',
+        'torch', 'torchvision', 'torchaudio', 'tensorflow', 'keras', 'jax',
+        'matplotlib', 'IPython', 'ipykernel', 'jupyter', 'notebook',
+        'pandas', 'sympy', 'dask', 'distributed', 'sklearn',
+        # Heavy optional deps of skimage/scipy that SLIC does not use; the
+        # dependency scan otherwise bundles them and bloats the app by ~500MB.
+        'scikit-learn', 'pywt', 'imageio', 'tifffile', 'numba',
+        'llvmlite', 'networkx', 'docutils', 'sphinx',
+        # Unrelated heavy packages present in this dev environment that the
+        # dependency scan would otherwise bundle (none are used by the app).
+        'playwright', 'panel', 'bokeh', 'pyarrow', 'astropy', 'statsmodels',
+        'holoviews', 'datashader', 'param', 'pyviz_comms', 'lxml', 'selenium',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -64,7 +85,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -82,7 +103,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='PerlerBeadsDesigner'
 )
