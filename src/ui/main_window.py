@@ -529,6 +529,11 @@ class IterativeGrabCutDisplay(tk.Frame):
         # 阶段和状态
         self.stage = self.STAGE_INIT_RECT
         self.init_rect = None  # (x1, y1, x2, y2)
+
+        # 前景区域绘制模式: rect / ellipse / freehand
+        self.shape_mode = 'rect'
+        self.init_mask = None      # 椭圆/自由曲线生成的填充 mask (图像坐标, 0/255)
+        self.current_path = []     # 自由曲线累积点 (图像坐标)
         
         # 源图像和GrabCut结果
         self.image = None
@@ -582,8 +587,21 @@ class IterativeGrabCutDisplay(tk.Frame):
         self.bgd_model = None
         self.fgd_model = None
         self.init_rect = None
+        self.init_mask = None
+        self.current_path = []
         self.stage = self.STAGE_INIT_RECT
         self.current_stroke = []
+        self._update_display()
+
+    def set_shape_mode(self, mode: str):
+        """Set foreground-region draw mode: 'rect' / 'ellipse' / 'freehand'.
+
+        Resets any in-progress region so the new mode starts clean."""
+        self.shape_mode = mode
+        self.init_rect = None
+        self.init_mask = None
+        self.current_path = []
+        self.is_drawing = False
         self._update_display()
     
     def set_stage(self, stage: str):
@@ -600,35 +618,57 @@ class IterativeGrabCutDisplay(tk.Frame):
         """Set annotation mode: 'fgd' (red) or 'bgd' (green)"""
         self.annotation_mode = mode
     
-    def init_grabcut_with_rect(self, on_done):
-        """Initialize and run first GrabCut with rectangle, on a background thread.
+    def init_grabcut(self, on_done):
+        """Initialize and run first GrabCut from the drawn foreground region, on a
+        background thread. Rect uses GC_INIT_WITH_RECT; ellipse/freehand use a
+        filled mask with GC_INIT_WITH_MASK.
 
         on_done(success: bool) is invoked on the Tk main thread when finished.
         Heavy OpenCV work runs in a worker; display updates happen in on_done."""
-        if self.image is None or self.init_rect is None:
-            on_done(False)
-            return
-
-        x1, y1, x2, y2 = self.init_rect
-        x1, x2 = min(x1, x2), max(x1, x2)
-        y1, y2 = min(y1, y2), max(y1, y2)
-
-        # 确保矩形有效
-        if x2 - x1 < 10 or y2 - y1 < 10:
+        if self.image is None:
             on_done(False)
             return
 
         image = self.image
+        h, w = image.shape[:2]
 
-        def _work():
-            mask = np.zeros(image.shape[:2], dtype=np.uint8)
-            bgd_model = np.zeros((1, 65), np.float64)
-            fgd_model = np.zeros((1, 65), np.float64)
-            cv2.grabCut(image, mask, (x1, y1, x2 - x1, y2 - y1),
-                        bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
-            gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
-                               255, 0).astype(np.uint8)
-            return gc_mask, bgd_model, fgd_model
+        if self.shape_mode == 'rect':
+            if self.init_rect is None:
+                on_done(False)
+                return
+            x1, y1, x2, y2 = self.init_rect
+            x1, x2 = min(x1, x2), max(x1, x2)
+            y1, y2 = min(y1, y2), max(y1, y2)
+            if x2 - x1 < 10 or y2 - y1 < 10:
+                on_done(False)
+                return
+            rect = (x1, y1, x2 - x1, y2 - y1)
+
+            def _work():
+                mask = np.zeros((h, w), dtype=np.uint8)
+                bgd_model = np.zeros((1, 65), np.float64)
+                fgd_model = np.zeros((1, 65), np.float64)
+                cv2.grabCut(image, mask, rect, bgd_model, fgd_model, 5,
+                            cv2.GC_INIT_WITH_RECT)
+                gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+                                   255, 0).astype(np.uint8)
+                return gc_mask, bgd_model, fgd_model
+        else:
+            if self.init_mask is None or not np.any(self.init_mask > 0):
+                on_done(False)
+                return
+            init_mask = self.init_mask.copy()
+
+            def _work():
+                mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)
+                mask[init_mask > 0] = cv2.GC_PR_FGD
+                bgd_model = np.zeros((1, 65), np.float64)
+                fgd_model = np.zeros((1, 65), np.float64)
+                cv2.grabCut(image, mask, None, bgd_model, fgd_model, 5,
+                            cv2.GC_INIT_WITH_MASK)
+                gc_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+                                   255, 0).astype(np.uint8)
+                return gc_mask, bgd_model, fgd_model
 
         def _done(result, err):
             if err is not None:
@@ -741,7 +781,10 @@ class IterativeGrabCutDisplay(tk.Frame):
         if self.stage == self.STAGE_INIT_RECT:
             img_point = self._display_to_image(event.x, event.y)
             if img_point:
-                self.init_rect = (img_point[0], img_point[1], img_point[0], img_point[1])
+                if self.shape_mode == 'freehand':
+                    self.current_path = [img_point]
+                else:
+                    self.init_rect = (img_point[0], img_point[1], img_point[0], img_point[1])
                 self.is_drawing = True
         
         elif self.stage == self.STAGE_MARKING and self.annotation_mode:
@@ -760,7 +803,17 @@ class IterativeGrabCutDisplay(tk.Frame):
             return
         
         if self.stage == self.STAGE_INIT_RECT:
-            self.init_rect = (self.init_rect[0], self.init_rect[1], img_point[0], img_point[1])
+            if self.shape_mode == 'freehand':
+                self.current_path.append(img_point)
+            elif self.shape_mode == 'ellipse' and (event.state & 0x0001):
+                # Shift held: lock to a perfect circle (square bounding box)
+                x1, y1 = self.init_rect[0], self.init_rect[1]
+                side = max(abs(img_point[0] - x1), abs(img_point[1] - y1))
+                x2 = x1 + side if img_point[0] >= x1 else x1 - side
+                y2 = y1 + side if img_point[1] >= y1 else y1 - side
+                self.init_rect = (x1, y1, x2, y2)
+            else:
+                self.init_rect = (self.init_rect[0], self.init_rect[1], img_point[0], img_point[1])
         
         elif self.stage == self.STAGE_MARKING and self.annotation_mode:
             self.current_stroke.append(img_point)
@@ -773,7 +826,24 @@ class IterativeGrabCutDisplay(tk.Frame):
             return
         
         self.is_drawing = False
-        
+
+        # Finalize foreground region (ellipse / freehand) into a filled mask
+        if self.stage == self.STAGE_INIT_RECT:
+            h, w = self.image.shape[:2]
+            if self.shape_mode == 'ellipse' and self.init_rect is not None:
+                x1, y1, x2, y2 = self.init_rect
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                ax, ay = abs(x2 - x1) // 2, abs(y2 - y1) // 2
+                m = np.zeros((h, w), dtype=np.uint8)
+                cv2.ellipse(m, (cx, cy), (ax, ay), 0, 0, 360, 255, -1)
+                self.init_mask = m
+            elif self.shape_mode == 'freehand' and len(self.current_path) >= 3:
+                pts = np.array(self.current_path, dtype=np.int32).reshape((-1, 1, 2))
+                m = np.zeros((h, w), dtype=np.uint8)
+                # fillPoly implicitly connects last point back to first if unclosed
+                cv2.fillPoly(m, [pts], 255)
+                self.init_mask = m
+
         # Finalize annotations
         if self.stage == self.STAGE_MARKING and self.annotation_mode and self.current_stroke:
             target = self.fgd_annotation if self.annotation_mode == 'fgd' else self.bgd_annotation
@@ -874,13 +944,31 @@ class IterativeGrabCutDisplay(tk.Frame):
             bgd_overlay[bgd_disp > 0] = [0, 255, 0]  # Bright green
             display_img = cv2.addWeighted(display_img, 0.7, bgd_overlay, 0.3, 0)
         
-        # Draw rectangle in blue if in init stage
-        if self.stage == self.STAGE_INIT_RECT and self.init_rect:
-            x1, y1, x2, y2 = self.init_rect
-            if scale < 1.0:
-                x1, y1, x2, y2 = int(x1 * scale), int(y1 * scale), int(x2 * scale), int(y2 * scale)
-            cv2.rectangle(display_img, (x1, y1), (x2, y2), (255, 0, 0), 3)  # Blue
-        
+        # Draw foreground-region preview in blue while in init stage
+        if self.stage == self.STAGE_INIT_RECT:
+            def _to_disp(px, py):
+                return (int(px * scale), int(py * scale)) if scale < 1.0 else (int(px), int(py))
+
+            if self.shape_mode == 'freehand':
+                # Live freehand path; close it visually once enough points exist
+                if len(self.current_path) >= 2:
+                    pts = np.array([_to_disp(x, y) for x, y in self.current_path],
+                                   dtype=np.int32).reshape((-1, 1, 2))
+                    closed = len(self.current_path) >= 3
+                    cv2.polylines(display_img, [pts], closed, (255, 0, 0), 2)
+            elif self.shape_mode == 'ellipse':
+                if self.init_rect is not None:
+                    x1, y1, x2, y2 = self.init_rect
+                    cx, cy = _to_disp((x1 + x2) / 2, (y1 + y2) / 2)
+                    ax = int(abs(x2 - x1) / 2 * (scale if scale < 1.0 else 1))
+                    ay = int(abs(y2 - y1) / 2 * (scale if scale < 1.0 else 1))
+                    cv2.ellipse(display_img, (cx, cy), (ax, ay), 0, 0, 360, (255, 0, 0), 2)
+            else:  # rect
+                if self.init_rect is not None:
+                    x1, y1 = _to_disp(self.init_rect[0], self.init_rect[1])
+                    x2, y2 = _to_disp(self.init_rect[2], self.init_rect[3])
+                    cv2.rectangle(display_img, (x1, y1), (x2, y2), (255, 0, 0), 3)
+
         # Draw rectangle for result display
         elif self.stage != self.STAGE_INIT_RECT and self.init_rect:
             x1, y1, x2, y2 = self.init_rect
@@ -1183,8 +1271,7 @@ class MainWindow(tk.Tk):
         # Create tabs
         self._create_preprocess_tab()
         self._create_pattern_tab()
-        self._create_export_tab()
-        
+
         # Status bar
         self.status_var = tk.StringVar(value="就绪")
         status_bar = tk.Label(self, textvariable=self.status_var, relief="sunken", 
@@ -1244,8 +1331,7 @@ class MainWindow(tk.Tk):
         self.seg_display_label.pack()
 
         # Create both display widgets - initially hide IGC display
-        self.seg_display = InteractiveImageDisplay(display_frame, bg="white",
-                                                  on_selection_callback=self._on_interactive_selection)
+        self.seg_display = InteractiveImageDisplay(display_frame, bg="white")
         self.seg_display.pack(fill="both", expand=True)
 
         # Iterative GrabCut display
@@ -1314,6 +1400,54 @@ class MainWindow(tk.Tk):
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
+        # === 图像变换 (旋转 / 翻转) ===
+        ttk.Label(frame, text="图像变换:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
+
+        # Rotate row 1: 90° CCW / 90° CW / 180°
+        f_rot = ttk.Frame(frame)
+        f_rot.pack(fill="x", pady=1)
+        ttk.Button(f_rot, text="↺90°",
+                   command=lambda: self._apply_transform(
+                       lambda: self.image_processor.rotate_90(False), "逆时针旋转90°")
+                   ).pack(side="left", padx=1, expand=True, fill="x")
+        ttk.Button(f_rot, text="↻90°",
+                   command=lambda: self._apply_transform(
+                       lambda: self.image_processor.rotate_90(True), "顺时针旋转90°")
+                   ).pack(side="left", padx=1, expand=True, fill="x")
+        ttk.Button(f_rot, text="180°",
+                   command=lambda: self._apply_transform(
+                       self.image_processor.rotate_180, "旋转180°")
+                   ).pack(side="left", padx=1, expand=True, fill="x")
+
+        # Arbitrary angle row
+        f_ang = ttk.Frame(frame)
+        f_ang.pack(fill="x", pady=1)
+        ttk.Label(f_ang, text="角度:", width=5).pack(side="left")
+        self.rotate_angle = tk.Spinbox(f_ang, from_=-180, to=180, increment=1, width=6)
+        self.rotate_angle.delete(0, tk.END)
+        self.rotate_angle.insert(0, '0')
+        self.rotate_angle.pack(side="left", padx=2)
+        ttk.Button(f_ang, text="旋转",
+                   command=self._apply_arbitrary_rotation).pack(side="left", padx=2, expand=True, fill="x")
+
+        # Flip row: horizontal / vertical (with symmetry icons)
+        self._icons = getattr(self, '_icons', [])
+        icon_h = self._make_symmetry_icon(vertical_axis=True)   # 水平翻转: 关于竖直轴
+        icon_v = self._make_symmetry_icon(vertical_axis=False)  # 垂直翻转: 关于水平轴
+        self._icons.extend([icon_h, icon_v])
+        f_flip = ttk.Frame(frame)
+        f_flip.pack(fill="x", pady=1)
+        ttk.Button(f_flip, text="水平对称", image=icon_h, compound="left",
+                   command=lambda: self._apply_transform(
+                       self.image_processor.flip_horizontal, "水平对称翻转")
+                   ).pack(side="left", padx=1, expand=True, fill="x")
+        ttk.Button(f_flip, text="垂直对称", image=icon_v, compound="left",
+                   command=lambda: self._apply_transform(
+                       self.image_processor.flip_vertical, "垂直对称翻转")
+                   ).pack(side="left", padx=1, expand=True, fill="x")
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
+
         # === Restore original ===
         ttk.Button(frame, text="恢复原图",
                   command=self._restore_original_image).pack(fill="x", pady=2)
@@ -1323,47 +1457,33 @@ class MainWindow(tk.Tk):
         frame = ttk.Frame(self.preprocess_notebook)
         self.preprocess_notebook.add(frame, text="分割")
 
-        # Interactive selection section
-        ttk.Label(frame, text="交互式选择:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
-
-        ttk.Label(frame, text="选择模式:").pack(fill="x")
-        self.interactive_mode_var = tk.StringVar(value="矩形")
-        self.interactive_mode_combo = ttk.Combobox(frame,
-                                                   textvariable=self.interactive_mode_var,
-                                                   values=["矩形", "椭圆", "涂抹"],
-                                                   state="readonly", width=15)
-        self.interactive_mode_combo.pack(fill="x", pady=1)
-        self.interactive_mode_combo.bind("<<ComboboxSelected>>", self._on_interactive_mode_changed)
-
-        f_btn = ttk.Frame(frame)
-        f_btn.pack(fill="x", pady=1)
-        b_enable = ttk.Button(f_btn, text="启用", command=self._enable_interactive_selection)
-        b_enable.pack(side="left", padx=1)
-        attach_tooltip(b_enable, "启用后可在图像上框选/椭圆/涂抹标记前景区域,再点'执行分割'提取前景")
-        b_undo = ttk.Button(f_btn, text="撤销", command=self._undo_last_mark)
-        b_undo.pack(side="left", padx=1)
-        attach_tooltip(b_undo, "撤销上一次标记")
-        b_reset = ttk.Button(f_btn, text="重置", command=self._reset_interactive_selection)
-        b_reset.pack(side="left", padx=1)
-        attach_tooltip(b_reset, "清除所有标记,重新开始")
-
-        b_seg = ttk.Button(frame, text="执行分割", command=self._segmentate_interactive)
-        b_seg.pack(fill="x", pady=1)
-        attach_tooltip(b_seg, "根据已标记的前景区域运行GrabCut分割,提取前景")
-
-        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
-
         # Iterative GrabCut section
         ttk.Label(frame, text="迭代GrabCut:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
 
-        b_rect = ttk.Button(frame, text="1. 绘制初始矩形",
+        # Shape selector for the foreground region
+        f_shape = ttk.Frame(frame)
+        f_shape.pack(fill="x", pady=1)
+        ttk.Label(f_shape, text="形状:", width=5).pack(side="left")
+        self.igc_shape_var = tk.StringVar(value="矩形")
+        igc_shape_combo = ttk.Combobox(f_shape, textvariable=self.igc_shape_var,
+                                       values=["矩形", "椭圆", "自由曲线"],
+                                       state="readonly", width=8)
+        igc_shape_combo.pack(side="left", padx=2, expand=True, fill="x")
+        igc_shape_combo.bind("<<ComboboxSelected>>", self._on_igc_shape_changed)
+        attach_tooltip(igc_shape_combo,
+            "前景区域形状:\n"
+            "矩形: 拖出矩形框\n"
+            "椭圆: 拖出椭圆(按住Shift为正圆)\n"
+            "自由曲线: 自由绘制封闭曲线(未闭合时自动连接起止点)")
+
+        b_rect = ttk.Button(frame, text="1. 绘制前景区域",
                   command=self._init_iterative_grabcut)
         b_rect.pack(fill="x", pady=1)
-        attach_tooltip(b_rect, "进入框选模式:在图像上拖出矩形圈住前景大致范围")
+        attach_tooltip(b_rect, "进入绘制模式:按所选形状在图像上圈出前景大致范围(实时预览)")
         b_first = ttk.Button(frame, text="2. 第一次分割",
                   command=self._first_grabcut)
         b_first.pack(fill="x", pady=1)
-        attach_tooltip(b_first, "基于所画矩形运行首次GrabCut图割,得到初步前景")
+        attach_tooltip(b_first, "基于所绘前景区域运行首次GrabCut图割,得到初步前景")
 
         f_anno = ttk.Frame(frame)
         f_anno.pack(fill="x", pady=1)
@@ -1390,46 +1510,31 @@ class MainWindow(tk.Tk):
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
         # Automatic segmentation
-        ttk.Label(frame, text="自动分割:").pack(fill="x")
-        self.seg_method = ttk.Combobox(frame,
-                                       values=["GrabCut", "自适应阈值", "简单阈值"],
-                                       state="readonly", width=15)
-        self.seg_method.set("GrabCut")
-        self.seg_method.pack(fill="x", pady=1)
-
+        ttk.Label(frame, text="自动分割:", font=("Arial", 9, "bold")).pack(fill="x")
         ttk.Button(frame, text="执行分割",
                   command=self._segmentate_grabcut).pack(fill="x", pady=1)
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
-        # Threshold
-        ttk.Label(frame, text="阈值 (0-255):").pack(fill="x")
-        self.threshold_spin = tk.Spinbox(frame, from_=0, to=255, width=10)
-        self.threshold_spin.delete(0, tk.END)
-        self.threshold_spin.insert(0, '127')
-        self.threshold_spin.pack(fill="x", pady=1)
-
-        ttk.Button(frame, text="应用阈值",
-                  command=self._apply_threshold).pack(fill="x", pady=1)
-
-        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
-
         # Morphology
-        ttk.Label(frame, text="形态学操作:").pack(fill="x")
+        ttk.Label(frame, text="形态学操作:", font=("Arial", 9, "bold")).pack(fill="x")
         ttk.Label(frame, text="核大小:").pack(fill="x")
         self.kernel_spin = tk.Spinbox(frame, from_=3, to=21, width=10)
         self.kernel_spin.delete(0, tk.END)
         self.kernel_spin.insert(0, '5')
         self.kernel_spin.pack(fill="x", pady=1)
 
-        # Structuring element shape (名称-示意图)
+        # Structuring element shape (名称-示意图, 名称列定宽对齐)
         ttk.Label(frame, text="结构元素:").pack(fill="x")
-        self.kernel_shape_var = tk.StringVar(value="椭圆 ●")
+        _shapes = [("椭圆", "●"), ("矩形", "■"), ("十字", "┼"),
+                   ("垂直线", "│"), ("水平线", "─"),
+                   ("斜线", "\\"), ("斜线", "/"), ("菱形", "◆")]
+        _w = max(len(n) for n, _ in _shapes)  # 最长名称的全角宽度
+        _vals = [n + "　" * (_w - len(n)) + " " + s for n, s in _shapes]
+        self.kernel_shape_var = tk.StringVar(value=_vals[0])
         shape_combo = ttk.Combobox(frame, textvariable=self.kernel_shape_var,
                                    state="readonly", width=12,
-                                   values=["椭圆 ●", "矩形 ■", "十字 ┼",
-                                           "垂直线 │", "水平线 ─",
-                                           "斜线 \\", "斜线 /", "菱形 ◆"])
+                                   values=_vals)
         shape_combo.pack(fill="x", pady=1)
         attach_tooltip(shape_combo,
             "结构元素形状:\n"
@@ -1623,48 +1728,23 @@ class MainWindow(tk.Tk):
                   command=self._generate_pattern).pack(fill="x", pady=1)
         
         ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-        
-        ttk.Label(left_panel, text="渲染选项:").pack()
+
+        ttk.Label(left_panel, text="导出选项:", font=("Arial", 9, "bold")).pack()
 
         self.show_codes_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left_panel, text="带编码渲染",
+        ttk.Checkbutton(left_panel, text="导出预览",
                        variable=self.show_codes_var,
                        command=self._on_show_codes_toggled).pack(fill="x", pady=1)
-        
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-        
-        ttk.Label(left_panel, text="物料清单:").pack()
-        self.bom_list = tk.Listbox(left_panel, height=8)
-        self.bom_list.pack(fill="both", expand=True, pady=2)
-        
-        # Right panel
-        self.pattern_display = ImageDisplay(paned, fill_mode=True, enable_zoom=True, bg="white")
 
-        # Add panes
-        paned.add(left_panel, weight=0)
-        paned.add(self.pattern_display, weight=1)
-    
-    def _create_export_tab(self):
-        """Create export tab"""
-        frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="导出")
-
-        # Resizable paned layout
-        paned = ttk.PanedWindow(frame, orient="horizontal")
-        paned.pack(fill="both", expand=True)
-
-        left_panel = ttk.Frame(paned, width=180)
-
-        ttk.Label(left_panel, text="文件名:").pack()
-        self.export_filename = tk.Entry(left_panel)
+        # Filename
+        frame_fn = ttk.Frame(left_panel)
+        frame_fn.pack(fill="x", pady=2)
+        ttk.Label(frame_fn, text="文件名:", width=6).pack(side="left")
+        self.export_filename = tk.Entry(frame_fn, width=12)
         self.export_filename.insert(0, 'pattern')
-        self.export_filename.pack(fill="x", pady=2)
+        self.export_filename.pack(side="left", padx=2, expand=True, fill="x")
 
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-
-        ttk.Label(left_panel, text="导出参数:").pack()
-
-        # Scale parameter
+        # PNG scale
         frame_scale = ttk.Frame(left_panel)
         frame_scale.pack(fill="x", pady=2)
         ttk.Label(frame_scale, text="缩放x", width=6).pack(side="left")
@@ -1676,17 +1756,13 @@ class MainWindow(tk.Tk):
         # PDF page size
         frame_pdf = ttk.Frame(left_panel)
         frame_pdf.pack(fill="x", pady=2)
-        ttk.Label(frame_pdf, text="纸张:", width=4).pack(side="left")
+        ttk.Label(frame_pdf, text="纸张:", width=6).pack(side="left")
         self.page_size = ttk.Combobox(frame_pdf, values=["A4", "Letter"],
                                       state="readonly", width=6)
         self.page_size.set("A4")
         self.page_size.pack(side="left", padx=2)
 
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-
-        # Export format checkboxes - all as one unified section
-        ttk.Label(left_panel, text="导出格式:", font=("Arial", 10, "bold")).pack(fill="x", pady=3)
-
+        # Export format checkboxes
         self.export_png_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(left_panel, text="导出PNG",
                        variable=self.export_png_var).pack(fill="x", pady=1)
@@ -1695,13 +1771,9 @@ class MainWindow(tk.Tk):
         ttk.Checkbutton(left_panel, text="导出PDF",
                        variable=self.export_pdf_var).pack(fill="x", pady=1)
 
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
-
         # One-click export button
         ttk.Button(left_panel, text="一键导出",
                   command=self._one_click_export).pack(fill="x", pady=3)
-
-        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
 
         # Output directory
         ttk.Button(left_panel, text="选择输出路径",
@@ -1711,10 +1783,18 @@ class MainWindow(tk.Tk):
                                          wraplength=110, fg="blue", font=("Arial", 8))
         self.output_path_label.pack(fill="x", pady=3)
 
-        # Right panel - export preview / info area
-        right_frame = ttk.Frame(paned)
+        ttk.Separator(left_panel, orient="horizontal").pack(fill="x", pady=5)
+
+        ttk.Label(left_panel, text="物料清单:").pack()
+        self.bom_list = tk.Listbox(left_panel, height=8)
+        self.bom_list.pack(fill="both", expand=True, pady=2)
+        
+        # Right panel
+        self.pattern_display = ImageDisplay(paned, fill_mode=True, enable_zoom=True, bg="white")
+
+        # Add panes
         paned.add(left_panel, weight=0)
-        paned.add(right_frame, weight=1)
+        paned.add(self.pattern_display, weight=1)
     
     # ===== Event handlers =====
 
@@ -1841,142 +1921,60 @@ class MainWindow(tk.Tk):
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
-    def _on_interactive_mode_changed(self, event=None):
-        """Handle interactive mode change"""
-        mode_display_to_internal = {
-            "矩形": "rect",
-            "椭圆": "ellipse",
-            "涂抹": "brush"
-        }
-        selected = self.interactive_mode_var.get()
-        mode = mode_display_to_internal.get(selected, "rect")
-        self.seg_display.set_mode(mode)
-        self.status_var.set(f"交互模式已切换: {selected}")
-    
-    def _enable_interactive_selection(self):
-        """Enable interactive selection for segmentation"""
-        if self.current_image is None:
-            messagebox.showwarning("警告", "请先加载图像")
-            return
-        
-        mode_display_to_internal = {
-            "矩形": "rect",
-            "椭圆": "ellipse",
-            "涂抹": "brush"
-        }
-        selected = self.interactive_mode_var.get()
-        mode = mode_display_to_internal.get(selected, "rect")
-        
-        self.seg_display.set_mode(mode)
-        self.seg_display.set_image(self.current_image)
-        self.seg_display_var.set("原图")
-        self.seg_display_label.config(text="原图 (交互模式)")
-        
-        if mode == "涂抹":
-            self.status_var.set("涂抹模式启用: 在图像上涂抹标记前景，完成后点击\"执行分割\"")
-        else:
-            self.status_var.set(f"{selected}模式启用: 拖动鼠标选择前景区域，释放后点击\"执行分割\"")
-    
-    def _reset_interactive_selection(self):
-        """Reset interactive selection"""
-        self.seg_display.reset_selection()
-        self.status_var.set("交互选择已重置")
-    
-    def _on_interactive_selection(self, selection_data: dict):
-        """Callback for interactive selection"""
-        # For now, just store the selection data
-        # Actual segmentation happens when user clicks "执行分割"
-        pass
-    
-    def _undo_last_mark(self):
-        """Undo the last interactive mark"""
-        if self.seg_display.undo():
-            mark_count = len(self.seg_display.stroke_history)
-            self.status_var.set(f"撤销上一笔 (当前标记数: {mark_count})")
-        else:
-            self.status_var.set("没有可撤销的标记")
-    
-    def _segmentate_interactive(self):
-        """Segment based on accumulated interactive selection (union of all marks).
-
-        Runs GrabCut on a background thread so the UI stays responsive (the user
-        can load a new image mid-run; a stale result is discarded via token)."""
-        try:
-            if self.current_image is None:
-                raise ValueError("请先加载图像")
-
-            # Get accumulated mask (union of all marks)
-            accumulated_mask = self.seg_display.get_accumulated_mask()
-            mark_count = len(self.seg_display.stroke_history)
-
-            if accumulated_mask is None or not np.any(accumulated_mask > 0):
-                raise ValueError("请先在图像上进行标记 (矩形、椭圆或涂抹)")
-
-            image = self.image_processor.current_image.copy()
-
-            self._seg_token += 1
-            token = self._seg_token
-            self.status_var.set("交互式分割中… (可随时加载新图像打断)")
-
-            def _work():
-                # Create GC_FGD/GC_BGD initialization from accumulated mask
-                gc_mask = np.zeros(image.shape[:2], dtype=np.uint8)
-                gc_mask[accumulated_mask > 0] = cv2.GC_FGD
-                bgd_model = np.zeros((1, 65), np.float64)
-                fgd_model = np.zeros((1, 65), np.float64)
-                cv2.grabCut(image, gc_mask, None, bgd_model, fgd_model, 5,
-                            cv2.GC_INIT_WITH_MASK)
-                return np.where((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
-                                255, 0).astype(np.uint8)
-
-            def _done(mask, err):
-                if err is not None:
-                    messagebox.showerror("错误", str(err))
-                    return
-                if token != self._seg_token:
-                    return  # superseded by a newer run / image load
-                self.current_mask = mask
-                mask_display = cv2.cvtColor(self.current_mask, cv2.COLOR_GRAY2RGB)
-                self.seg_display.set_image(mask_display)
-                self.seg_display.set_mode("view")
-                self.seg_display_var.set("Mask")
-                self.status_var.set(f"交互式分割完成 (使用 {mark_count} 个标记的并集)")
-
-            self._run_async(_work, _done)
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-    
     # ============== Iterative GrabCut Methods ==============
     
+    def _on_igc_shape_changed(self, event=None):
+        """Switch the iterative-GrabCut foreground-region draw shape."""
+        display_to_mode = {"矩形": "rect", "椭圆": "ellipse", "自由曲线": "freehand"}
+        mode = display_to_mode.get(self.igc_shape_var.get(), "rect")
+        self.igc_display.set_shape_mode(mode)
+        desc = {"rect": "矩形", "ellipse": "椭圆(Shift=正圆)", "freehand": "自由曲线"}[mode]
+        self.status_var.set(f"前景区域形状: {desc} - 点击\"1. 绘制前景区域\"后在图像上绘制")
+
     def _init_iterative_grabcut(self):
-        """Initialize iterative GrabCut - draw rectangle"""
+        """Initialize iterative GrabCut - draw foreground region"""
         try:
             if self.current_image is None:
                 messagebox.showwarning("警告", "请先加载图像")
                 return
-            
+
             # Switch to IGC display
             if not self.igc_display_visible:
                 self.seg_display.pack_forget()
                 self.igc_display.pack(fill="both", expand=True)
                 self.igc_display_visible = True
-            
-            # Set image and enable rectangle drawing
+
+            # Apply the selected shape mode
+            display_to_mode = {"矩形": "rect", "椭圆": "ellipse", "自由曲线": "freehand"}
+            mode = display_to_mode.get(self.igc_shape_var.get(), "rect")
+
+            # Set image and enable region drawing
             self.igc_display.set_image(self.current_image)
+            self.igc_display.set_shape_mode(mode)
             self.igc_display.set_stage(IterativeGrabCutDisplay.STAGE_INIT_RECT)
-            self.status_var.set("在图像上拖拽绘制初始矩形（蓝色框），确保包含所有前景内容")
+            tips = {
+                "rect": "在图像上拖拽绘制矩形框住前景（蓝色框，实时预览）",
+                "ellipse": "在图像上拖拽绘制椭圆圈住前景（按住Shift为正圆，实时预览）",
+                "freehand": "在图像上按住拖拽自由绘制封闭曲线圈住前景（实时预览，未闭合时自动连接起止点）",
+            }
+            self.status_var.set(tips[mode])
         except Exception as e:
             messagebox.showerror("错误", str(e))
-    
+
     def _first_grabcut(self):
-        """Execute first GrabCut with rectangle"""
+        """Execute first GrabCut from the drawn foreground region"""
         try:
             if self.igc_display.image is None:
-                raise ValueError("请先绘制矩形")
-            
-            if self.igc_display.init_rect is None:
-                raise ValueError("请在图像上绘制矩形作为初始ROI")
-            
+                raise ValueError("请先绘制前景区域")
+
+            mode = self.igc_display.shape_mode
+            if mode == 'rect':
+                if self.igc_display.init_rect is None:
+                    raise ValueError("请在图像上绘制矩形作为初始前景区域")
+            else:
+                if self.igc_display.init_mask is None or not np.any(self.igc_display.init_mask > 0):
+                    raise ValueError("请先在图像上绘制前景区域（椭圆或自由曲线）")
+
             # Execute first GrabCut (background thread; UI stays responsive)
             self.status_var.set("第一次分割中… (可随时加载新图像打断)")
 
@@ -1985,9 +1983,9 @@ class MainWindow(tk.Tk):
                     self.igc_display.set_stage(IterativeGrabCutDisplay.STAGE_MARKING)
                     self.status_var.set("第一次分割完成。选择标注模式（前景红色/背景绿色）并在结果上标注")
                 else:
-                    messagebox.showwarning("警告", "矩形过小，请重新绘制至少 10x10 像素的矩形")
+                    messagebox.showwarning("警告", "前景区域过小，请重新绘制至少 10x10 像素的区域")
 
-            self.igc_display.init_grabcut_with_rect(_on_first_done)
+            self.igc_display.init_grabcut(_on_first_done)
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -2115,26 +2113,6 @@ class MainWindow(tk.Tk):
                 self.status_var.set("GrabCut分割完成")
 
             self._run_async(_work, _done)
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-    
-    def _apply_threshold(self):
-        """Apply threshold"""
-        try:
-            image = self.image_processor.current_image
-            if image is None:
-                raise ValueError("请先加载图像")
-            
-            threshold = int(self.threshold_spin.get())
-            mask = self.segmentation.simple_threshold(image, threshold)
-            self.current_mask = mask
-            
-            # Display
-            self.seg_display.set_image(image)
-            self.seg_display_var.set("原图")
-            self.seg_display_label.config(text="原图")
-            
-            self.status_var.set("阈值分割完成")
         except Exception as e:
             messagebox.showerror("错误", str(e))
     
@@ -2389,6 +2367,96 @@ class MainWindow(tk.Tk):
         self.seg_display_var.set("原图")
         self.seg_display_label.config(text="原图")
         self.status_var.set("裁剪已取消")
+
+    def _make_symmetry_icon(self, vertical_axis: bool, size: int = 20):
+        """Draw a symmetry icon: a solid triangle mirrored by a dashed triangle
+        about a straight axis. vertical_axis=True → axis is a vertical line
+        (used for 水平对称/left-right flip); False → horizontal axis (垂直对称).
+
+        Returns an ImageTk.PhotoImage; caller must keep a reference."""
+        from PIL import ImageDraw
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        m = 2  # margin
+        solid = (30, 30, 30, 255)
+        dash = (30, 30, 30, 255)
+        if vertical_axis:
+            ax = size // 2
+            # solid triangle on the left of the axis
+            d.polygon([(m, m), (ax - 3, size // 2), (m, size - m)], fill=solid)
+            # dashed mirror triangle on the right (outline, dashed)
+            tri = [(size - m, m), (ax + 3, size // 2), (size - m, size - m)]
+            self._dashed_polygon(d, tri, dash)
+            # axis line
+            d.line([(ax, 0), (ax, size)], fill=(120, 120, 120, 255), width=1)
+        else:
+            ay = size // 2
+            d.polygon([(m, m), (size // 2, ay - 3), (size - m, m)], fill=solid)
+            tri = [(m, size - m), (size // 2, ay + 3), (size - m, size - m)]
+            self._dashed_polygon(d, tri, dash)
+            d.line([(0, ay), (size, ay)], fill=(120, 120, 120, 255), width=1)
+        return ImageTk.PhotoImage(img)
+
+    @staticmethod
+    def _dashed_polygon(draw, points, fill, dash: int = 2, gap: int = 2):
+        """Draw a dashed closed polygon outline by dashing each edge."""
+        n = len(points)
+        for i in range(n):
+            p1 = points[i]
+            p2 = points[(i + 1) % n]
+            MainWindow._dashed_line(draw, p1, p2, fill, dash, gap)
+
+    @staticmethod
+    def _dashed_line(draw, p1, p2, fill, dash: int = 2, gap: int = 2):
+        """Draw a dashed line segment from p1 to p2."""
+        import math
+        x1, y1 = p1
+        x2, y2 = p2
+        dist = math.hypot(x2 - x1, y2 - y1)
+        if dist == 0:
+            return
+        dx, dy = (x2 - x1) / dist, (y2 - y1) / dist
+        pos = 0.0
+        while pos < dist:
+            end = min(pos + dash, dist)
+            draw.line([(x1 + dx * pos, y1 + dy * pos),
+                       (x1 + dx * end, y1 + dy * end)], fill=fill, width=1)
+            pos = end + gap
+
+    def _apply_transform(self, transform_fn, desc: str):
+        """Apply a geometric transform (rotate/flip) to the working image and
+        refresh display + derived state. Leaves the pristine originals untouched
+        so 恢复原图 returns to the un-transformed loaded image."""
+        try:
+            if self.image_processor.current_image is None:
+                raise ValueError("请先加载图像")
+            transform_fn()
+            self.current_image = self.image_processor.current_image.copy()
+            # Geometry changed → invalidate any mask / pattern built on old dims
+            self.current_mask = None
+            self.mask_applied_result = None
+            self.current_pattern = None
+            self.seg_display.set_image(self.current_image)
+            self.seg_display.set_mode('view')
+            self.seg_display_var.set("原图")
+            self.seg_display_label.config(text="原图")
+            h, w = self.current_image.shape[:2]
+            self.aspect_ratio = h / w if w > 0 else 1.0
+            self._auto_fill_bead_size()
+            self.status_var.set(f"{desc}完成: 新尺寸 {w}x{h}")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def _apply_arbitrary_rotation(self):
+        """Apply the arbitrary-angle rotation from the spinbox."""
+        try:
+            angle = float(self.rotate_angle.get())
+        except (ValueError, tk.TclError):
+            messagebox.showerror("错误", "请输入有效的旋转角度")
+            return
+        self._apply_transform(
+            lambda: self.image_processor.rotate_arbitrary(angle),
+            f"旋转{angle}°")
 
     # ===== 图案生成 =====
 
