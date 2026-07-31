@@ -2350,7 +2350,16 @@ class MainWindow(tk.Tk):
                     config,
                     color_manager=self.color_manager
                 )
-                
+
+                # Derive a bead-level mask aligned with the pattern grid so the
+                # chart renderer can fade masked-out cells on export/preview.
+                bead_mask = None
+                if self.use_mask_result_var.get() and self.current_mask is not None:
+                    m = cv2.resize(self.current_mask, (w_val, h_val),
+                                   interpolation=cv2.INTER_AREA)
+                    bead_mask = (m > 127)
+                self.pattern_generator.bead_mask = bead_mask
+
                 self.current_pattern = pattern
                 self.current_bom = bom
 

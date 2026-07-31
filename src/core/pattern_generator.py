@@ -8,6 +8,12 @@ from dataclasses import dataclass
 import json
 
 
+# Fraction to blend a masked-out bead's color toward white when rendering the
+# standard chart (0.70 = keep ~30% of the color so the shape stays faintly
+# visible while clearly washed out).
+MASK_FADE = 0.70
+
+
 @dataclass
 class PatternConfig:
     """Configuration for pattern generation"""
@@ -31,7 +37,11 @@ class PatternGenerator:
         self.color_map = None  # Maps pixel color to bead code
         self.bom = None  # Bill of materials
         self.config = None
-    
+        # bool (h_beads, w_beads): True = keep bead, False = masked out.
+        # Attached externally (by the UI) after generate_pattern when the
+        # image was processed with a mask; drives faded rendering on export.
+        self.bead_mask = None
+
     def generate_pattern(self, image: np.ndarray, palette,
                         config: PatternConfig, color_manager=None) -> Tuple[np.ndarray, Dict]:
         """
@@ -48,6 +58,9 @@ class PatternGenerator:
             Tuple of (pattern array, bill of materials)
         """
         self.config = config
+        # Reset any stale mask from a previous run; the UI re-attaches a fresh
+        # bead_mask after this returns when the image was masked.
+        self.bead_mask = None
 
         # Ensure image is RGB
         if len(image.shape) != 3 or image.shape[2] != 3:
@@ -372,7 +385,7 @@ class PatternGenerator:
         return output
     
     def render_standard_chart(self, bead_pixel_size: int = 20, major_every: int = 5,
-                              palette=None) -> np.ndarray:
+                              palette=None, bead_mask=None, fade_masked: bool = True) -> np.ndarray:
         """
         Render a standard perler-bead chart (the exported/printed form).
 
@@ -381,14 +394,19 @@ class PatternGenerator:
           - minor grid line every cell (light gray)
           - major grid line every `major_every` cells (bold dark) + coordinate
             tick number on the left + top (5, 10, 15, ...)
-          - bottom usage bar: for each used color a swatch + code + bead count,
-            sorted by count descending, wrapping to multiple rows.
+          - bottom BOM bar: for each used color a uniform rounded chip
+            (color block + code on the left, bead count on the right), sorted
+            by count descending, wrapped into aligned columns.
 
         Args:
             bead_pixel_size: Size of each bead cell in pixels
             major_every: Draw a major grid line / coordinate tick every N cells
             palette: ColorPalette for resolving swatch RGB/name (falls back to
                 the pattern pixel color when a code cannot be resolved)
+            bead_mask: Optional bool array (h_beads, w_beads), True = keep bead,
+                False = masked out. Masked-out cells are faded toward white and
+                their code text is omitted. Defaults to self.bead_mask.
+            fade_masked: When False, ignore the mask entirely (full render).
 
         Returns:
             Rendered standard chart as an RGB ndarray
@@ -401,6 +419,12 @@ class PatternGenerator:
 
         h, w = self.color_map.shape[:2]
         cell = bead_pixel_size
+
+        # Resolve the bead-level mask (explicit param wins, else the attribute
+        # attached by the UI). Guard on shape so a mismatched mask degrades to
+        # no fade instead of crashing.
+        bm = bead_mask if bead_mask is not None else self.bead_mask
+        use_fade = fade_masked and bm is not None and getattr(bm, 'shape', None) == (h, w)
 
         # --- font (shared SimHei with export; fallback to default bitmap) ---
         def _load_font(size):
@@ -423,7 +447,7 @@ class PatternGenerator:
         grid_w = w * cell
         grid_h = h * cell
 
-        # usage-bar metrics
+        # usage-bar (BOM) metrics
         sw = cell                      # swatch size
         bar_font_size = max(10, int(cell * 0.7))
         bar_pad_x = cell // 2
@@ -451,22 +475,24 @@ class PatternGenerator:
                 bbox = probe_draw.textbbox((0, 0), s, font=font)
                 return bbox[2] - bbox[0]
 
-        # layout the usage bar rows within grid width (+ margins)
+        # --- uniform chip geometry (every chip identical size) ---
+        # Left color block sized to fit the longest code, right block sized to
+        # fit the longest count; chip_w is therefore the same for all chips so
+        # they wrap into aligned columns.
+        pad_x = max(6, cell // 3)
+        max_code_w = max((text_width(c, bar_font) for c, _ in usage), default=0)
+        max_count_w = max((text_width(str(n), bar_font) for _, n in usage), default=0)
+        left_w = int(max_code_w + 2 * pad_x)
+        right_w = int(max_count_w + 2 * pad_x)
+        chip_w = left_w + right_w
+        chip_h = max(sw + 2, bar_font_size + 8)
+        radius = max(4, cell // 3)
+        gap = bar_pad_x
+
+        # lay out chips into aligned columns within grid width (+ margins)
         bar_area_width = grid_w + left_margin + 6
-        rows = []
-        cur = []
-        cur_w = 0
-        for code, count in usage:
-            label = f"{code} {count}"
-            item_w = sw + 6 + text_width(label, bar_font) + bar_pad_x * 2
-            if cur and cur_w + item_w > bar_area_width:
-                rows.append(cur)
-                cur = []
-                cur_w = 0
-            cur.append((code, count, item_w))
-            cur_w += item_w
-        if cur:
-            rows.append(cur)
+        per_row = max(1, (bar_area_width + gap) // (chip_w + gap))
+        rows = [usage[i:i + per_row] for i in range(0, len(usage), per_row)]
 
         bar_top = top_margin + grid_h + 14
         bar_height = len(rows) * bar_row_h + (10 if rows else 0)
@@ -484,7 +510,15 @@ class PatternGenerator:
                 rgb = code_to_rgb.get(code, tuple(int(c) for c in self.pattern[y, x][:3]))
                 x1 = left_margin + x * cell
                 y1 = top_margin + y * cell
+
+                # masked-out cells: fade the fill toward white and skip the code
+                masked_out = use_fade and not bm[y, x]
+                if masked_out:
+                    rgb = tuple(int(round(c + (255 - c) * MASK_FADE)) for c in rgb)
                 draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
+
+                if masked_out:
+                    continue
 
                 # per-cell code (adaptive, contrast-colored)
                 lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
@@ -542,35 +576,57 @@ class PatternGenerator:
                 except Exception:
                     pass
 
-        # --- bottom usage bar ---
+        # --- bottom BOM bar (uniform rounded chips) ---
         if rows:
             yy = bar_top + 5
             # section label
             if bar_font is not None:
                 try:
-                    draw.text((left_margin, bar_top - 2), "色卡用量:",
+                    draw.text((left_margin, bar_top - 2), "BOM",
                               fill=(30, 30, 30), font=bar_font)
                     yy = bar_top + bar_row_h
                 except Exception:
                     yy = bar_top
             for row in rows:
                 xx = left_margin
-                for code, count, item_w in row:
+                for code, count in row:
                     rgb = code_to_rgb.get(code, (128, 128, 128))
-                    # swatch
-                    draw.rectangle([xx, yy, xx + sw, yy + sw],
-                                   fill=rgb, outline=(60, 60, 60), width=1)
-                    # label
-                    label = f"{code} {count}"
+                    # outer chip: white rounded rect with a thin black border
+                    draw.rounded_rectangle([xx, yy, xx + chip_w, yy + chip_h],
+                                           radius=radius, fill=(255, 255, 255),
+                                           outline=(0, 0, 0), width=1)
+                    # left color block (rounded left edge, squared right edge so
+                    # the split is a straight divider line)
+                    draw.rounded_rectangle([xx, yy, xx + left_w, yy + chip_h],
+                                           radius=radius, fill=rgb)
+                    draw.rectangle([xx + left_w - radius, yy, xx + left_w, yy + chip_h],
+                                   fill=rgb)
+                    # divider between the two halves
+                    draw.line([xx + left_w, yy + 1, xx + left_w, yy + chip_h - 1],
+                              fill=(0, 0, 0), width=1)
                     if bar_font is not None:
+                        # code text centered in the left color block; white on dark fills
+                        lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                        code_color = (0, 0, 0) if lum > 128 else (255, 255, 255)
+                        try:
+                            tb = draw.textbbox((0, 0), code, font=bar_font)
+                            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                            draw.text((xx + (left_w - tw) / 2 - tb[0],
+                                       yy + (chip_h - th) / 2 - tb[1]),
+                                      code, fill=code_color, font=bar_font)
+                        except Exception:
+                            pass
+                        # count text centered in the right block (always dark)
+                        label = str(count)
                         try:
                             tb = draw.textbbox((0, 0), label, font=bar_font)
-                            th = tb[3] - tb[1]
-                            draw.text((xx + sw + 6, yy + (sw - th) / 2 - tb[1]),
+                            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                            draw.text((xx + left_w + (right_w - tw) / 2 - tb[0],
+                                       yy + (chip_h - th) / 2 - tb[1]),
                                       label, fill=(20, 20, 20), font=bar_font)
                         except Exception:
                             pass
-                    xx += item_w
+                    xx += chip_w + gap
                 yy += bar_row_h
 
         return np.array(canvas, dtype=np.uint8)
