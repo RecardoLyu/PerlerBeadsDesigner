@@ -24,6 +24,26 @@ from src.ui.tooltip import attach_tooltip
 # Note: remote web scraper disabled to prefer local colors.json
 
 
+def _resource_path(*parts) -> str:
+    """Resolve a bundled resource path that works both in dev and when frozen
+    by PyInstaller.
+
+    In dev the project root is two levels up from this file. In a frozen
+    (onedir) build PyInstaller unpacks `datas` under `sys._MEIPASS`, and this
+    file lives at `_MEIPASS/src/ui/main_window.py`, so walking up two levels
+    from __file__ already lands on the bundle root that contains `src/assets`.
+    We therefore try the __file__-relative location first and fall back to
+    `sys._MEIPASS` for safety.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(here))           # project / bundle root
+    candidate = os.path.join(root, *parts)
+    if os.path.exists(candidate):
+        return candidate
+    base = getattr(sys, '_MEIPASS', root)
+    return os.path.join(base, *parts)
+
+
 class InteractiveImageDisplay(tk.Frame):
     """Interactive image display with accumulated foreground selection and undo support"""
     
@@ -1087,9 +1107,8 @@ class MainWindow(tk.Tk):
         # window, and prevent geometry propagation from stretching it.
         self.minsize(1000, 650)
         
-        # Get colors file path
-        colors_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                                  'assets', 'colors_221.json')
+        # Get colors file path (dev + frozen-safe)
+        colors_file = _resource_path('src', 'assets', 'colors_221.json')
         
         # Initialize modules
         self.image_processor = ImageProcessor()
