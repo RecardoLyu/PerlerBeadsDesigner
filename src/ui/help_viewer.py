@@ -6,6 +6,10 @@ blockquotes, horizontal rules, fenced code blocks and GitHub pipe tables.
 """
 import tkinter as tk
 from tkinter import scrolledtext
+import re
+
+# Markdown inline link: [text](target) -> keep only the readable text.
+_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
 class HelpViewer(tk.Toplevel):
@@ -139,7 +143,11 @@ class HelpViewer(tk.Toplevel):
             self.text.insert("end", text)
 
     def _insert_inline(self, text: str, base_tag: str = None):
-        """Insert text handling **bold** and `code` inline spans."""
+        """Insert text handling **bold**, `code` and [links](url) inline spans."""
+        # Strip Markdown link syntax, keeping only the readable link text.
+        # (All links in HELP.md are internal #anchors with no jump target in a
+        # plain Text widget, so the target is discarded.)
+        text = _LINK_RE.sub(r"\1", text)
         i = 0
         buf = ""
         mode = None  # None | 'bold' | 'code'
