@@ -27,6 +27,12 @@ from src.ui.tooltip import attach_tooltip
 CHART_BEAD_SIZE = CHART_BEAD_PX
 # Note: remote web scraper disabled to prefer local colors.json
 
+# Threshold for "非白即前景" mask reconciliation. The masked-out background is
+# baked to pure white (255), so a bead cell whose quantized color has any channel
+# below this is real (non-background) and must be treated as foreground. 245 keeps
+# near-white foreground beads (light yellow/pink) from being misread as background.
+MASK_WHITE_THRESHOLD = 245
+
 
 def _resource_path(*parts) -> str:
     """Resolve a bundled resource path that works both in dev and when frozen
@@ -2439,6 +2445,17 @@ class MainWindow(tk.Tk):
                     m = cv2.resize(self.current_mask, (w_val, h_val),
                                    interpolation=cv2.INTER_AREA)
                     bead_mask = (m > 127)
+
+                    # 非白即前景: mask 按 >127 离散与颜色量化是两条独立管线,边缘格
+                    # 可能量化成真实色却被 mask 判成背景(有颜色无编号)。逐格核对——
+                    # 量化色明显非白的格子强制视为前景,保证前景格都有编号、与 mask
+                    # 一一对应。背景已被烘焙为纯白,故非白判定干净。
+                    pattern_arr = self.pattern_generator.get_pattern()
+                    if pattern_arr is not None and \
+                            pattern_arr.shape[:2] == bead_mask.shape:
+                        nonwhite = np.any(pattern_arr[..., :3] < MASK_WHITE_THRESHOLD,
+                                          axis=-1)
+                        bead_mask = bead_mask | nonwhite
                 self.pattern_generator.bead_mask = bead_mask
 
                 # When masked, rebuild the BOM counting only foreground beads so
@@ -2490,7 +2507,8 @@ class MainWindow(tk.Tk):
             bead_size = CHART_BEAD_SIZE
             if self.show_codes_var.get():
                 rendered = self.pattern_generator.render_standard_chart(
-                    bead_size, palette=self.color_manager.get_palette())
+                    bead_size, palette=self.color_manager.get_palette(),
+                    bead_mask=self.pattern_generator.bead_mask)
                 self.status_var.set("标准图纸预览")
             else:
                 rendered = self.pattern_generator.render_pattern_with_grid(bead_size)
@@ -2538,7 +2556,8 @@ class MainWindow(tk.Tk):
             # 预先渲染两个版本: 网格版(无编码) 和 标准图纸(编码+粗细分网格+刻度+用量条)
             rendered_grid = self.pattern_generator.render_pattern_with_grid(bead_size)
             rendered_chart = self.pattern_generator.render_standard_chart(
-                bead_size, palette=self.color_manager.get_palette())
+                bead_size, palette=self.color_manager.get_palette(),
+                bead_mask=self.pattern_generator.bead_mask)
 
             if self.export_png_var.get():
                 # PNG: 导出两张 — 网格版 + 标准图纸
