@@ -95,57 +95,7 @@ class PatternExporter:
             cv2.imwrite(filepath, pattern_bgr)
         
         return filepath
-    
-    def export_png_with_grid(self, pattern: np.ndarray, filename: str,
-                            bead_size: int = 20, scale: int = 1) -> str:
-        """
-        Export pattern with grid
-        
-        Args:
-            pattern: Pattern image array
-            filename: Output filename
-            bead_size: Size of each bead/cell in pixels
-            scale: Scale factor
-        
-        Returns:
-            Path to saved file
-        """
-        h, w = pattern.shape[:2]
-        
-        # Create image with grid
-        output = np.zeros((h * bead_size, w * bead_size, 3), dtype=np.uint8)
-        
-        for y in range(h):
-            for x in range(w):
-                y1 = y * bead_size
-                y2 = y1 + bead_size
-                x1 = x * bead_size
-                x2 = x1 + bead_size
-                output[y1:y2, x1:x2] = pattern[y, x]
-        
-        # Draw grid
-        grid_color = (200, 200, 200)
-        for x in range(w + 1):
-            x_pixel = x * bead_size
-            cv2.line(output, (x_pixel, 0), (x_pixel, output.shape[0]), grid_color, 1)
-        
-        for y in range(h + 1):
-            y_pixel = y * bead_size
-            cv2.line(output, (0, y_pixel), (output.shape[1], y_pixel), grid_color, 1)
-        
-        # Scale if needed
-        if scale > 1:
-            h_out, w_out = output.shape[:2]
-            output = cv2.resize(output, (w_out * scale, h_out * scale),
-                              interpolation=cv2.INTER_NEAREST)
-        
-        # Save
-        output_bgr = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-        filepath = os.path.join(self.output_dir, f"{filename}_grid.png")
-        cv2.imwrite(filepath, output_bgr)
-        
-        return filepath
-    
+
     def export_png_with_codes(self, pattern: np.ndarray, color_map: np.ndarray,
                              filename: str, bead_size: int = 30, scale: int = 1) -> str:
         """

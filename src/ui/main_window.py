@@ -1264,24 +1264,42 @@ class MainWindow(tk.Tk):
     
     def _setup_ui(self):
         """Setup user interface"""
+        # Header bar with help button (upper-right)
+        header = ttk.Frame(self)
+        header.pack(side="top", fill="x", padx=5, pady=(5, 0))
+        ttk.Button(header, text="❓ 帮助", command=self._show_help).pack(side="right")
+
         # Create notebook (tabs)
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
-        
+
         # Create tabs
         self._create_preprocess_tab()
         self._create_pattern_tab()
 
         # Status bar
         self.status_var = tk.StringVar(value="就绪")
-        status_bar = tk.Label(self, textvariable=self.status_var, relief="sunken", 
+        status_bar = tk.Label(self, textvariable=self.status_var, relief="sunken",
                              anchor="w", bg="lightgray")
         status_bar.pack(side="bottom", fill="x")
-    
+
+    def _show_help(self):
+        """Open the embedded help document (HELP.md) in a scrollable window."""
+        try:
+            from src.ui.help_viewer import show_help
+            help_path = _resource_path('HELP.md')
+            with open(help_path, 'r', encoding='utf-8') as f:
+                md = f.read()
+            show_help(self, md, title="拼豆图纸设计器 · 帮助")
+        except FileNotFoundError:
+            messagebox.showwarning("帮助", "帮助文档未找到 (HELP.md)")
+        except Exception as e:
+            messagebox.showerror("帮助", f"无法打开帮助文档: {e}")
+
     def _create_preprocess_tab(self):
         """Create preprocessing tab with sub-tabs: 基本调整, 分割, 裁剪"""
         frame = ttk.Frame(self.notebook)
-        self.notebook.add(frame, text="预处理")
+        self.notebook.add(frame, text="图像处理")
 
         # Resizable paned layout: left controls | right display
         paned = ttk.PanedWindow(frame, orient="horizontal")
@@ -1525,7 +1543,11 @@ class MainWindow(tk.Tk):
         self.kernel_spin.pack(fill="x", pady=1)
 
         # Structuring element shape (名称-示意图, 名称列定宽对齐)
-        ttk.Label(frame, text="结构元素:").pack(fill="x")
+        shape_label = ttk.Label(frame, text="结构元素:")
+        shape_label.pack(fill="x")
+        attach_tooltip(shape_label,
+            "结构元素(核)的形状,决定形态学操作(开/闭/腐蚀/膨胀)沿什么方向、\n"
+            "以什么轮廓作用于前景Mask。下拉选择,右侧记号是该形状的示意图。")
         _shapes = [("椭圆", "●"), ("矩形", "■"), ("十字", "┼"),
                    ("垂直线", "│"), ("水平线", "─"),
                    ("斜线", "\\"), ("斜线", "/"), ("菱形", "◆")]
@@ -1582,8 +1604,7 @@ class MainWindow(tk.Tk):
         # Left panel
         left_panel = ttk.Frame(paned, width=180)
         
-        ttk.Label(left_panel, text="拼豆数量:").pack()
-        ttk.Label(left_panel, text="(高, 宽)", font=("Arial", 8)).pack()
+        ttk.Label(left_panel, text="图纸尺寸:").pack()
         
         frame_h = ttk.Frame(left_panel)
         frame_h.pack(fill="x", pady=2)
@@ -2467,7 +2488,7 @@ class MainWindow(tk.Tk):
                 # Check if using mask result is requested but not available
                 if self.use_mask_result_var.get():
                     if self.mask_applied_result is None:
-                        raise ValueError("已勾选'使用Mask处理结果'，但还未执行Mask应用！\n请先在预处理标签页的「分割」中执行Mask应用。")
+                        raise ValueError("已勾选'使用Mask处理结果'，但还未执行Mask应用！\n请先在图像处理标签页的「分割」中执行Mask应用。")
                     image = self.mask_applied_result
                 else:
                     image = self.image_processor.current_image
@@ -2621,17 +2642,13 @@ class MainWindow(tk.Tk):
             export_any = False
             export_paths = []
 
-            # 预先渲染两个版本: 网格版(无编码) 和 标准图纸(编码+粗细分网格+刻度+用量条)
-            rendered_grid = self.pattern_generator.render_pattern_with_grid(bead_size)
+            # 预先渲染标准图纸(编码+粗细分网格+刻度+用量条)
             rendered_chart = self.pattern_generator.render_standard_chart(
                 bead_size, palette=self.color_manager.get_palette(),
                 bead_mask=self.pattern_generator.bead_mask)
 
             if self.export_png_var.get():
-                # PNG: 导出两张 — 网格版 + 标准图纸
-                p1 = self.exporter.export_png(rendered_grid,
-                    f"{filename}_grid", scale)
-                export_paths.append(f"PNG网格版: {p1}")
+                # PNG: 导出标准图纸
                 p2 = self.exporter.export_png_standard(rendered_chart,
                     f"{filename}_图纸", scale)
                 export_paths.append(f"PNG标准图纸: {p2}")
