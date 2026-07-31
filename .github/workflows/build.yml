@@ -5,50 +5,67 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact_name: PerlerBeadsDesigner.exe
-            asset_name: PerlerBeadsDesigner-windows.exe
+            asset_name: PerlerBeadsDesigner-windows
           - os: macos-latest
-            artifact_name: PerlerBeadsDesigner
             asset_name: PerlerBeadsDesigner-macos
           - os: ubuntu-latest
-            artifact_name: PerlerBeadsDesigner
             asset_name: PerlerBeadsDesigner-linux
 
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
-    
-    - name: Build with PyInstaller (Windows)
+
+    - name: Build with PyInstaller
+      run: pyinstaller pyinstaller.spec --noconfirm
+
+    - name: Package (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
-        pyinstaller pyinstaller.spec
-    
-    - name: Build with PyInstaller (macOS/Linux)
+        $tag = "${{ github.ref_name }}"
+        Compress-Archive -Path "dist/PerlerBeadsDesigner" `
+          -DestinationPath "${{ matrix.asset_name }}-$tag.zip" -Force
+
+    - name: Package (macOS/Linux)
       if: runner.os != 'Windows'
       run: |
-        pyinstaller pyinstaller.spec
-    
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
+        tag="${{ github.ref_name }}"
+        chmod +x "dist/PerlerBeadsDesigner/PerlerBeadsDesigner" || true
+        tar -C dist -czf "${{ matrix.asset_name }}-${tag}.tar.gz" PerlerBeadsDesigner
+
+    - name: Upload Release Asset (Windows)
+      if: runner.os == 'Windows'
+      uses: softprops/action-gh-release@v2
       with:
-        files: dist/PerlerBeadsDesigner/${{ matrix.artifact_name }}
-        asset_name: ${{ matrix.asset_name }}
+        files: "${{ matrix.asset_name }}-${{ github.ref_name }}.zip"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Release Asset (macOS/Linux)
+      if: runner.os != 'Windows'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: "${{ matrix.asset_name }}-${{ github.ref_name }}.tar.gz"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
