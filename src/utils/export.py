@@ -7,8 +7,8 @@ from typing import Dict, Optional
 import os
 from datetime import datetime
 from reportlab.lib.pagesizes import A4, letter, landscape
-from reportlab.lib.units import mm, inch, cm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+from reportlab.lib.units import mm, inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib import colors
@@ -295,7 +295,7 @@ class PatternExporter:
 
             # Standard chart image - fit within available page area (proportional)
             avail_w = page_w - 30*mm
-            avail_h = page_h - 70*mm   # leave room for title / BOM / footer
+            avail_h = page_h - 40*mm   # leave room for title / footer only
             try:
                 img_h, img_w_px = pattern_image.shape[:2]
                 # scale to fit both width and height, keep aspect
@@ -309,48 +309,8 @@ class PatternExporter:
             except Exception as e:
                 print(f"Warning: Could not add image to PDF: {e}")
 
-            # BOM section
-            if bom and 'colors' in bom:
-                bom_style = ParagraphStyle(
-                    'BOMTitle',
-                    parent=styles['Heading2'],
-                    fontSize=14,
-                    fontName='SimHei',
-                    textColor=colors.HexColor('#333333'),
-                    spaceAfter=6
-                )
-
-                elements.append(Paragraph("所需材料清单 (BOM)", bom_style))
-                elements.append(Spacer(1, 2*mm))
-
-                bom_data = [['颜色代码', '颜色名称', '数量', '百分比']]
-
-                for code, color_info in sorted(bom['colors'].items()):
-                    bom_data.append([
-                        code,
-                        color_info['name'],
-                        str(color_info['count']),
-                        f"{color_info['percentage']:.1f}%"
-                    ])
-
-                bom_data.append(['总计', '', str(bom['total_beads']), '100%'])
-
-                bom_table = Table(bom_data, colWidths=[2*cm, 3*cm, 2*cm, 2*cm])
-                bom_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'SimHei'),
-                    ('FONTNAME', (0, 1), (-1, -1), 'SimHei'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-                    ('BACKGROUND', (0, -1), (-1, -1), colors.grey),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ]))
-
-                elements.append(bom_table)
-                elements.append(Spacer(1, 3*mm))
+            # BOM appears only as the chip bar inside the chart image; the
+            # separate reportlab BOM table was removed.
 
             # Footer
             footer_text = f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
