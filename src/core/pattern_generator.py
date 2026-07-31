@@ -13,6 +13,26 @@ import json
 # visible while clearly washed out).
 MASK_FADE = 0.70
 
+# Standard-chart render resolution (pixels per bead cell). 30 keeps per-cell
+# codes crisp and mitigates PDF upscale blur.
+CHART_BEAD_PX = 30
+
+# Supersample factor for the standard chart: render at Nx then LANCZOS down.
+# 2 gives visibly crisper code text; set to 1 to disable.
+CHART_SUPERSAMPLE = 2
+
+# Above this many bead cells, drop supersampling to 1 to bound canvas memory.
+CHART_SUPERSAMPLE_MAX_CELLS = 4000
+
+# Preferred CJK font order for numeric codes (Microsoft YaHei's numerals read
+# cleaner than SimHei at small sizes).
+FONT_CANDIDATES = (
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/msyhbd.ttc",
+    "C:/Windows/Fonts/SimHei.ttf",
+    "C:/Windows/Fonts/simsun.ttc",
+)
+
 
 @dataclass
 class PatternConfig:
@@ -384,8 +404,9 @@ class PatternGenerator:
         
         return output
     
-    def render_standard_chart(self, bead_pixel_size: int = 20, major_every: int = 5,
-                              palette=None, bead_mask=None, fade_masked: bool = True) -> np.ndarray:
+    def render_standard_chart(self, bead_pixel_size: int = CHART_BEAD_PX, major_every: int = 5,
+                              palette=None, bead_mask=None, fade_masked: bool = True,
+                              supersample: int = CHART_SUPERSAMPLE) -> np.ndarray:
         """
         Render a standard perler-bead chart (the exported/printed form).
 
@@ -395,8 +416,8 @@ class PatternGenerator:
           - major grid line every `major_every` cells (bold dark) + coordinate
             tick number on the left + top (5, 10, 15, ...)
           - bottom BOM bar: for each used color a uniform rounded chip
-            (color block + code on the left, bead count on the right), sorted
-            by count descending, wrapped into aligned columns.
+            (color block + code on the left 2/5, bead count on the right 3/5),
+            sorted by count descending, wrapped into aligned columns.
 
         Args:
             bead_pixel_size: Size of each bead cell in pixels
@@ -407,6 +428,8 @@ class PatternGenerator:
                 False = masked out. Masked-out cells are faded toward white and
                 their code text is omitted. Defaults to self.bead_mask.
             fade_masked: When False, ignore the mask entirely (full render).
+            supersample: Render at Nx resolution then LANCZOS-downscale for
+                crisper text (1 = off). Auto-disabled on very large grids.
 
         Returns:
             Rendered standard chart as an RGB ndarray
@@ -418,7 +441,14 @@ class PatternGenerator:
         import os
 
         h, w = self.color_map.shape[:2]
-        cell = bead_pixel_size
+
+        # Supersample: render everything at ss x resolution, downscale at the
+        # end. All geometry derives from `cell`, so scaling it scales the whole
+        # chart with zero coordinate edits.
+        ss = max(1, int(supersample))
+        if w * h > CHART_SUPERSAMPLE_MAX_CELLS:
+            ss = 1
+        cell = bead_pixel_size * ss
 
         # Resolve the bead-level mask (explicit param wins, else the attribute
         # attached by the UI). Guard on shape so a mismatched mask degrades to
@@ -426,20 +456,27 @@ class PatternGenerator:
         bm = bead_mask if bead_mask is not None else self.bead_mask
         use_fade = fade_masked and bm is not None and getattr(bm, 'shape', None) == (h, w)
 
-        # --- font (shared SimHei with export; fallback to default bitmap) ---
+        # --- font (cleaner CJK first; cached by size to avoid per-cell reload) ---
+        _font_cache = {}
+
         def _load_font(size):
-            for path in ("C:/Windows/Fonts/SimHei.ttf",
-                         "C:/Windows/Fonts/simsun.ttc",
-                         "C:/Windows/Fonts/msyh.ttc"):
+            if size in _font_cache:
+                return _font_cache[size]
+            font = None
+            for path in FONT_CANDIDATES:
                 if os.path.exists(path):
                     try:
-                        return ImageFont.truetype(path, size)
+                        font = ImageFont.truetype(path, size)
+                        break
                     except Exception:
                         pass
-            try:
-                return ImageFont.load_default()
-            except Exception:
-                return None
+            if font is None:
+                try:
+                    font = ImageFont.load_default()
+                except Exception:
+                    font = None
+            _font_cache[size] = font
+            return font
 
         # --- geometry ---
         left_margin = cell * 2 + 6   # room for 2-3 digit tick numbers on the left
@@ -451,13 +488,14 @@ class PatternGenerator:
         sw = cell                      # swatch size
         bar_font_size = max(10, int(cell * 0.7))
         bar_pad_x = cell // 2
-        bar_row_h = sw + 8
 
         tick_font = _load_font(max(10, int(cell * 0.8)))
         bar_font = _load_font(bar_font_size)
 
-        # measure usage-bar width requirement to decide row wrapping
-        usage = self._sorted_usage(palette)
+        # measure usage-bar width requirement to decide row wrapping; when a
+        # mask is active, count only the kept (foreground) beads so the BOM bar
+        # excludes the masked-out background.
+        usage = self._sorted_usage(palette, bead_mask=(bm if use_fade else None))
 
         # build swatch color lookup
         code_to_rgb = self._code_rgb_lookup(palette)
@@ -476,18 +514,24 @@ class PatternGenerator:
                 return bbox[2] - bbox[0]
 
         # --- uniform chip geometry (every chip identical size) ---
-        # Left color block sized to fit the longest code, right block sized to
-        # fit the longest count; chip_w is therefore the same for all chips so
-        # they wrap into aligned columns.
-        pad_x = max(6, cell // 3)
+        # Left color block + code occupies the left 2/5, the count the right
+        # 3/5. chip_w is solved from the 2:3 ratio so each half fits its longest
+        # text with padding AND clears the rounded-corner arcs.
+        pad_x = max(8, cell // 3)
+        chip_h = max(sw + 2, bar_font_size + 10)
+        radius = max(8, chip_h // 2)   # pill-like corners (fixes the bevel look)
         max_code_w = max((text_width(c, bar_font) for c, _ in usage), default=0)
         max_count_w = max((text_width(str(n), bar_font) for _, n in usage), default=0)
-        left_w = int(max_code_w + 2 * pad_x)
-        right_w = int(max_count_w + 2 * pad_x)
-        chip_w = left_w + right_w
-        chip_h = max(sw + 2, bar_font_size + 8)
-        radius = max(4, cell // 3)
+        # left (2/5) must hold code + 2*pad + left corner arc;
+        # right (3/5) must hold count + 2*pad + right corner arc.
+        need_left = (max_code_w + 2 * pad_x + radius) * 5 // 2
+        need_right = (max_count_w + 2 * pad_x + radius) * 5 // 3
+        chip_w = int(max(need_left, need_right))
+        left_w = chip_w * 2 // 5
+        right_w = chip_w - left_w
         gap = bar_pad_x
+        bar_row_h = chip_h + max(6, cell // 3)   # row pitch tracks the chip height
+        title_h = bar_row_h                       # room for the "BOM" label row
 
         # lay out chips into aligned columns within grid width (+ margins)
         bar_area_width = grid_w + left_margin + 6
@@ -495,10 +539,11 @@ class PatternGenerator:
         rows = [usage[i:i + per_row] for i in range(0, len(usage), per_row)]
 
         bar_top = top_margin + grid_h + 14
-        bar_height = len(rows) * bar_row_h + (10 if rows else 0)
+        # total height: title row + one row per chip row + bottom padding
+        bar_height = (title_h + len(rows) * bar_row_h) if rows else 0
 
         total_w = left_margin + grid_w + 8
-        total_h = bar_top + bar_height + 8
+        total_h = bar_top + bar_height + max(10, cell // 2)
 
         canvas = Image.new("RGB", (total_w, total_h), (255, 255, 255))
         draw = ImageDraw.Draw(canvas)
@@ -523,7 +568,7 @@ class PatternGenerator:
                 # per-cell code (adaptive, contrast-colored)
                 lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
                 txt_color = (0, 0, 0) if lum > 128 else (255, 255, 255)
-                cf = _load_font(max(7, int(cell * 0.45)))
+                cf = _load_font(max(9, int(cell * 0.52)))
                 if cf is not None:
                     try:
                         tb = draw.textbbox((0, 0), code, font=cf)
@@ -578,15 +623,14 @@ class PatternGenerator:
 
         # --- bottom BOM bar (uniform rounded chips) ---
         if rows:
-            yy = bar_top + 5
-            # section label
+            # section label sits in the title row; chips start below it
             if bar_font is not None:
                 try:
-                    draw.text((left_margin, bar_top - 2), "BOM",
+                    draw.text((left_margin, bar_top + 2), "BOM",
                               fill=(30, 30, 30), font=bar_font)
-                    yy = bar_top + bar_row_h
                 except Exception:
-                    yy = bar_top
+                    pass
+            yy = bar_top + title_h
             for row in rows:
                 xx = left_margin
                 for code, count in row:
@@ -616,25 +660,43 @@ class PatternGenerator:
                                       code, fill=code_color, font=bar_font)
                         except Exception:
                             pass
-                        # count text centered in the right block (always dark)
+                        # count text centered in the right block (always dark);
+                        # clamp so it never overlaps the chip's right corner arc
                         label = str(count)
                         try:
                             tb = draw.textbbox((0, 0), label, font=bar_font)
                             tw, th = tb[2] - tb[0], tb[3] - tb[1]
-                            draw.text((xx + left_w + (right_w - tw) / 2 - tb[0],
-                                       yy + (chip_h - th) / 2 - tb[1]),
+                            cx = xx + left_w + (right_w - tw) / 2 - tb[0]
+                            cx = min(cx, xx + chip_w - radius - tw - tb[0])
+                            draw.text((cx, yy + (chip_h - th) / 2 - tb[1]),
                                       label, fill=(20, 20, 20), font=bar_font)
                         except Exception:
                             pass
                     xx += chip_w + gap
                 yy += bar_row_h
 
+        if ss > 1:
+            canvas = canvas.resize((max(1, total_w // ss), max(1, total_h // ss)),
+                                   Image.LANCZOS)
         return np.array(canvas, dtype=np.uint8)
 
-    def _sorted_usage(self, palette=None) -> List[Tuple[str, int]]:
-        """Return [(code, count)] sorted by count desc. Uses bom if present,
-        else counts the color_map directly."""
-        if self.bom is not None and 'colors' in self.bom:
+    def _sorted_usage(self, palette=None, bead_mask=None) -> List[Tuple[str, int]]:
+        """Return [(code, count)] sorted by count desc.
+
+        When a valid bead_mask is available, count only the kept (foreground)
+        cells so masked-out background beads are excluded; otherwise fall back
+        to the bom counts, else tally the color_map directly."""
+        bm = bead_mask if bead_mask is not None else self.bead_mask
+        if bm is not None and self.color_map is not None and \
+                getattr(bm, 'shape', None) == self.color_map.shape:
+            counts = {}
+            for y in range(bm.shape[0]):
+                for x in range(bm.shape[1]):
+                    if bm[y, x]:
+                        c = str(self.color_map[y, x])
+                        counts[c] = counts.get(c, 0) + 1
+            items = list(counts.items())
+        elif self.bom is not None and 'colors' in self.bom:
             items = [(code, info['count']) for code, info in self.bom['colors'].items()]
         else:
             counts = {}
@@ -644,6 +706,23 @@ class PatternGenerator:
             items = list(counts.items())
         items.sort(key=lambda kv: (-kv[1], kv[0]))
         return items
+
+    def rebuild_bom_with_mask(self, bead_mask, palette) -> Dict:
+        """Rebuild the BOM counting only kept (foreground) beads so the BOM
+        excludes masked-out background. Same structure as _create_bom."""
+        usage = self._sorted_usage(palette, bead_mask=bead_mask)
+        total = sum(c for _, c in usage)
+        bom = {'total_beads': total, 'colors': {}}
+        for code, count in usage:
+            color = palette.get_color(code) if palette is not None else None
+            bom['colors'][code] = {
+                'name': color.name if color else code,
+                'hex': color.hex if color else '#000000',
+                'count': count,
+                'percentage': (count / total * 100) if total else 0.0,
+            }
+        self.bom = bom
+        return bom
 
     def _code_rgb_lookup(self, palette=None) -> Dict[str, Tuple[int, int, int]]:
         """Map color code -> RGB tuple for swatch fills."""
