@@ -225,17 +225,70 @@ class ImageProcessor:
         kernel = min(kernel, 15)
         return kernel
     
-    def apply_bilateral_filter(self, diameter: int = 9, 
-                               sigma_color: float = 75, 
+    def apply_bilateral_filter(self, diameter: int = 9,
+                               sigma_color: float = 75,
                                sigma_space: float = 75) -> np.ndarray:
         """Apply bilateral filter for edge-preserving smoothing"""
         if self.current_image is None:
             raise ValueError("未加载图像")
-        
+
         filtered = cv2.bilateralFilter(self.current_image, diameter, sigma_color, sigma_space)
         self.current_image = filtered
         return self.current_image.copy()
-    
+
+    # ---- Geometric transforms (operate on the working image only) ----
+
+    def rotate_90(self, clockwise: bool = True) -> np.ndarray:
+        """Rotate the working image 90 degrees."""
+        if self.current_image is None:
+            raise ValueError("未加载图像")
+        code = cv2.ROTATE_90_CLOCKWISE if clockwise else cv2.ROTATE_90_COUNTERCLOCKWISE
+        self.current_image = cv2.rotate(self.current_image, code)
+        return self.current_image.copy()
+
+    def rotate_180(self) -> np.ndarray:
+        """Rotate the working image 180 degrees."""
+        if self.current_image is None:
+            raise ValueError("未加载图像")
+        self.current_image = cv2.rotate(self.current_image, cv2.ROTATE_180)
+        return self.current_image.copy()
+
+    def rotate_arbitrary(self, degrees: float) -> np.ndarray:
+        """Rotate the working image by an arbitrary angle (counter-clockwise,
+        degrees). The canvas is expanded so nothing is cropped; the empty
+        corners are filled with white."""
+        if self.current_image is None:
+            raise ValueError("未加载图像")
+        h, w = self.current_image.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        m = cv2.getRotationMatrix2D((cx, cy), degrees, 1.0)
+        # New bounding box that fully contains the rotated image
+        cos, sin = abs(m[0, 0]), abs(m[0, 1])
+        new_w = int(round(h * sin + w * cos))
+        new_h = int(round(h * cos + w * sin))
+        # Adjust translation to recentre
+        m[0, 2] += (new_w - w) / 2.0
+        m[1, 2] += (new_h - h) / 2.0
+        self.current_image = cv2.warpAffine(
+            self.current_image, m, (new_w, new_h),
+            flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(255, 255, 255))
+        return self.current_image.copy()
+
+    def flip_horizontal(self) -> np.ndarray:
+        """Mirror the working image left-right (about a vertical axis)."""
+        if self.current_image is None:
+            raise ValueError("未加载图像")
+        self.current_image = cv2.flip(self.current_image, 1)
+        return self.current_image.copy()
+
+    def flip_vertical(self) -> np.ndarray:
+        """Mirror the working image top-bottom (about a horizontal axis)."""
+        if self.current_image is None:
+            raise ValueError("未加载图像")
+        self.current_image = cv2.flip(self.current_image, 0)
+        return self.current_image.copy()
+
     def get_image_info(self) -> dict:
         """Get information about current image"""
         if self.current_image is None:
