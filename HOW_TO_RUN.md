@@ -38,10 +38,10 @@ python -m venv venv
 pip install -r requirements.txt
 
 # 4. 运行应用 ⭐ 关键：使用 -m 参数
-python -m src.main
+python -m src.webapp.main
 ```
 
-**⚠️ 重要**：必须使用 `python -m src.main` 而不是 `python src/main.py`
+**⚠️ 重要**：必须使用 `python -m src.webapp.main` 而不是 `python src/webapp/main.py`（正确做法是用 `-m` 从项目根目录运行模块，或直接使用 run.bat / run.sh）
 
 #### 方法 3️⃣：在 VS Code 中调试
 
@@ -74,7 +74,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 4. 运行应用 ⭐ 关键：使用 -m 参数
-python -m src.main
+python -m src.webapp.main
 ```
 
 #### 方法 3️⃣：在 VS Code 中调试
@@ -89,16 +89,16 @@ python -m src.main
 
 ❌ **错误方式**：
 ```bash
-cd src
-python main.py              # ❌ 错误：在 src 目录运行
+cd src/webapp
+python main.py              # ❌ 错误：在 src/webapp 目录运行
 # 或
-python src/main.py          # ❌ 错误：工作目录不对
+python src/webapp/main.py   # ❌ 错误：工作目录不对
 ```
 
 ✅ **正确方式**：
 ```bash
 # 从项目根目录运行
-python -m src.main          # ✅ 正确：-m 参数告诉 Python 执行模块
+python -m src.webapp.main   # ✅ 正确：-m 参数告诉 Python 执行模块
 ```
 
 ---
@@ -129,8 +129,8 @@ ls -la
 
 - [ ] 当前目录是项目根目录（包含 `src` 文件夹）
 - [ ] 已激活虚拟环境（Windows 会显示 `(venv)` 前缀）
-- [ ] 已安装依赖：`pip list | grep PyQt6`
-- [ ] 使用了 `python -m src.main` 命令
+- [ ] 已安装依赖：`pip list | grep fastapi`
+- [ ] 使用了 `python -m src.webapp.main` 命令
 
 ### 调试步骤
 
@@ -139,10 +139,10 @@ ls -la
 python --version      # 应该是 3.8+
 
 # 2. 检查依赖安装
-pip list              # 应该看到 PyQt6、numpy、opencv-python 等
+pip list              # 应该看到 fastapi、uvicorn、pywebview、numpy、opencv-python 等
 
 # 3. 测试导入
-python -c "import PyQt6; print('PyQt6 OK')"
+python -c "import fastapi, uvicorn, webview; print('OK')"
 python -c "import cv2; print('OpenCV OK')"
 python -c "import numpy; print('NumPy OK')"
 
@@ -171,14 +171,14 @@ run.bat                       # 一键启动
 chmod +x run.sh && ./run.sh   # 一键启动
 
 # 或手动运行（任何平台）
-python -m src.main            # 从项目根目录运行
+python -m src.webapp.main     # 从项目根目录运行
 ```
 
 ---
 
 ## 🎯 下一步
 
-应用启动后，你会看到一个 PyQt6 窗口。然后：
+应用启动后，你会看到一个桌面窗口（内嵌 Web 视图）。如果窗口没有弹出或出现白屏，请查看项目根目录下的 `webapp_error.log` 排查原因。然后：
 
 1. 点击 "加载图像" 加载一张图片
 2. 在"图案生成"标签页设置拼豆数量

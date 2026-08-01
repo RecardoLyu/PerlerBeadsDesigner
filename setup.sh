@@ -77,7 +77,7 @@ else
 fi
 echo ""
 echo "2. Run the application:"
-echo "   python -m src.main"
+echo "   python -m src.webapp.main"
 echo ""
 echo "3. Or run in VS Code:"
 echo "   Press F5 to start debugging"

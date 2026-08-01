@@ -7,8 +7,8 @@
 这个错误说明 Python 的模块搜索路径没有正确包含项目根目录。
 
 **常见原因：**
-1. 从子目录（如 src/ 目录）运行应用
-2. 使用 `python src/main.py` 而不是 `python -m src.main`
+1. 从子目录（如 src/webapp/ 目录）运行应用
+2. 使用 `python src/webapp/main.py` 而不是 `python -m src.webapp.main`
 3. 工作目录不是项目根目录
 
 ### ✅ 解决方案
@@ -54,7 +54,7 @@ chmod +x run.sh
 
 4. **运行应用**
    ```bash
-   python -m src.main
+   python -m src.webapp.main
    ```
 
 ### 🧪 验证导入
@@ -74,9 +74,9 @@ python test_imports.py
 
 - [ ] 虚拟环境已创建：`venv/` 目录存在
 - [ ] 虚拟环境已激活：命令行显示 `(venv)` 前缀
-- [ ] 依赖已安装：`pip list` 包含 PyQt6、numpy、opencv-python
+- [ ] 依赖已安装：`pip list` 包含 fastapi、uvicorn、pywebview、numpy、opencv-python
 - [ ] 当前目录是项目根目录：`ls src/` 或 `dir src` 有输出
-- [ ] 使用正确的命令：`python -m src.main` 而不是 `python src/main.py`
+- [ ] 使用正确的命令：`python -m src.webapp.main` 而不是 `python src/webapp/main.py`
 
 ---
 
@@ -95,10 +95,10 @@ pip install --force-reinstall -r requirements.txt
 python -m pip install --upgrade pip
 ```
 
-### Q: PyQt6 导入失败
+### Q: pywebview / FastAPI 导入失败
 **A:**
 ```bash
-pip install --force-reinstall PyQt6
+pip install --force-reinstall pywebview fastapi uvicorn
 ```
 
 ### Q: OpenCV 导入失败
@@ -120,10 +120,20 @@ pip install opencv-python
 **A:** 检查错误消息：
 ```bash
 # 运行应用并查看错误
-python -m src.main
+python -m src.webapp.main
 
 # 或在 VS Code 中按 F5 调试，查看控制台输出
 ```
+
+### Q: 窗口不弹出或出现白屏
+**A:** 这是 Web 视图相关的问题，按以下顺序排查：
+1. 查看启动错误日志：开发运行时看项目根目录下的 `webapp_error.log`；如果是打包后的 exe，则看 exe 同目录下的 `webapp_error.log`
+2. 检查本地端口是否被占用（应用会在本机启动一个 FastAPI 服务）
+3. 检查防火墙/安全软件是否拦截了本地回环端口或 pywebview 窗口
+4. 确认 pywebview 已正确安装：
+   ```bash
+   python -c "import fastapi, uvicorn, webview; print('OK')"
+   ```
 
 ---
 
@@ -137,8 +147,8 @@ python test_imports.py
 # 输出：✓ All imports successful!
 
 # 2. 启动应用
-python -m src.main
-# 应该看到拼豆设计器窗口出现
+python -m src.webapp.main
+# 应该看到拼豆设计器窗口（内嵌 Web 视图）出现
 ```
 
 ---
@@ -164,7 +174,7 @@ python -m venv venv                      # 创建虚拟环境
 .\venv\Scripts\activate                  # Windows 激活
 source venv/bin/activate                 # macOS/Linux 激活
 pip install -r requirements.txt          # 安装依赖
-python -m src.main                       # 运行应用
+python -m src.webapp.main                # 运行应用
 
 # 诊断
 python test_imports.py                   # 测试导入
@@ -181,7 +191,7 @@ cd d:\WS\PYTHON\PerlerBeadsDesigner
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
-python -m src.main
+python -m src.webapp.main
 ```
 
 **祝您使用愉快！** 🎉

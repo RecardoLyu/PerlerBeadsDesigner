@@ -7,12 +7,16 @@
 ## 源代码文件 ✅
 
 ### 主程序
-- [x] `src/main.py` - 应用入口点 (40+ 行)
+- [x] `run.py` - 运行入口（等价 `python -m src.webapp.main`）
 - [x] `src/__init__.py` - 包初始化
 
-### UI 模块
-- [x] `src/ui/__init__.py`
-- [x] `src/ui/main_window.py` - PyQt6 主窗口 (650+ 行)
+### Web 应用模块
+- [x] `src/webapp/__init__.py`
+- [x] `src/webapp/main.py` - 应用入口（FastAPI + pywebview 桌面窗口）
+- [x] `src/webapp/app.py` - FastAPI 应用与路由
+- [x] `src/webapp/state.py` - 应用状态管理
+- [x] `src/webapp/codecs.py` - 图像编解码
+- [x] `src/webapp/static/` - Web 前端 (HTML/CSS/JS)
 
 ### 核心模块
 - [x] `src/core/__init__.py`
@@ -24,10 +28,9 @@
 - [x] `src/utils/__init__.py`
 - [x] `src/utils/segmentation.py` - 前景分割 (400+ 行)
 - [x] `src/utils/export.py` - 导出功能 (500+ 行)
-- [x] `src/utils/web_scraper.py` - 网络爬虫 (180+ 行)
 
 ### 资源文件
-- [x] `src/assets/colors.json` - 默认颜色库
+- [x] `src/assets/colors_221.json` - 内置 221 色拼豆颜色库
 
 ### 测试代码
 - [x] `tests/test_core.py` - 单元测试框架 (150+ 行)
@@ -134,9 +137,9 @@
 - [x] 形态学操作（开/闭）
 
 ### 颜色管理功能
-- [x] 网页爬虫（自动获取）
+- [x] 内置 221 色拼豆颜色库
 - [x] 颜色库管理
-- [x] 颜色匹配算法
+- [x] 颜色匹配算法 (CIEDE2000)
 - [x] 颜色量化
 - [x] 编码系统（A1, B2 等）
 
@@ -154,8 +157,8 @@
 - [x] JSON BOM 导出
 - [x] CSV BOM 导出
 
-### UI 功能
-- [x] 4 个功能标签页
+### UI 功能（Web 界面）
+- [x] 图像加载/分割/图案生成/导出工作流
 - [x] 实时图像预览
 - [x] 参数调整
 - [x] 进度反馈
@@ -214,7 +217,7 @@
 - Python 源文件: 9 个
 - 配置文件: 12 个
 - 文档文件: 8 个
-- 资源文件: 1 个 (colors.json)
+- 资源文件: 1 个 (colors_221.json)
 
 总计: 30+ 个文件
 
@@ -247,17 +250,16 @@
 
 ## 依赖管理 ✅
 
-### 核心依赖 (9 个)
+### 核心依赖
 ```
-PyQt6>=6.6.0          ✅
 numpy>=1.24.0         ✅
 opencv-python>=4.8    ✅
 Pillow>=10.0.0        ✅
-scikit-image>=0.22    ✅
-scipy>=1.11.0         ✅
 reportlab>=4.0.0      ✅
-requests>=2.31.0      ✅
-beautifulsoup4>=4.12  ✅
+fastapi               ✅
+uvicorn               ✅
+python-multipart      ✅
+pywebview             ✅
 ```
 
 ### 可选依赖
@@ -318,16 +320,16 @@ beautifulsoup4>=4.12  ✅
 ## 特色和亮点 ✅
 
 ### 功能特色
-- ✅ 智能颜色识别和自动爬虫更新
+- ✅ 智能颜色识别（内置 221 色库 + CIEDE2000 匹配）
 - ✅ 多种前景分割算法
 - ✅ 灵活的导出格式
 - ✅ 完整的物料清单
 
 ### 技术亮点
-- ✅ 生产级 GUI 应用
+- ✅ 生产级桌面应用（FastAPI + pywebview 内嵌 Web 界面）
 - ✅ 计算机视觉算法应用
 - ✅ PDF 生成和处理
-- ✅ 网络爬虫技术
+- ✅ 自实现 SLIC 超像素分割与 CIEDE2000 色差
 
 ### 工程亮点
 - ✅ 跨平台支持
@@ -341,7 +343,7 @@ beautifulsoup4>=4.12  ✅
 
 - ⚠️ 大图像处理可能较慢（可优化）
 - ⚠️ PDF 字体支持受限（已说明）
-- ⚠️ 网页爬虫依赖网络连接（有备份方案）
+- ⚠️ 打包体积较大（FastAPI/uvicorn/pywebview 依赖较多）
 
 ---
 

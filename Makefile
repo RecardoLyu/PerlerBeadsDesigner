@@ -14,7 +14,7 @@ install:
 	pip install -r requirements.txt
 
 run:
-	python -m src.main
+	python -m src.webapp.main
 
 test:
 	python -m pytest tests/ -v

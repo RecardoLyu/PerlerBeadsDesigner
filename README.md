@@ -42,8 +42,7 @@
     - 包含物料清单 (BOM)
     - A4 或 Letter 纸张大小
   - **物料清单 (BOM)**
-    - JSON 格式
-    - CSV 格式
+    - 随 PNG / PDF 图纸一并展示
     - 包含颜色代码、名称、数量和百分比
 
 ## 系统要求
@@ -87,8 +86,9 @@
 
 4. **运行应用**
    ```bash
-   python -m src.main
+   python -m src.webapp.main
    ```
+   启动后会在桌面窗口（pywebview）中打开应用；首次启动会先拉起本地 FastAPI 服务。
 
 ### 方法 2：直接运行可执行文件
 
@@ -157,25 +157,28 @@
 PerlerBeadsDesigner/
 ├── src/                          # 源代码
 │   ├── __init__.py
-│   ├── main.py                   # 应用入口
-│   ├── ui/                       # 用户界面
+│   ├── webapp/                   # 桌面应用（FastAPI 后端 + pywebview 窗口）
 │   │   ├── __init__.py
-│   │   └── main_window.py        # 主窗口
+│   │   ├── main.py               # 应用入口（启动本地服务并开窗）
+│   │   ├── app.py                # FastAPI 路由（HTTP API）
+│   │   ├── state.py              # 应用状态
+│   │   ├── codecs.py             # 图像编解码
+│   │   └── static/               # 前端（HTML/CSS/JS）
 │   ├── core/                     # 核心功能
 │   │   ├── __init__.py
 │   │   ├── image_processor.py    # 图像处理
-│   │   ├── color_manager.py      # 颜色管理
+│   │   ├── color_manager.py      # 颜色管理与量化
 │   │   └── pattern_generator.py  # 图案生成
 │   ├── utils/                    # 实用工具
 │   │   ├── __init__.py
-│   │   ├── segmentation.py       # 前景分割
-│   │   ├── export.py             # 导出功能
-│   │   └── web_scraper.py        # 网络爬虫
+│   │   ├── segmentation.py       # 前景分割（GrabCut/分水岭/Otsu/SLIC）
+│   │   └── export.py             # 导出功能（PNG/PDF/BOM）
 │   └── assets/                   # 资源文件
-│       └── colors.json           # 颜色配置
+│       └── colors_221.json       # MARD 221 色拼豆颜色库
 ├── tests/                        # 单元测试
 ├── resources/                    # 资源文件
-│   └── icons/                    # 图标（待添加）
+│   └── icons/                    # 应用图标
+├── run.py                        # PyInstaller 引导入口
 ├── requirements.txt              # Python 依赖
 ├── setup.py                      # 安装脚本
 ├── pyinstaller.spec              # PyInstaller 配置
@@ -235,7 +238,7 @@ PerlerBeadsDesigner/
                  "name": "Python: Main",
                  "type": "python",
                  "request": "launch",
-                 "program": "${workspaceFolder}/src/main.py",
+                 "program": "${workspaceFolder}/run.py",
                  "console": "integratedTerminal",
                  "justMyCode": true
              }
@@ -413,9 +416,9 @@ exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern', 'A4')
 ## 致谢
 
 - 感谢 [Pixel Beads](https://www.pixel-beads.com) 提供真实的拼豆颜色库
-- 使用 OpenCV、PyQt6、numpy 等开源库
+- 使用 OpenCV、FastAPI、pywebview、numpy 等开源库
 
 ---
 
-**最后更新**: 2025 年
-**版本**: 1.1.0
+**最后更新**: 2026 年
+**版本**: 2.0.2

@@ -28,7 +28,7 @@ pip install -r requirements.txt
 ### 第 2 步：启动应用
 
 ```bash
-python -m src.main
+python -m src.webapp.main
 ```
 
 ### 第 3 步：使用应用
@@ -87,7 +87,7 @@ python -m src.main
 
 ```bash
 # 运行应用
-python -m src.main
+python -m src.webapp.main
 
 # 在 VS Code 中调试 (F5)
 # 自动加载 launch.json 配置
@@ -113,8 +113,9 @@ make clean    # 清理
 ```
 PerlerBeadsDesigner/
 ├── src/                         # ← 源代码在这里
-│   ├── main.py                  # 应用入口
-│   ├── ui/main_window.py        # UI 界面
+│   ├── webapp/                  # Web 应用（FastAPI 后端 + pywebview 桌面窗口）
+│   │   ├── main.py              # 应用入口
+│   │   └── static/              # 前端（HTML/CSS/JS）
 │   └── core/                    # 核心功能
 │       ├── image_processor.py   # 图像处理
 │       ├── color_manager.py     # 颜色管理
@@ -184,7 +185,7 @@ PerlerBeadsDesigner/
 
 ```bash
 # 方法 1: 直接运行
-python -m src.main
+python -m src.webapp.main
 
 # 方法 2: VS Code 调试 (按 F5)
 # 自动加载 .vscode/launch.json
@@ -279,7 +280,7 @@ exporter.export_png_with_codes(pattern, color_map, 'result')
 
 ### 外部参考
 - [OpenCV 文档](https://docs.opencv.org/)
-- [PyQt6 官网](https://www.riverbankcomputing.com/software/pyqt/)
+- [FastAPI 文档](https://fastapi.tiangolo.com/)
 - [NumPy 教程](https://numpy.org/doc/stable/user/)
 
 ---
@@ -326,7 +327,8 @@ exporter.export_png_with_codes(pattern, color_map, 'result')
 
 感谢以下项目的支持:
 - [OpenCV](https://opencv.org/)
-- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [pywebview](https://pywebview.flowrl.com/)
 - [NumPy](https://numpy.org/)
 - [ReportLab](https://www.reportlab.com/)
 

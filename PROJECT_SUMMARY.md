@@ -2,14 +2,14 @@
 
 ## 📋 项目概览
 
-**拼豆图纸设计器** 是一个功能完整的 Python GUI 应用程序，用于将数字图像转换为拼豆手工艺设计图纸。
+**拼豆图纸设计器** 是一个功能完整的 Python 桌面应用程序（FastAPI 后端 + pywebview 内嵌 Web 界面），用于将数字图像转换为拼豆手工艺设计图纸。
 
 ### 项目完成时间
 2024年2月10日
 
 ### 核心技术栈
-- **界面框架**: PyQt6
-- **图像处理**: OpenCV, NumPy, scikit-image
+- **界面框架**: pywebview（内嵌 Web 视图）+ FastAPI 后端（前端为 HTML/CSS/JS）
+- **图像处理**: OpenCV, NumPy（SLIC/CIEDE2000 已自实现）
 - **导出格式**: PNG, PDF (reportlab)
 - **版本控制**: Git & GitHub
 - **打包工具**: PyInstaller
@@ -28,8 +28,8 @@
 
 ### 2. 颜色管理系统 (`src/core/color_manager.py`)
 **功能**:
-- 自动从 Pixel Beads 网站获取实时颜色库
-- 颜色匹配和量化算法
+- 内置完整拼豆颜色库（`src/assets/colors_221.json`，221 色）
+- 颜色匹配和量化算法（CIEDE2000 色差，自实现）
 - 调色板管理
 - 颜色编码系统 (A1, B2, C3 等)
 - 颜色距离计算
@@ -83,27 +83,27 @@
 
 **关键类**: `PatternExporter`
 
-### 6. 网络爬虫 (`src/utils/web_scraper.py`)
+### 6. Web 应用后端 (`src/webapp/`)
 **功能**:
-- 自动爬取 Pixel Beads 官网颜色数据
-- 提取颜色代码、名称、HEX 值
-- 内置默认色库作为备份
+- FastAPI 后端，提供图像处理/图案生成/导出的 HTTP 接口
+- 通过 pywebview 内嵌 Web 视图呈现桌面窗口
+- 前端为 HTML/CSS/JS（`src/webapp/static/`）
 
-**关键类**: `PixelBeadsColorScraper`
+**关键文件**: `main.py`（入口）, `app.py`, `state.py`, `codecs.py`
 
-### 7. 用户界面 (`src/ui/main_window.py`)
+### 7. 用户界面 (`src/webapp/static/`)
 **界面组成**:
-- 标签页 1: 图像加载和处理
-- 标签页 2: 前景分割
-- 标签页 3: 图案生成
-- 标签页 4: 导出选项
+- 图像加载和处理
+- 前景分割
+- 图案生成
+- 导出选项
 
 **特性**:
 - 实时预览
 - 参数调整
 - 进度反馈
 
-**关键类**: `MainWindow`, `ImageDisplay`
+**实现**: HTML/CSS/JavaScript 前端 + pywebview 桌面窗口
 
 ## 🎯 完成的功能列表
 
@@ -142,11 +142,11 @@
 - [x] 自定义输出目录
 
 ### 颜色系统
-- [x] 自动网页爬虫
+- [x] 内置 221 色拼豆颜色库
 - [x] 颜色库管理
-- [x] 颜色量化算法
+- [x] 颜色量化算法 (CIEDE2000)
 - [x] 颜色编码系统
-- [x] 默认色库备份
+- [x] 颜色距离计算
 
 ### 开发工具
 - [x] PyInstaller 打包配置
@@ -162,10 +162,13 @@
 PerlerBeadsDesigner/
 ├── src/                              # 源代码
 │   ├── __init__.py
-│   ├── main.py                       # 应用入口点
-│   ├── ui/
+│   ├── webapp/
 │   │   ├── __init__.py
-│   │   └── main_window.py            # PyQt6 主窗口 (650+ 行)
+│   │   ├── main.py                   # 应用入口点（FastAPI + pywebview）
+│   │   ├── app.py                    # FastAPI 应用与路由
+│   │   ├── state.py                  # 应用状态管理
+│   │   ├── codecs.py                 # 图像编解码
+│   │   └── static/                   # Web 前端 (HTML/CSS/JS)
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── image_processor.py        # 图像处理 (300+ 行)
@@ -174,31 +177,31 @@ PerlerBeadsDesigner/
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── segmentation.py           # 前景分割 (400+ 行)
-│   │   ├── export.py                 # 导出功能 (500+ 行)
-│   │   └── web_scraper.py            # 网络爬虫 (180+ 行)
+│   │   └── export.py                 # 导出功能 (500+ 行)
 │   └── assets/
-│       └── colors.json               # 默认颜色库
+│       └── colors_221.json           # 内置 221 色拼豆颜色库
 ├── tests/
 │   └── test_core.py                  # 单元测试
 ├── resources/
-│   └── icons/                        # 图标位置 (待补充)
+│   └── icons/                        # 应用图标
 ├── .github/
 │   └── workflows/
 │       └── build.yml                 # GitHub Actions 工作流
 ├── .vscode/
 │   ├── launch.json                   # VS Code 调试配置
 │   └── settings.json                 # VS Code 编辑器设置
-├── requirements.txt                  # Python 依赖库 (10+ 个)
+├── run.py                            # 运行入口（等价 python -m src.webapp.main）
+├── requirements.txt                  # Python 依赖库
 ├── setup.py                          # 安装脚本
-├── pyinstaller.spec                  # PyInstaller 配置
+├── pyinstaller.spec                  # PyInstaller 配置（入口 run.py）
 ├── build.bat                         # Windows 构建脚本
 ├── build.sh                          # Linux/Mac 构建脚本
 ├── setup.sh                          # 项目初始化脚本
 ├── Makefile                          # Linux/Mac Makefile
 ├── .gitignore                        # Git 忽略配置
-├── README.md                         # 项目主文档 (600+ 行)
+├── README.md                         # 项目主文档
 ├── QUICKSTART.md                     # 快速入门指南
-├── DEVELOPMENT.md                    # 开发指南 (500+ 行)
+├── DEVELOPMENT.md                    # 开发指南
 ├── CHANGELOG.md                      # 变更日志
 └── LICENSE                           # MIT 许可证
 ```
@@ -218,13 +221,14 @@ PerlerBeadsDesigner/
 
 ### 关键依赖库
 ```
-PyQt6>=6.6.0          # GUI 框架
-opencv-python>=4.8    # 图像处理
 numpy>=1.24.0         # 数值计算
+opencv-python>=4.8    # 图像处理
 Pillow>=10.0.0        # 图像库
 reportlab>=4.0.0      # PDF 生成
-requests>=2.31.0      # HTTP 请求
-beautifulsoup4>=4.12  # HTML 解析
+fastapi               # Web 后端框架
+uvicorn               # ASGI 服务器
+python-multipart      # 表单/文件上传
+pywebview             # 内嵌 Web 视图桌面窗口
 ```
 
 ## 🚀 使用指南
@@ -248,7 +252,9 @@ beautifulsoup4>=4.12  # HTML 解析
 
 3. **运行应用**
    ```bash
-   python -m src.main
+   python -m src.webapp.main
+   # 或等价地
+   python run.py
    ```
 
 ### 基本工作流程
@@ -305,7 +311,6 @@ bash build.sh
 ```bash
 # 测试单个模块
 python -m src.core.color_manager
-python -m src.utils.web_scraper
 
 # 运行单元测试
 python -m pytest tests/ -v
@@ -359,11 +364,11 @@ python -m pytest tests/ -v
 ## 🎓 学习价值
 
 ### 展示的技术
-1. **GUI 编程**: PyQt6 框架
-2. **计算机视觉**: OpenCV 应用
-3. **数据处理**: NumPy 数组操作
-4. **PDF 生成**: ReportLab 库
-5. **网络爬取**: BeautifulSoup4
+1. **桌面应用**: pywebview 内嵌 Web 视图 + FastAPI 后端
+2. **Web 前端**: HTML/CSS/JavaScript
+3. **计算机视觉**: OpenCV 应用
+4. **数据处理**: NumPy 数组操作
+5. **PDF 生成**: ReportLab 库
 6. **项目打包**: PyInstaller
 7. **CI/CD**: GitHub Actions
 8. **版本控制**: Git workflow
@@ -383,7 +388,7 @@ python -m pytest tests/ -v
 - 输入验证
 - 异常处理
 - 文件路径验证
-- 网络请求超时
+- 本地服务接口校验
 
 ### 性能优化
 - NumPy 向量化操作
@@ -394,7 +399,7 @@ python -m pytest tests/ -v
 ## 🎨 用户体验
 
 ### 界面设计
-- 标签页组织
+- Web 界面组织
 - 实时预览
 - 参数调整
 - 进度反馈
@@ -449,7 +454,7 @@ python -m pytest tests/ -v
 - 性能优化 (大图像处理)
 - 多线程支持
 - 插件系统
-- Web 版本
+- 界面主题与交互增强
 
 ### 用户体验
 - 国际化支持
@@ -479,7 +484,7 @@ MIT License - 可自由使用、修改、分发
 
 ## 总结
 
-这是一个功能完整、文档齐全、代码质量高的 Python GUI 应用程序。它不仅实现了所有需求的功能，还提供了完整的开发工具链和详细的文档。项目已准备好用于生产环境或作为学习参考。
+这是一个功能完整、文档齐全、代码质量高的 Python 桌面应用程序。它不仅实现了所有需求的功能，还提供了完整的开发工具链和详细的文档。项目已准备好用于生产环境或作为学习参考。
 
 **项目完成度**: 100% ✅
 

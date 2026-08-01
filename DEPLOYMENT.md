@@ -27,7 +27,8 @@ python -m venv venv
 pip install -r requirements.txt
 
 # 4. 运行应用
-python -m src.main
+python -m src.webapp.main
+# 或等价地: python run.py
 ```
 
 #### macOS/Linux Bash
@@ -44,7 +45,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 4. 运行应用
-python -m src.main
+python -m src.webapp.main
+# 或等价地: python run.py
 ```
 
 ### 在 VS Code 中开发
@@ -58,7 +60,7 @@ python -m src.main
 
 3. **开始调试**
    - F5 或 Run → Start Debugging
-   - 会启动 main.py 并支持断点调试
+   - 会启动应用入口（`run.py` / `src/webapp/main.py`）并支持断点调试
 
 4. **运行测试**
    - 按 Ctrl+Shift+P → "Python: Run All Tests"
@@ -111,27 +113,11 @@ pyinstaller pyinstaller.spec
 chmod +x dist/PerlerBeadsDesigner/PerlerBeadsDesigner
 ```
 
-### 创建单文件可执行文件
+### 打包配置说明
 
-修改 `pyinstaller.spec`，在 EXE 配置中添加 `onefile=True`:
+现行 `pyinstaller.spec` 的入口是 `run.py`，采用 onedir 模式（`COLLECT`），输出到 `dist/PerlerBeadsDesigner/`。为减小体积并避免冲突，spec 在 `excludes` 中排除了本应用不使用的大型库（PyQt5/PyQt6/PySide、torch、matplotlib、pandas、skimage/scikit-image、scipy、playwright 等），并在 `hiddenimports` 中显式声明了 FastAPI/uvicorn/pywebview 及 `src.webapp` 后端模块。请勿在 `excludedimports` 中加入旧描述（如 `tkinter`、`matplotlib`）——现行 spec 的 `excludedimports` 为空，重型库统一通过 `excludes` 排除。
 
-```python
-exe = EXE(
-    pyz,
-    a.scripts,
-    # ... 其他参数
-    name='PerlerBeadsDesigner',
-    onefile=True,  # ← 添加此行
-    # ...
-)
-```
-
-然后重新打包:
-```bash
-pyinstaller pyinstaller.spec
-```
-
-输出文件将在 `dist/` 目录中。
+如需单文件（onefile）打包，请改写 spec：移除 `COLLECT`，并在 `EXE` 中把 `a.binaries`、`a.zipfiles`、`a.datas` 一并传入（参考 PyInstaller 单文件模板）。注意 onedir 是当前推荐且已验证的方式。
 
 ---
 
@@ -278,7 +264,8 @@ git ls-remote --tags origin
 git clone https://github.com/yourusername/PerlerBeadsDesigner.git
 cd PerlerBeadsDesigner
 pip install -r requirements.txt
-python -m src.main
+python -m src.webapp.main
+# 或等价地: python run.py
 ```
 
 ### 方法 3: 从 PyPI 安装（未来）
@@ -340,18 +327,13 @@ EOF
 2. 检查 Python 路径
 3. 查看控制台输出错误信息
 
-### 网络问题
+### 颜色库问题
 
-#### Q: 无法抓取拼豆颜色库
+#### Q: 拼豆颜色库不完整或回退到默认色
 **A**: 
-1. 检查网络连接
-2. 应用会自动使用默认颜色库
-3. 手动更新颜色库:
-```python
-from src.utils.web_scraper import PixelBeadsColorScraper
-scraper = PixelBeadsColorScraper()
-colors = scraper.fetch_colors()
-```
+1. 应用使用内置颜色库 `src/assets/colors_221.json`（221 色），无需联网。
+2. 若打包后的 exe 回退到 18 色默认，说明 `src/assets` 未被打包 —— 检查 `pyinstaller.spec` 的 `datas` 中是否包含 `('src/assets', 'src/assets')`。
+3. 从源码运行时，确认 `src/assets/colors_221.json` 文件存在且未损坏。
 
 ### GitHub 相关问题
 
@@ -373,12 +355,18 @@ colors = scraper.fetch_colors()
 
 ### 打包优化
 
-减小可执行文件大小:
+减小可执行文件大小 —— 现行 `pyinstaller.spec` 已通过 `excludes` 排除未使用的重型库（PyQt5/6、torch、matplotlib、skimage/scikit-image、scipy、pandas 等）。如需进一步精简，可向该列表追加其它确认未用的包:
+
 ```python
-# 在 pyinstaller.spec 中
+# 在 pyinstaller.spec 的 Analysis 中
 a = Analysis(
     # ...
-    excludedimports=['tkinter', 'matplotlib'],
+    excludes=[
+        'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
+        'torch', 'matplotlib', 'pandas',
+        'skimage', 'scikit-image', 'scipy',
+        # ... 其它未使用的包
+    ],
     # ...
 )
 ```

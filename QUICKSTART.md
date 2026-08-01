@@ -50,8 +50,10 @@
 
 ```bash
 # 确保虚拟环境已激活
-python -m src.main
+python -m src.webapp.main
 ```
+
+（等价命令：`python run.py`，或直接双击 `run.bat` / `run.sh`。）
 
 ## 3. 在 VS Code 中调试
 
@@ -97,9 +99,11 @@ python -m src.main
 
 ```
 src/
-├── main.py           ← 应用入口，从这里开始
-├── ui/
-│   └── main_window.py ← 主窗口（UI 代码）
+├── webapp/
+│   ├── main.py          ← 应用入口，从这里开始（FastAPI + pywebview）
+│   ├── app.py           ← FastAPI 路由与静态挂载
+│   ├── state.py         ← 会话状态
+│   └── codecs.py        ← 图像编解码
 ├── core/
 │   ├── image_processor.py   ← 图像处理
 │   ├── color_manager.py     ← 颜色管理
@@ -113,14 +117,13 @@ src/
 
 ```bash
 # 测试导入（确保依赖安装正确）
-python -c "import cv2; import PyQt6; print('Dependencies OK')"
+python -c "import cv2, fastapi, uvicorn, webview; print('Dependencies OK')"
 
 # 运行应用
-python -m src.main
+python -m src.webapp.main
 
 # 运行单个模块（测试）
 python -m src.core.color_manager
-python -m src.utils.web_scraper
 
 # 清理缓存
 rm -r src/__pycache__  # Linux/macOS
@@ -135,12 +138,19 @@ rmdir /s src\__pycache__  # Windows
 pip install -r requirements.txt --force-reinstall
 ```
 
-### PyQt6 窗口不显示
+### 窗口不弹出 / 界面白屏
+
+pywebview 通过本地 FastAPI 服务加载界面，窗口不显示或白屏时可按以下排查：
+
 ```bash
-# 重新安装 PyQt6
-pip uninstall PyQt6 -y
-pip install PyQt6
+# 1. 重新安装 pywebview
+pip uninstall pywebview -y
+pip install pywebview
 ```
+
+2. **检查端口占用**：应用默认占用本地端口，若被其他程序占用会导致连不上。换个端口或关闭占用进程后重试。
+3. **检查防火墙 / 杀毒软件**：确认未阻止 Python 进程访问 `127.0.0.1`。
+4. **查看错误日志**：服务器启动失败时会在项目根目录写入 `webapp_error.log`，打开它能看到具体报错。
 
 ### 图像无法加载
 ```bash

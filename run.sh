@@ -33,14 +33,14 @@ echo "Activating virtual environment..."
 source venv/bin/activate
 
 # Check if dependencies are installed
-if ! python -c "import PyQt6" 2>/dev/null; then
+if ! python -c "import fastapi" 2>/dev/null; then
     echo "Installing dependencies..."
     pip install -r requirements.txt
 fi
 
-# Run the application
+# Run the application (FastAPI backend + pywebview desktop window)
 echo "Starting Perler Beads Designer..."
-python -m src.main
+python -m src.webapp.main
 
 # Inform user if there was an error
 if [ $? -ne 0 ]; then
