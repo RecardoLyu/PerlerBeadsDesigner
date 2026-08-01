@@ -8,7 +8,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="PerlerBeadsDesigner",
-    version="2.0.1",
+    version="2.0.2",
     author="RecardoLyu",
     author_email="your.email@example.com",
     description="A tool to design pixel art patterns for perler beads",

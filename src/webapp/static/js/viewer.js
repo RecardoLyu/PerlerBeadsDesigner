@@ -10,8 +10,17 @@ class Viewer {
     this.scale = 1; this.tx = 0; this.ty = 0;
     this.panning = false; this._ps = null; this._pstart = null;
     this._miniDrag = null;
+    this._userMoved = false;   // 用户手动平移/缩放后置位；fit 重置，窗口 resize 仅在未手动操作时 refit
     this._bind();
     this._bindMiniDrag();
+    // viewport 尺寸变化（窗口缩放 / 侧栏折叠）时重新 fit，保持图纸居中。
+    // 已手动平移/缩放则保留用户视角不打扰。
+    if (typeof ResizeObserver !== 'undefined') {
+      this._ro = new ResizeObserver(() => { if (this.img.src && !this._userMoved) this.fit(); });
+      this._ro.observe(this.viewport);
+    } else {
+      window.addEventListener('resize', () => { if (this.img.src && !this._userMoved) this.fit(); });
+    }
   }
 
   _bind() {
@@ -27,6 +36,7 @@ class Viewer {
       this.tx = cx - (cx - this.tx) * k;
       this.ty = cy - (cy - this.ty) * k;
       this.scale = ns;
+      this._userMoved = true;
       this._apply();
     }, { passive: false });
 
@@ -44,6 +54,7 @@ class Viewer {
       if (!this.panning) return;
       this.tx = this._pstart.x + (e.clientX - this._ps.x);
       this.ty = this._pstart.y + (e.clientY - this._ps.y);
+      this._userMoved = true;
       this._apply();
     };
     const end = () => { this.panning = false; this.viewport.classList.remove('panning'); };
@@ -54,9 +65,24 @@ class Viewer {
   }
 
   setImage(url) {
-    if (!url) { this.img.removeAttribute('src'); this._hideMini(); return; }
-    this.img.onload = () => { this.fit(); if (this.miniImg) this.miniImg.src = url; };
-    this.img.src = url;
+    if (!url) { this.img.removeAttribute('src'); this.img.classList.remove('has-img'); this._hideMini(); return; }
+    // 给同源 URL 追加时间戳，强制刷新缓存（objectURL 不含 '?' 原样返回）。
+    // 主图与鹰眼缩略图用同一 bust 值，保证两者显示同一张图。
+    const busted = this._bust(url);
+    this.img.onload = () => {
+      this.img.classList.add('has-img'); this.fit();
+      if (this.miniImg) {
+        // 缩略图加载完成后再算视口框（此时 miniImg 才有尺寸，_updateMini 不提前返回）
+        this.miniImg.onload = () => this._updateMini();
+        this.miniImg.src = busted;
+      }
+    };
+    this.img.src = busted;
+  }
+
+  _bust(url) {
+    if (typeof url !== 'string' || url.startsWith('blob:') || url.startsWith('data:')) return url;
+    return url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
   }
 
   _apply() {
@@ -72,6 +98,7 @@ class Viewer {
     this.scale = Math.max(0.05, s);
     this.tx = (r.width - iw * this.scale) / 2;
     this.ty = (r.height - ih * this.scale) / 2;
+    this._userMoved = false;
     this._apply();
   }
 
@@ -83,6 +110,7 @@ class Viewer {
     this.tx = cx - (cx - this.tx) * k;
     this.ty = cy - (cy - this.ty) * k;
     this.scale = ns;
+    this._userMoved = true;
     this._apply();
   }
 

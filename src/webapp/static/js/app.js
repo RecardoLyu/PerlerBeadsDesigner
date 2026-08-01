@@ -48,6 +48,49 @@
     e.target.value = '';
   });
 
+  /* ---- 画布拖拽导入图片 ----
+     浏览器：dataTransfer.files 直接拿到 File 上传（与「加载图像」一致）。
+     打包 exe（pywebview/Edge WebView2）：出于安全会拦截拖入窗口的文件
+     （files 为空、且默认触发导航离开），无法直接读取，故提示改用「加载图像」。 */
+  const IMG_EXT = ['png', 'jpg', 'jpeg', 'bmp', 'webp'];
+  const canvasEl = $('canvas');
+  const dropzone = $('dropzone');
+  const _isPywebview = !!(window.pywebview && window.pywebview.api);
+  let _dragDepth = 0;
+  const _extOk = (name) => IMG_EXT.includes((name.split('.').pop() || '').toLowerCase());
+  function _showDrop(on) { dropzone.classList.toggle('show', on); }
+
+  // 阻止浏览器/webview 默认的「拖入即打开/导航」行为
+  ['dragover', 'drop'].forEach(ev => window.addEventListener(ev, (e) => e.preventDefault()));
+
+  canvasEl.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    _dragDepth++;
+    _showDrop(true);
+  });
+  canvasEl.addEventListener('dragover', (e) => { e.preventDefault(); });
+  canvasEl.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    if (--_dragDepth <= 0) { _dragDepth = 0; _showDrop(false); }
+  });
+  canvasEl.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    _dragDepth = 0; _showDrop(false);
+    const files = e.dataTransfer ? [...(e.dataTransfer.files || [])] : [];
+    if (!files.length) {
+      // exe 内文件被 WebView2 拦截，提示改走「加载图像」对话框
+      busy.set(_isPywebview ? '桌面版暂不支持拖入，请点左侧「加载图像」' : '未读取到文件');
+      return;
+    }
+    const f = files.find(x => _extOk(x.name)) || files[0];
+    if (!_extOk(f.name)) { window.fail('不支持的图片格式，仅支持: ' + IMG_EXT.join(' / ')); return; }
+    try {
+      busy.start('加载图像…');
+      const url = await API.loadImageFile(f);
+      await _afterLoad(url);
+    } catch (err) { window.fail('加载失败: ' + err.message); }
+  });
+
   /* ---- 基本调整（每次应用都叠加在当前图上，可连续迭代） ---- */
   window.bindEditable('brightness', 'brightnessOut', { fmt: v => (+v).toFixed(2) });
   window.bindEditable('contrast', 'contrastOut', { fmt: v => (+v).toFixed(2) });

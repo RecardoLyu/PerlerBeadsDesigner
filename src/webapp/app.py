@@ -29,7 +29,11 @@ def _err(fn, *a, **k):
 
 
 def _png(arr) -> Response:
-    return Response(content=ndarray_to_png(arr), media_type="image/png")
+    # no-store：图像内容随操作不断变化，禁止 WebView2/浏览器启发式缓存。
+    # 否则不带 cache-buster 的引用（如鹰眼缩略图 miniImg.src 用原始 URL）
+    # 会一直显示第一次缓存的旧图，看起来像「鹰眼/图像不更新」。
+    return Response(content=ndarray_to_png(arr), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 def _mask_bg(value):

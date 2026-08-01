@@ -4,6 +4,32 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 标准。
 
+## [2.0.2] - 2026-08-01
+
+### 修复
+
+- **SLIC 自动分割闪退**：放弃 scikit-image，在 `segmentation.py` 用 numpy + cv2 自实现
+  SLIC 超像素（网格种子 → Lab+xy 空间 k-means → 连通性强制）。skimage 的 Cython 扩展在
+  打包 exe 中触发原生访问冲突（HTTP 000、进程崩溃、无日志），反复补数据文件无效。
+  同时从 spec 排除 skimage/scipy/torch，exe 体积由 ~500MB+ 降至 ~300MB
+- **导出路径「选择目录…」无反应**：pywebview 6.x 已把文件对话框枚举移到
+  `webview.FileDialog`（FOLDER/OPEN），旧常量 `webview.OPEN_FOLDER/OPEN_DIALOG` 不存在
+  导致每次点击抛 AttributeError。改用新枚举后正常弹出系统对话框
+- **鹰眼导航不同步**：FastAPI 图像响应默认无缓存头，WebView2 启发式缓存把鹰眼缩略图
+  （原始 URL 无时间戳）缓存成旧图。后端 `_png` 加 `Cache-Control: no-store`；前端
+  `setImage` 统一给同源 URL 加时间戳（主图与鹰眼同步），视口框计算移到缩略图加载后
+- **画布空态错误图像记号**：未加载图像时 `img` 隐藏（仅 `.has-img` 时显示）
+- **画布拖拽导入图片**：虚线半透明放置区标注拖放位置与支持扩展名（浏览器版完整支持；
+  打包 exe 受 WebView2 安全限制回退到「加载图像」对话框）
+- **输出路径布局**：路径输入框独立整行、右对齐省略显示末尾，完整路径放悬浮提示
+- **图纸居中偏移**：移除 CSS grid 二次居中，img 绝对定位使 transform 为唯一定位来源；
+  加 ResizeObserver 在窗口变化时重新适应（保留用户手动缩放/平移）
+
+### 新增
+
+- **颜色预留接口**：`ColorManager.load_palette()` / `load_palette_file()` 扩展点，
+  可换 Perler / Artkal / Hama 等任意 code+name+hex 色板（其他品牌/编号体系）
+
 ## [2.0.1] - 2026-08-01
 
 ### 修复

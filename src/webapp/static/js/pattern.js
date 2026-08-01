@@ -29,10 +29,11 @@
       <div class="check-row"><input type="checkbox" id="expPng" checked><label for="expPng">导出 PNG</label></div>
       <div class="check-row"><input type="checkbox" id="expPdf" checked><label for="expPdf">导出 PDF</label></div>
       <div class="num-row"><label>输出路径</label>
-        <input type="text" id="outDir" readonly style="flex:1;padding:7px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-muted-fg);font-family:var(--font-body);font-size:11px">
-        <button class="btn btn-ghost" id="chooseDirBtn" data-tip="选择图纸导出的保存目录（独立窗口内用系统对话框，浏览器中请直接键入路径）">选择</button>
+        <button class="btn btn-ghost" id="chooseDirBtn" data-tip="选择图纸导出的保存目录（独立窗口内用系统对话框，浏览器中请直接键入路径）">选择目录…</button>
       </div>
-      <button class="btn btn-primary" id="exportBtn" style="width:100%;margin-top:6px">一键导出</button>
+      <input type="text" id="outDir" readonly class="outdir-display" data-tip=""
+        style="width:100%;box-sizing:border-box;margin-top:2px;padding:6px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-muted-fg);font-family:var(--font-body);font-size:11px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;direction:rtl;text-align:left">
+      <button class="btn btn-primary" id="exportBtn" style="width:100%;margin-top:8px">一键导出</button>
       <p class="hint" id="expResult">文件将保存到上方输出路径。</p>
     </div>
     <div class="panel-card glass">
@@ -53,20 +54,28 @@
   });
 
   /* ---- 输出路径：初始读取 + 原生/手动选择 ---- */
+  function _setOutDir(p) {
+    $('outDir').value = p;
+    // 完整路径放悬浮提示 + title（输入框内从右往左显示末尾，便于看到文件夹名）
+    $('outDir').dataset.tip = '输出路径：' + p;
+    $('outDir').title = p;
+  }
   async function _refreshOutDir() {
-    try { const r = await API.getOutputDir(); $('outDir').value = r.output_dir; } catch (e) {}
+    try { const r = await API.getOutputDir(); _setOutDir(r.output_dir); } catch (e) {}
   }
   _refreshOutDir();
   $('chooseDirBtn').addEventListener('click', async () => {
     try {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.choose_dir) {
-        const p = await window.pywebview.api.choose_dir();
-        if (!p) return;
+      const api = (window.pywebview && window.pywebview.api) || null;
+      if (api && typeof api.choose_dir === 'function') {
+        busy.set('请选择输出目录…');
+        const p = await api.choose_dir();
+        if (!p) { busy.set('已取消选择'); return; }
         const r = await API.setOutputDir(p);
-        $('outDir').value = r.output_dir;
+        _setOutDir(r.output_dir);
         busy.set('输出路径: ' + r.output_dir);
       } else {
-        // 浏览器降级：可编辑文本框
+        // 无原生对话框（浏览器或 pywebview api 未就绪）：可编辑文本框
         $('outDir').removeAttribute('readonly');
         $('outDir').focus(); $('outDir').select();
         busy.set('请直接键入输出路径，回车确认');
@@ -77,7 +86,7 @@
     if (e.key !== 'Enter' || $('outDir').readOnly) return;
     try {
       const r = await API.setOutputDir($('outDir').value);
-      $('outDir').value = r.output_dir;
+      _setOutDir(r.output_dir);
       $('outDir').setAttribute('readonly', '');
       busy.set('输出路径: ' + r.output_dir);
     } catch (err) { window.fail('设置输出路径失败: ' + err.message); }
