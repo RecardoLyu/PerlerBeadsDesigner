@@ -151,7 +151,7 @@
 git clone https://github.com/yourusername/PerlerBeadsDesigner.git
 cd PerlerBeadsDesigner
 pip install -r requirements.txt
-python -m src.main
+python -m src.webapp.main
 ```
 
 ### 使用可执行文件

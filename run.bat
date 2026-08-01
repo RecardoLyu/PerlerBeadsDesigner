@@ -34,7 +34,7 @@ if errorlevel 1 (
 )
 
 REM Check if dependencies are installed
-pip show PyQt6 >nul 2>&1
+pip show fastapi >nul 2>&1
 if errorlevel 1 (
     echo Installing dependencies...
     pip install -r requirements.txt
@@ -45,9 +45,9 @@ if errorlevel 1 (
     )
 )
 
-REM Run the application
+REM Run the application (FastAPI backend + pywebview desktop window)
 echo Starting Perler Beads Designer...
-python -m src.main
+python -m src.webapp.main
 
 REM Keep window open if there's an error
 if errorlevel 1 (

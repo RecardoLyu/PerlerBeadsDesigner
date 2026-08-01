@@ -58,7 +58,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 步骤 5: 运行应用 ⭐ 关键
-python -m src.main
+python -m src.webapp.main
 ```
 
 ---
@@ -67,17 +67,17 @@ python -m src.main
 
 **使用这个命令：**
 ```bash
-python -m src.main
+python -m src.webapp.main
 ```
 
 **NOT 这个：**
 ```bash
-python src/main.py        ❌ 错误，会导致导入失败
+python src/webapp/main.py        ❌ 错误，会导致导入失败
 ```
 
 **关键区别：**
-- `python -m src.main` → 告诉 Python 以模块形式运行，正确设置路径
-- `python src/main.py` → 直接运行脚本，导入路径不对
+- `python -m src.webapp.main` → 告诉 Python 以模块形式运行，正确设置路径
+- `python src/webapp/main.py` → 直接运行脚本，导入路径不对
 
 ---
 
@@ -119,13 +119,13 @@ python test_imports.py
 
 3. **检查依赖**
    ```bash
-   pip list | grep PyQt6
-   # 应该看到 PyQt6 的版本号
+   pip list | grep fastapi
+   # 应该看到 fastapi 的版本号
    ```
 
 4. **查看详细错误**
    ```bash
-   python -m src.main
+   python -m src.webapp.main
    # 会显示详细的错误追踪
    ```
 
@@ -147,12 +147,12 @@ python test_imports.py
 ## 💡 记住最关键的三点
 
 1. **必须在项目根目录运行**（包含 src 文件夹）
-2. **必须使用 `python -m src.main` 命令**（不是 `python src/main.py`）
+2. **必须使用 `python -m src.webapp.main` 命令**（不是 `python src/webapp/main.py`）
 3. **必须先激活虚拟环境**（看到 (venv) 前缀）
 
 ---
 
-**现在就试试：** `python -m src.main` 或者 `run.bat`
+**现在就试试：** `python -m src.webapp.main` 或者 `run.bat`
 
 **应该就能看到应用窗口了！** 🎉
 

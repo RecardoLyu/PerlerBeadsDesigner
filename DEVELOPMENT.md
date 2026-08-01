@@ -78,22 +78,19 @@ exporter.export_png_with_codes(pattern, color_map, 'pattern')
 exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern')
 ```
 
-#### 6. 网络爬虫 (`src/utils/web_scraper.py`)
-- 从 Pixel Beads 网站抓取颜色数据
-- 颜色数据持久化
+#### 6. Web 应用后端 (`src/webapp/`)
+- FastAPI 后端，提供图像处理/图案生成/导出接口
+- 通过 pywebview 内嵌 Web 视图呈现桌面窗口
 
-**关键方法**:
-```python
-scraper = PixelBeadsColorScraper()
-colors = scraper.fetch_colors()
-```
+**关键文件**: `main.py`（入口）, `app.py`, `state.py`, `codecs.py`
 
 ## 开发流程
 
 ### 添加新功能
 
 1. **确定功能位置**
-   - UI 逻辑 → `src/ui/main_window.py`
+   - 后端接口/路由 → `src/webapp/app.py`
+   - 前端交互 → `src/webapp/static/`
    - 图像处理 → `src/core/image_processor.py`
    - 新算法 → 在 `src/utils/` 创建新模块
 
@@ -108,25 +105,23 @@ colors = scraper.fetch_colors()
        return self.current_image.copy()
    ```
 
-3. **在 UI 中集成**
+3. **在后端与前端集成**
    ```python
-   # 在 main_window.py 中添加按钮
-   edge_btn = QPushButton("边缘检测")
-   edge_btn.clicked.connect(self._apply_edge_detection)
-   control_panel.addWidget(edge_btn)
-   
-   # 添加对应的槽函数
-   def _apply_edge_detection(self):
-       try:
-           self.image_processor.apply_edge_detection()
-           image = self.image_processor.get_current_image()
-           self.image_display.set_image(image)
-       except Exception as e:
-           QMessageBox.critical(self, "错误", str(e))
+   # 在 src/webapp/app.py 中添加一个 FastAPI 路由
+   @app.post("/api/edge-detection")
+   def edge_detection():
+       image = state.image_processor.apply_edge_detection()
+       return {"image": encode_image(image)}
+   ```
+   ```javascript
+   // 在 src/webapp/static/ 的前端 JS 中调用该接口并刷新预览
+   const res = await fetch('/api/edge-detection', { method: 'POST' });
+   const data = await res.json();
+   previewImage.src = data.image;
    ```
 
 4. **测试**
-   - 手动测试 UI
+   - 手动测试界面
    - 编写单元测试
 
 ### 编写测试
@@ -235,21 +230,17 @@ def apply_gaussian_pyramid(self, levels: int = 3) -> np.ndarray:
     self.current_image = current
     return self.current_image.copy()
 
-# 2. 在 UI 中添加控制器
-level_spinbox = QSpinBox()
-level_spinbox.setRange(1, 5)
-pyramid_btn = QPushButton("应用高斯金字塔")
-pyramid_btn.clicked.connect(self._apply_pyramid)
-
-# 3. 实现槽函数
-def _apply_pyramid(self):
-    try:
-        levels = self.level_spinbox.value()
-        self.image_processor.apply_gaussian_pyramid(levels)
-        image = self.image_processor.get_current_image()
-        self.image_display.set_image(image)
-    except Exception as e:
-        QMessageBox.critical(self, "错误", str(e))
+# 2. 在 src/webapp/app.py 中添加 FastAPI 路由
+@app.post("/api/gaussian-pyramid")
+def gaussian_pyramid(levels: int = 3):
+    image = state.image_processor.apply_gaussian_pyramid(levels)
+    return {"image": encode_image(image)}
+```
+```javascript
+// 3. 在 src/webapp/static/ 的前端 JS 中调用接口并刷新预览
+const res = await fetch(`/api/gaussian-pyramid?levels=${levels}`, { method: 'POST' });
+const data = await res.json();
+previewImage.src = data.image;
 ```
 
 ### 支持新的输出格式
@@ -262,9 +253,15 @@ def export_svg(self, pattern: np.ndarray, filename: str) -> str:
     # ...
     return filepath
 
-# 在 main_window.py 中添加按钮
-svg_btn = QPushButton("导出SVG")
-svg_btn.clicked.connect(self._export_svg)
+# 在 src/webapp/app.py 中添加导出路由
+@app.post("/api/export-svg")
+def export_svg_route():
+    path = state.exporter.export_svg(state.pattern, 'pattern')
+    return {"path": path}
+```
+```javascript
+// 在 src/webapp/static/ 的前端 JS 中触发导出
+await fetch('/api/export-svg', { method: 'POST' });
 ```
 
 ## 调试技巧
@@ -282,7 +279,7 @@ logger.error("错误")
 
 ### 设置日志
 ```python
-# 在 main.py 中
+# 在 src/webapp/main.py 中
 import logging
 
 logging.basicConfig(
@@ -332,7 +329,9 @@ def get_closest_color(self, rgb_tuple):
 | ModuleNotFoundError | 依赖未安装 | `pip install -r requirements.txt` |
 | TypeError: 'NoneType' | 未加载图像 | 检查加载顺序 |
 | MemoryError | 图像过大 | 在加载前调整大小 |
-| ImportError: No module named 'PyQt6' | PyQt6 未安装 | `pip install PyQt6` |
+| ImportError: No module named 'fastapi' / 'uvicorn' | FastAPI/uvicorn 未安装 | `pip install fastapi uvicorn python-multipart` |
+| ImportError: No module named 'webview' | pywebview 未安装 | `pip install pywebview` |
+| 窗口空白/接口无响应 | 后端未启动或端口被占用 | 查看控制台日志，确认 uvicorn 已监听本地端口 |
 
 ### 日志查看
 ```bash
@@ -355,8 +354,9 @@ tail -f debug.log  # 实时查看
 ## 参考资源
 
 - [OpenCV 文档](https://docs.opencv.org/)
-- [PyQt6 文档](https://www.riverbankcomputing.com/static/Docs/PyQt6/)
+- [FastAPI 文档](https://fastapi.tiangolo.com/zh/)
+- [pywebview 文档](https://pywebview.flowrl.com/)
 - [NumPy 文档](https://numpy.org/doc/)
-- [scikit-image 文档](https://scikit-image.org/)
+- [uvicorn 文档](https://www.uvicorn.org/)
 
 祝开发愉快! 💻

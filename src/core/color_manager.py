@@ -454,10 +454,14 @@ class ColorManager:
             idx = self.palette.get_closest_indices_batch(pixels, metric)
             if icm_smooth and icm_smooth > 0:
                 idx = self._icm_refine(img, idx, palette_rgb, icm_smooth, metric)
-            output = palette_rgb[idx]
             if dither:
-                output = self._floyd_steinberg(img, palette_rgb, metric, dither_strength)
-            usage = self._usage_from_indices(idx)
+                output, dither_idx = self._floyd_steinberg(img, palette_rgb, metric, dither_strength)
+                # BOM must reflect the dithered assignment actually rendered,
+                # not the pre-dither nearest-color indices.
+                usage = self._usage_from_indices(dither_idx)
+            else:
+                output = palette_rgb[idx]
+                usage = self._usage_from_indices(idx)
             return output.reshape(h, w, 3).astype(np.uint8), usage
 
         # ---- Color-limited: salience-weighted palette K-center selection ----
@@ -500,12 +504,14 @@ class ColorManager:
             # Re-derive centroid labels for the optional constrained dither.
             labels = self._assign_labels(Z, self.palette._palette_lab[mapped_idx])
 
-        output = palette_rgb[mapped_idx]
-
         if dither:
-            output = self._floyd_steinberg_to_set(img, bead_rgb, labels, Z, metric, dither_strength)
-
-        usage = self._usage_from_indices(mapped_idx)
+            output, dither_labels = self._floyd_steinberg_to_set(img, bead_rgb, labels, Z, metric, dither_strength)
+            # Map the dithered per-pixel bead-set labels back to palette indices
+            # so the BOM matches what is actually drawn.
+            usage = self._usage_from_indices(center_idx[dither_labels])
+        else:
+            output = palette_rgb[mapped_idx]
+            usage = self._usage_from_indices(mapped_idx)
         return output.reshape(h, w, 3).astype(np.uint8), usage
 
     # ---- helpers ---------------------------------------------------------
@@ -879,7 +885,9 @@ class ColorManager:
         highly-saturated regions. `strength` (0-1) scales how much error is
         propagated, so partial diffusion softens banding without speckle.
 
-        Returns the quantized image in palette colors (uint8 RGB).
+        Returns (quantized image uint8 RGB, out): the dithered image and the
+        per-pixel palette indices (N,) that were actually assigned, so callers
+        can build a BOM consistent with the rendered image.
         """
         h, w = img.shape[:2]
         s = float(np.clip(strength, 0.0, 1.0))
@@ -905,12 +913,17 @@ class ColorManager:
                     work[y + 1, x] += err * 5 / 16
                     if x + 1 < w:
                         work[y + 1, x + 1] += err * 1 / 16
-        return palette_rgb[out].reshape(h, w, 3).astype(np.uint8)
+        return palette_rgb[out].reshape(h, w, 3).astype(np.uint8), out
 
     def _floyd_steinberg_to_set(self, img: np.ndarray, bead_rgb: np.ndarray,
                                 labels: np.ndarray, Z: np.ndarray, metric: str,
                                 strength: float = 1.0) -> np.ndarray:
-        """Error diffusion constrained to the selected bead color set (LAB matching)."""
+        """Error diffusion constrained to the selected bead color set (LAB matching).
+
+        Returns (quantized image uint8 RGB, out): the dithered image and the
+        per-pixel bead-set labels (N,) actually assigned, so callers can map them
+        back to palette indices for a BOM consistent with the rendered image.
+        """
         h, w = img.shape[:2]
         s = float(np.clip(strength, 0.0, 1.0))
         bead_lab = self.palette._rgb_batch_to_lab(bead_rgb)
@@ -932,7 +945,7 @@ class ColorManager:
                     work_lab[y + 1, x] += err * 5 / 16
                     if x + 1 < w:
                         work_lab[y + 1, x + 1] += err * 1 / 16
-        return bead_rgb[out].reshape(h, w, 3).astype(np.uint8)
+        return bead_rgb[out].reshape(h, w, 3).astype(np.uint8), out
 
 
 if __name__ == '__main__':
