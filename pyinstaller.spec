@@ -18,7 +18,7 @@ elif sys.platform == 'darwin' and os.path.exists('resources/icons/app.icns'):
     _icon = 'resources/icons/app.icns'
 
 a = Analysis(
-    ['src/main.py'],
+    ['run.py'],
     pathex=[],
     binaries=[],
     datas=[
@@ -29,13 +29,33 @@ a = Analysis(
         ('resources/icons', 'resources/icons'),
         # Embedded help document, shown by the in-app 帮助 button.
         ('HELP.md', '.'),
+        # Web frontend (HTML/CSS/JS) served by FastAPI at the app root.
+        ('src/webapp/static', 'src/webapp/static'),
     ],
     hiddenimports=[
         'cv2',
         'numpy',
         'PIL',
-        'PIL.ImageTk',
         'PIL.Image',
+        # FastAPI / uvicorn ASGI server (lazy-loaded submodules PyInstaller misses)
+        'fastapi',
+        'uvicorn.logging',
+        'uvicorn.loops',
+        'uvicorn.loops.auto',
+        'uvicorn.protocols',
+        'uvicorn.protocols.http',
+        'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.websockets',
+        'uvicorn.protocols.websockets.auto',
+        'uvicorn.lifespan',
+        'uvicorn.lifespan.on',
+        # pywebview native window
+        'webview',
+        # webapp backend modules
+        'src.webapp',
+        'src.webapp.app',
+        'src.webapp.state',
+        'src.webapp.codecs',
     ],
     # scikit-image (SLIC) pulls its optional Qt-based `skimage.future.graph`
     # RAG tooling into the module graph, which drags BOTH PyQt5 and PyQt6 in

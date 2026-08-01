@@ -157,14 +157,14 @@ class PatternExporter:
         return filepath
     
     def export_png_standard(self, chart_image: np.ndarray, filename: str,
-                            scale: int = 1) -> str:
+                            scale: float = 1.0) -> str:
         """
         Export a pre-rendered standard chart image as PNG.
 
         Args:
             chart_image: Image produced by PatternGenerator.render_standard_chart (RGB)
             filename: Output filename (without extension)
-            scale: Scale factor
+            scale: Scale factor (supports fractions, e.g. 0.5 / 2.75)
 
         Returns:
             Path to saved file
@@ -173,10 +173,12 @@ class PatternExporter:
             raise ValueError("图纸图像不能为空")
 
         out = chart_image
-        if scale > 1:
+        if scale != 1:
             h, w = out.shape[:2]
-            out = cv2.resize(out, (w * scale, h * scale),
-                             interpolation=cv2.INTER_NEAREST)
+            # 缩小用 INTER_AREA（保质量），放大用 INTER_NEAREST（保豆格锐利）
+            interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_NEAREST
+            dsize = (max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+            out = cv2.resize(out, dsize, interpolation=interp)
 
         out_bgr = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
         filepath = os.path.join(self.output_dir, f"{filename}.png")

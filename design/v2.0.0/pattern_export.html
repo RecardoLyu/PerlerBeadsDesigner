@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图纸生成 · 拼豆图纸设计器 v2.0.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+/* ============ 设计 Token ============ */
+:root{
+  --color-primary:#E11D48;
+  --color-on-primary:#FFFFFF;
+  --color-secondary:#FB7185;
+  --color-accent:#2563EB;
+  --color-on-accent:#FFFFFF;
+  --color-violet:#A78BFA;
+  --color-violet-deep:#7C3AED;
+  --color-bg:#FFF1F2;
+  --color-bg-2:#FFE4E6;
+  --color-surface:rgba(255,255,255,.55);
+  --color-surface-strong:rgba(255,255,255,.75);
+  --color-foreground:#4A1428;
+  --color-foreground-strong:#881337;
+  --color-muted:#F0ECF2;
+  --color-muted-fg:#9A6B7C;
+  --color-border:rgba(225,29,72,.18);
+  --color-destructive:#DC2626;
+  --color-ring:#E11D48;
+  --glass-blur:18px;
+  --space-1:8px; --space-2:16px; --space-3:24px; --space-4:32px; --space-6:48px;
+}
+[data-theme="dark"]{
+  --color-primary:#FB7185;
+  --color-on-primary:#2A0A12;
+  --color-secondary:#FDA4AF;
+  --color-accent:#60A5FA;
+  --color-on-accent:#0B1220;
+  --color-violet:#C4B5FD;
+  --color-violet-deep:#A78BFA;
+  --color-bg:#1A0F14;
+  --color-bg-2:#241019;
+  --color-surface:rgba(46,22,32,.45);
+  --color-surface-strong:rgba(58,28,40,.6);
+  --color-foreground:#F6E4EA;
+  --color-foreground-strong:#FBD5DE;
+  --color-muted:#2E1620;
+  --color-muted-fg:#B98A99;
+  --color-border:rgba(251,113,133,.22);
+  --color-destructive:#F87171;
+  --color-ring:#FB7185;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  font-family:'Nunito',"PingFang SC","Microsoft YaHei",sans-serif;
+  color:var(--color-foreground);
+  background:linear-gradient(135deg,var(--color-bg),var(--color-bg-2));
+  min-width:1280px;
+  overflow-x:auto;
+  transition:background-color .3s,color .3s;
+}
+.font-brand{font-family:'Fredoka',"PingFang SC","Microsoft YaHei",sans-serif;}
+
+/* 漂浮 blob */
+.blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0;}
+.blob-1{width:480px;height:480px;background:#FB7185;top:-120px;left:-100px;animation:drift1 14s ease-in-out infinite alternate;}
+.blob-2{width:420px;height:420px;background:#A78BFA;bottom:-140px;right:12%;animation:drift2 18s ease-in-out infinite alternate;}
+.blob-3{width:380px;height:380px;background:#FDBA74;top:30%;right:-120px;animation:drift3 16s ease-in-out infinite alternate;}
+[data-theme="dark"] .blob{opacity:.3;}
+@keyframes drift1{from{transform:translate(0,0);}to{transform:translate(20px,-18px);}}
+@keyframes drift2{from{transform:translate(0,0);}to{transform:translate(-22px,20px);}}
+@keyframes drift3{from{transform:translate(0,0);}to{transform:translate(18px,22px);}}
+
+/* 玻璃卡片 */
+.glass{
+  background:var(--color-surface);
+  backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  border:1px solid var(--color-border);
+  border-radius:24px;
+  box-shadow:0 8px 32px rgba(136,19,55,.12), inset 0 1px 0 rgba(255,255,255,.35);
+  transition:background-color .3s,border-color .3s,box-shadow .3s,transform .25s cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"] .glass{box-shadow:0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);}
+.glass-strong{background:var(--color-surface-strong);}
+
+/* 控件 */
+input,select,button{font-family:inherit;color:inherit;}
+input:focus-visible,select:focus-visible,button:focus-visible,.chip:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px;}
+
+.label{font-size:13px;font-weight:700;color:var(--color-muted-fg);letter-spacing:.02em;}
+.card-title{font-family:'Fredoka',sans-serif;font-weight:600;font-size:15px;color:var(--color-foreground-strong);display:flex;align-items:center;gap:8px;}
+
+.field{
+  width:100%;background:var(--color-surface-strong);border:1px solid var(--color-border);
+  border-radius:12px;padding:8px 12px;font-size:14px;font-weight:600;color:var(--color-foreground);
+  transition:all .25s cubic-bezier(.34,1.56,.64,1);
+}
+.field:hover{border-color:var(--color-primary);}
+.field:focus{border-color:var(--color-ring);}
+
+select.field{appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239A6B7C' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:34px;}
+
+/* 滑条 */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:999px;
+  background:linear-gradient(90deg,var(--color-primary),var(--color-violet));cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:3px solid var(--color-primary);box-shadow:0 2px 6px rgba(136,19,55,.3);
+  transition:transform .2s cubic-bezier(.34,1.56,.64,1);cursor:pointer;}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2);}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--color-primary);cursor:pointer;}
+input[type=range]:disabled{opacity:.35;cursor:not-allowed;}
+input[type=range]:disabled::-webkit-slider-thumb{cursor:not-allowed;}
+
+/* 开关 */
+.switch{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;}
+.switch input{opacity:0;width:0;height:0;}
+.switch .track{position:absolute;inset:0;border-radius:999px;background:var(--color-muted);border:1px solid var(--color-border);transition:all .25s cubic-bezier(.34,1.56,.64,1);}
+.switch .track::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:all .25s cubic-bezier(.34,1.56,.64,1);}
+.switch input:checked + .track{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));border-color:transparent;}
+.switch input:checked + .track::after{transform:translateX(20px);}
+
+/* 复选框 */
+.chk{display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:14px;font-weight:600;}
+.chk input{position:absolute;opacity:0;}
+.chk .box{width:19px;height:19px;border-radius:6px;border:2px solid var(--color-border);background:var(--color-surface-strong);display:inline-flex;align-items:center;justify-content:center;transition:all .2s cubic-bezier(.34,1.56,.64,1);flex-shrink:0;}
+.chk .box svg{opacity:0;transform:scale(.4);transition:all .2s cubic-bezier(.34,1.56,.64,1);}
+.chk input:checked + .box{background:linear-gradient(135deg,var(--color-primary),var(--color-secondary));border-color:transparent;}
+.chk input:checked + .box svg{opacity:1;transform:scale(1);}
+.chk input:focus-visible + .box{outline:2px solid var(--color-ring);outline-offset:2px;}
+
+/* 按钮 */
+.btn{border:none;cursor:pointer;font-weight:700;border-radius:16px;transition:all .25s cubic-bezier(.34,1.56,.64,1);display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+.btn:active{transform:scale(.96);}
+.btn-primary{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;padding:13px 20px;font-size:15px;box-shadow:0 6px 20px rgba(124,58,237,.35);}
+.btn-primary:hover{box-shadow:0 8px 26px rgba(124,58,237,.5);transform:translateY(-2px);}
+.btn-primary:active{transform:scale(.96);}
+.btn-ghost{background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-primary);padding:9px 14px;font-size:13px;backdrop-filter:blur(8px);}
+.btn-ghost:hover{border-color:var(--color-primary);background:var(--color-surface-strong);}
+.btn-accent{background:linear-gradient(135deg,var(--color-accent),var(--color-violet-deep));color:var(--color-on-accent);padding:12px 18px;font-size:14px;box-shadow:0 6px 18px rgba(37,99,235,.3);}
+.btn-accent:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(37,99,235,.45);}
+
+/* 图标按钮 */
+.icon-btn{width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-foreground);cursor:pointer;transition:all .25s cubic-bezier(.34,1.56,.64,1);backdrop-filter:blur(8px);}
+.icon-btn:hover{border-color:var(--color-primary);color:var(--color-primary);transform:translateY(-2px);}
+.icon-btn:active{transform:scale(.92);}
+
+/* 顶部导航 tab */
+.nav-tab{padding:9px 18px;border-radius:14px;font-weight:700;font-size:14px;cursor:pointer;color:var(--color-muted-fg);border:1px solid transparent;transition:all .25s cubic-bezier(.34,1.56,.64,1);display:inline-flex;align-items:center;gap:7px;background:transparent;}
+.nav-tab:hover{color:var(--color-primary);}
+.nav-tab.active{background:var(--color-surface-strong);color:var(--color-primary);border-color:var(--color-border);box-shadow:0 4px 14px rgba(136,19,55,.1);}
+
+/* 分段切换(导出预览) */
+.seg{display:flex;background:var(--color-muted);border-radius:12px;padding:3px;gap:3px;}
+.seg button{flex:1;border:none;background:transparent;padding:7px 10px;border-radius:9px;font-size:13px;font-weight:700;color:var(--color-muted-fg);cursor:pointer;transition:all .22s cubic-bezier(.34,1.56,.64,1);}
+.seg button.active{background:var(--color-surface-strong);color:var(--color-primary);box-shadow:0 2px 8px rgba(136,19,55,.12);}
+
+/* 图纸画布（标准图纸：Canvas 绘制 细/粗网格+坐标刻度+每格色号+色块） */
+.pattern-stage{position:relative;border-radius:20px;overflow:auto;background:var(--color-surface-strong);border:1px solid var(--color-border);display:flex;align-items:flex-start;justify-content:center;padding:18px;}
+.pattern-stage canvas{display:block;border-radius:10px;max-width:100%;height:auto;
+  box-shadow:0 10px 30px rgba(136,19,55,.14), 0 0 0 1px var(--color-border);}
+[data-theme="dark"] .pattern-stage{background:rgba(20,10,16,.5);}
+[data-theme="dark"] .pattern-stage canvas{box-shadow:0 10px 30px rgba(0,0,0,.45), 0 0 0 1px var(--color-border);}
+
+/* BOM 芯片 */
+.chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border-radius:999px;background:var(--color-surface-strong);border:1px solid var(--color-border);transition:all .22s cubic-bezier(.34,1.56,.64,1);cursor:default;}
+.chip:hover{transform:translateY(-3px) scale(1.04);box-shadow:0 6px 16px rgba(136,19,55,.18);border-color:var(--color-primary);}
+.chip .dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0;box-shadow:inset 0 -2px 4px rgba(0,0,0,.15), 0 2px 4px rgba(0,0,0,.15);}
+.chip .meta{display:flex;flex-direction:column;line-height:1.1;}
+.chip .code{font-size:12px;font-weight:800;color:var(--color-foreground-strong);}
+.chip .qty{font-size:11px;font-weight:600;color:var(--color-muted-fg);}
+
+/* 入场 stagger */
+@keyframes riseIn{from{opacity:0;transform:translateY(16px) scale(.94);}to{opacity:1;transform:translateY(0) scale(1);}}
+.rise{opacity:0;animation:riseIn .55s cubic-bezier(.34,1.56,.64,1) forwards;}
+
+/* 忙碌指示 */
+.spinner{width:14px;height:14px;border-radius:50%;border:2.5px solid var(--color-border);border-top-color:var(--color-primary);animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.scroll-thin::-webkit-scrollbar{width:8px;height:8px;}
+.scroll-thin::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:99px;}
+.scroll-thin::-webkit-scrollbar-track{background:transparent;}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important;}
+}
+</style>
+</head>
+<body class="relative">
+
+<!-- 背景漂浮 blob -->
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<div class="relative z-10 flex flex-col h-screen">
+
+  <!-- ============ 顶部栏 ============ -->
+  <header class="flex items-center justify-between px-6 py-4 gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl flex items-center justify-center" style="background:linear-gradient(135deg,var(--color-primary),var(--color-violet-deep));box-shadow:0 6px 16px rgba(225,29,72,.35);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="2.4"/><circle cx="17" cy="7" r="2.4"/><circle cx="7" cy="17" r="2.4"/><circle cx="17" cy="17" r="2.4"/></svg>
+      </div>
+      <div>
+        <div class="font-brand font-bold text-lg leading-tight" style="color:var(--color-foreground-strong);">拼豆图纸设计器</div>
+        <div class="text-xs font-semibold" style="color:var(--color-muted-fg);">PerlerBeads Designer · v2.0.0</div>
+      </div>
+    </div>
+
+    <!-- 主导航 -->
+    <nav class="glass flex items-center gap-1 px-2 py-1.5" style="border-radius:18px;">
+      <button class="nav-tab">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+        图像处理
+      </button>
+      <button class="nav-tab active">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        图纸生成
+      </button>
+    </nav>
+
+    <div class="flex items-center gap-3">
+      <!-- 状态玻璃片 -->
+      <div class="glass flex items-center gap-2 px-4 py-2" style="border-radius:14px;">
+        <div class="spinner"></div>
+        <span class="text-xs font-bold" style="color:var(--color-muted-fg);">正在生成图纸… 52 × 52</span>
+      </div>
+      <!-- 主题切换 -->
+      <button id="themeToggle" class="icon-btn" title="切换亮 / 暗主题" aria-label="切换主题">
+        <svg id="iconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg id="iconMoon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      </button>
+      <!-- 帮助 -->
+      <button class="icon-btn" title="帮助" aria-label="帮助">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ 主体左右分栏 ============ -->
+  <main class="flex flex-1 gap-5 px-6 pb-5 min-h-0">
+
+    <!-- ===== 左侧参数面板 ===== -->
+    <aside class="w-[360px] flex-shrink-0 flex flex-col gap-4 overflow-y-auto scroll-thin pr-1 pb-2">
+
+      <!-- 图纸参数 -->
+      <section class="glass p-5 rise" style="animation-delay:.05s;">
+        <div class="card-title mb-4">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          图纸参数
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div class="label mb-1.5">高度（格）</div>
+            <input type="number" class="field" value="52" min="1" max="200">
+          </div>
+          <div>
+            <div class="label mb-1.5">宽度（格）</div>
+            <input type="number" class="field" value="52" min="1" max="200">
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-sm font-semibold">保持宽高比例</span>
+          <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+        </div>
+
+        <div class="mb-4">
+          <div class="label mb-1.5">颜色数量限制</div>
+          <input type="number" class="field" value="32" min="2" max="256">
+          <div class="text-xs mt-1 font-semibold" style="color:var(--color-muted-fg);">限制调色板中最多使用的拼豆颜色数</div>
+        </div>
+
+        <div class="mb-4">
+          <div class="label mb-1.5">色彩空间度量</div>
+          <select class="field">
+            <option>CIEDE2000（推荐）</option>
+            <option>CIE76 (Lab)</option>
+            <option>CIE94</option>
+            <option>RGB 欧氏距离</option>
+            <option>加权 RGB</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="label">细节保留</span>
+            <span class="text-sm font-bold" style="color:var(--color-primary);">0.72</span>
+          </div>
+          <input type="range" min="0" max="100" value="72">
+          <div class="flex justify-between text-xs font-semibold mt-1" style="color:var(--color-muted-fg);"><span>更平滑</span><span>更精细</span></div>
+        </div>
+      </section>
+
+      <!-- 渲染优化 -->
+      <section class="glass p-5 rise" style="animation-delay:.12s;">
+        <div class="card-title mb-4">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3Z"/></svg>
+          渲染优化
+        </div>
+
+        <!-- 抖动 -->
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-semibold">抖动（Dithering）</span>
+          <label class="switch"><input type="checkbox" id="ditherSw" checked><span class="track"></span></label>
+        </div>
+        <div class="mb-4">
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="label">抖动强度</span>
+            <span class="text-sm font-bold" style="color:var(--color-primary);">0.55</span>
+          </div>
+          <input type="range" id="ditherRange" min="0" max="100" value="55">
+        </div>
+
+        <div class="h-px my-4" style="background:var(--color-border);"></div>
+
+        <!-- ICM -->
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-sm font-semibold">ICM 高阶优化</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted-fg)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          </div>
+          <label class="switch"><input type="checkbox" id="icmSw"><span class="track"></span></label>
+        </div>
+        <div class="mb-4">
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="label">ICM 迭代强度</span>
+            <span class="text-sm font-bold" style="color:var(--color-muted-fg);">0.40</span>
+          </div>
+          <input type="range" id="icmRange" min="0" max="100" value="40" disabled>
+        </div>
+
+        <div class="h-px my-4" style="background:var(--color-border);"></div>
+
+        <label class="chk">
+          <input type="checkbox" checked>
+          <span class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          使用 Mask 分割结果
+        </label>
+        <div class="text-xs mt-1.5 font-semibold" style="color:var(--color-muted-fg);">仅在前景区域内生成拼豆，背景留白</div>
+      </section>
+
+      <!-- 生成按钮 -->
+      <button class="btn btn-primary w-full rise" style="animation-delay:.18s;border-radius:18px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4"/><path d="m13 3 1.9 5.8a2 2 0 0 0 1.3 1.3L22 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L13 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L4 12l5.8-1.9a2 2 0 0 0 1.3-1.3Z"/></svg>
+        生成图纸
+      </button>
+
+      <!-- 导出选项 -->
+      <section class="glass p-5 rise" style="animation-delay:.24s;">
+        <div class="card-title mb-4">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+          导出选项
+        </div>
+
+        <div class="label mb-1.5">导出预览</div>
+        <div class="seg mb-4">
+          <button class="active">网格预览</button>
+          <button>标准图纸</button>
+        </div>
+
+        <div class="mb-4">
+          <div class="label mb-1.5">文件名</div>
+          <input type="text" class="field" value="我的拼豆图纸_猫咪">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <div class="label mb-1.5">PNG 缩放倍数</div>
+            <select class="field">
+              <option>1×</option>
+              <option selected>2×</option>
+              <option>4×</option>
+              <option>8×</option>
+            </select>
+          </div>
+          <div>
+            <div class="label mb-1.5">PDF 纸张</div>
+            <select class="field">
+              <option selected>A4</option>
+              <option>Letter</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex gap-5 mb-4">
+          <label class="chk"><input type="checkbox" checked><span class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>导出 PNG</label>
+          <label class="chk"><input type="checkbox" checked><span class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>导出 PDF</label>
+        </div>
+
+        <button class="btn btn-ghost w-full mb-3">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          选择输出路径
+        </button>
+        <div class="text-xs font-semibold mb-4 truncate px-1" style="color:var(--color-muted-fg);">D:\手工\拼豆图纸\导出\</div>
+
+        <button class="btn btn-accent w-full" style="border-radius:16px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+          一键导出
+        </button>
+      </section>
+    </aside>
+
+    <!-- ===== 右侧主区 ===== -->
+    <div class="flex-1 flex flex-col gap-4 min-w-0">
+
+      <!-- 图纸预览画布 -->
+      <section class="glass flex-1 p-5 flex flex-col rise min-h-0" style="animation-delay:.1s;">
+        <div class="flex items-center justify-between mb-4 flex-shrink-0">
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            图纸预览
+            <span class="text-xs font-bold px-2.5 py-1 rounded-full" style="background:var(--color-muted);color:var(--color-muted-fg);">52 × 52 · 网格预览</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="icon-btn" title="缩小"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+            <span class="text-sm font-bold w-12 text-center" style="color:var(--color-foreground-strong);">100%</span>
+            <button class="icon-btn" title="放大"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button class="icon-btn" title="适应窗口"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M16 21h3a2 2 0 0 0 2-2v-3M8 21H5a2 2 0 0 1-2-2v-3"/></svg></button>
+          </div>
+        </div>
+
+        <!-- 画布：标准图纸（Canvas 绘制，与真实导出图一致） -->
+        <div class="pattern-stage flex-1 min-h-0 scroll-thin" id="canvasStage" style="min-height:300px;">
+          <canvas id="chartCanvas" role="img" aria-label="拼豆标准图纸"></canvas>
+        </div>
+
+        <!-- 鹰眼 minimap 占位 -->
+        <div class="flex justify-end mt-3 flex-shrink-0">
+          <div class="glass flex items-center gap-2 px-3 py-2" style="border-radius:14px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted-fg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            <div class="w-20 h-14 rounded-lg relative overflow-hidden" style="background:linear-gradient(135deg,#FB7185,#A78BFA 55%,#FDBA74);">
+              <div class="absolute border-2 rounded" style="border-color:#fff;inset:18% 30% 22% 24%;box-shadow:0 0 0 999px rgba(0,0,0,.18);"></div>
+            </div>
+            <span class="text-xs font-bold" style="color:var(--color-muted-fg);">鹰眼</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BOM 物料清单 -->
+      <section class="glass p-5 rise flex-shrink-0" style="animation-delay:.16s;">
+        <div class="flex items-center justify-between mb-4">
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+            BOM 物料清单
+            <span class="text-xs font-bold px-2.5 py-1 rounded-full" style="background:var(--color-muted);color:var(--color-muted-fg);">14 色 · 共 2704 颗</span>
+          </div>
+          <button class="btn btn-ghost" style="padding:7px 12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            复制清单
+          </button>
+        </div>
+        <div id="bomGrid" class="flex flex-wrap gap-2.5"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============ 状态栏 ============ -->
+  <footer class="flex items-center justify-between px-6 py-2.5 flex-shrink-0">
+    <div class="flex items-center gap-2">
+      <div class="spinner"></div>
+      <span class="text-xs font-bold" style="color:var(--color-muted-fg);">颜色量化中 · CIEDE2000 · 剩余约 2 秒</span>
+    </div>
+    <span class="text-xs font-semibold" style="color:var(--color-muted-fg);">拼豆图纸设计器 v2.0.0 · 图纸生成视图</span>
+  </footer>
+</div>
+
+<script>
+/* ===== 主题切换 ===== */
+const html=document.documentElement;
+const sun=document.getElementById('iconSun'),moon=document.getElementById('iconMoon');
+document.getElementById('themeToggle').addEventListener('click',()=>{
+  const dark=html.getAttribute('data-theme')==='dark';
+  html.setAttribute('data-theme',dark?'light':'dark');
+  sun.style.display=dark?'block':'none';
+  moon.style.display=dark?'none':'block';
+});
+
+/* ===== 开关联动滑条禁用态 ===== */
+function bindSwitch(swId,rangeId){
+  const sw=document.getElementById(swId),rg=document.getElementById(rangeId);
+  sw.addEventListener('change',()=>{rg.disabled=!sw.checked;});
+}
+bindSwitch('ditherSw','ditherRange');
+bindSwitch('icmSw','icmRange');
+
+/* ===== 糖果系调色板（mock） =====
+   name, hex, code, light? (深色豆白字 / 浅色豆黑字) */
+const PALETTE=[
+  {hex:'#E11D48',code:'A5', light:false},
+  {hex:'#FB7185',code:'A8', light:false},
+  {hex:'#FDA4AF',code:'B3', light:true },
+  {hex:'#FDBA74',code:'C6', light:true },
+  {hex:'#F59E0B',code:'C2', light:true },
+  {hex:'#FDE047',code:'D4', light:true },
+  {hex:'#84CC16',code:'E7', light:true },
+  {hex:'#22C55E',code:'E3', light:false},
+  {hex:'#2DD4BF',code:'F5', light:true },
+  {hex:'#38BDF8',code:'G6', light:true },
+  {hex:'#2563EB',code:'H7', light:false},
+  {hex:'#7C3AED',code:'I4', light:false},
+  {hex:'#C4B5FD',code:'I9', light:true },
+  {hex:'#6B4F3A',code:'J2', light:false},
+  {hex:'#F5F0EA',code:'W1', light:true },
+  {hex:'#2A2A2E',code:'K1', light:false},
+];
+function pick(i){return PALETTE[i%PALETTE.length];}
+
+/* ===== 生成标准图纸（Canvas 绘制，与 render_standard_chart 结构一致） =====
+   布局：左/上坐标刻度边距 + 细网格(每格) + 粗网格(每5格) + 每格色号 + 色块，
+        图纸下方一条 BOM 用量条（统一芯片，按用量从多到少，多行网格）。 */
+const MAJOR=5;           // 每 5 格一条主网格/坐标刻度
+const BW=26, BH=24;      // 示意格数（宽×高）
+
+/* 主题感知的图纸配色（读 CSS 变量，亮/暗自适应） */
+function themeColors(){
+  const cs=getComputedStyle(document.documentElement);
+  const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  return {
+    paper:   dark?'#FBF3F6':'#FFFFFF',                 // 图纸纸面（始终浅底保证可读）
+    minor:   dark?'rgba(136,60,90,.28)':'rgba(136,60,90,.22)',   // 细网格
+    major:   dark?'#7A2745':'#881337',                  // 粗网格/刻度（深玫瑰）
+    tick:    dark?'#5E1A34':'#881337',
+    masked:  'rgba(255,255,255,.78)',
+  };
+}
+
+/* mock 图案场：一颗居中「花/星」形，返回该格调色板索引或 -1(留空/mask) */
+function patternIndex(x,y){
+  const cx=(BW-1)/2, cy=(BH-1)/2;
+  const dx=(x-cx)/(BW*0.40), dy=(y-cy)/(BH*0.40);
+  const ang=Math.atan2(y-cy,x-cx);
+  const r=Math.sqrt(dx*dx+dy*dy);
+  // 花瓣起伏的边界
+  const edge=0.72+0.20*Math.cos(ang*5);
+  if(r>edge) return -1;                       // 形状外 = mask 背景
+  // 由内向外按环带 + 角度挑色，形成糖果渐变花朵
+  const band=Math.floor(r*6);
+  const petal=Math.floor(((ang+Math.PI)/(2*Math.PI))*10);
+  return Math.abs(band*3+petal+ (r<0.18?0:1))%PALETTE.length;
+}
+
+let chartGeom=null; // 供 hover 取色号
+function drawChart(){
+  const cv=document.getElementById('chartCanvas');
+  const ctx=cv.getContext('2d');
+  const T=themeColors();
+  const cell=26;                       // 每格像素（逻辑坐标）
+  const left=cell*2+6, top=cell+10;    // 刻度边距（对齐后端）
+  const gridW=BW*cell, gridH=BH*cell;
+
+  // ---- BOM 用量（mock，从多到少），与图纸共用调色板 ----
+  const bom=[
+    {p:0, qty:486},{p:14,qty:412},{p:10,qty:358},{p:5, qty:296},
+    {p:7, qty:244},{p:11,qty:218},{p:3, qty:186},{p:9, qty:152},
+    {p:1, qty:128},{p:8, qty:96 },{p:15,qty:74 },{p:2, qty:52 },
+  ].map(b=>({code:PALETTE[b.p].code,hex:PALETTE[b.p].hex,light:PALETTE[b.p].light,qty:b.qty}));
+
+  // ---- BOM 条几何（统一芯片，多行网格）----
+  const barPad=14, chipH=cell+8, chipGap=10, chipPadX=14;
+  ctx.font=`800 12px Nunito,sans-serif`;
+  const chipW=Math.ceil(Math.max(...bom.map(b=>ctx.measureText(b.code).width+ctx.measureText('× '+b.qty).width))+chipH+chipPadX*3);
+  const cols=Math.max(1,Math.floor((gridW-chipGap)/(chipW+chipGap)));
+  const rows=Math.ceil(bom.length/cols);
+  const barLabelW=ctx.measureText('BOM').width+18;
+  const barH=barPad*2+rows*chipH+(rows-1)*chipGap;
+  const barY=top+gridH+18;
+
+  const W=left+gridW+cell, H=barY+barH+cell;
+
+  // 高清渲染
+  const dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  // 纸面
+  ctx.fillStyle=T.paper; ctx.fillRect(0,0,W,H);
+
+  // ---- 色块 + 每格色号 ----
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const codeFont=Math.max(9,Math.round(cell*0.42));
+  for(let y=0;y<BH;y++){
+    for(let x=0;x<BW;x++){
+      const gx=left+x*cell, gy=top+y*cell;
+      const idx=patternIndex(x,y);
+      if(idx<0){ // mask 背景：纸面 + 淡色
+        ctx.fillStyle=T.masked; ctx.fillRect(gx,gy,cell,cell);
+        continue;
+      }
+      const c=PALETTE[idx];
+      ctx.fillStyle=c.hex; ctx.fillRect(gx,gy,cell,cell);
+      // 圆豆高光质感
+      ctx.fillStyle='rgba(255,255,255,.18)';
+      ctx.beginPath();ctx.arc(gx+cell/2,gy+cell/2,cell*0.34,0,7);ctx.fill();
+      // 每格色号（深豆白字 / 浅豆黑字）
+      ctx.fillStyle=c.light?'#3a2230':'#ffffff';
+      ctx.font=`800 ${codeFont}px Nunito,sans-serif`;
+      ctx.fillText(c.code,gx+cell/2,gy+cell/2+0.5);
+    }
+  }
+
+  // ---- 细网格（每格）----
+  ctx.strokeStyle=T.minor; ctx.lineWidth=1; ctx.beginPath();
+  for(let x=0;x<=BW;x++){const gx=left+x*cell+.5;ctx.moveTo(gx,top);ctx.lineTo(gx,top+gridH);}
+  for(let y=0;y<=BH;y++){const gy=top+y*cell+.5;ctx.moveTo(left,gy);ctx.lineTo(left+gridW,gy);}
+  ctx.stroke();
+
+  // ---- 粗网格（每 5 格）----
+  ctx.strokeStyle=T.major; ctx.lineWidth=2.4; ctx.beginPath();
+  for(let x=0;x<=BW;x+=MAJOR){const gx=left+x*cell;ctx.moveTo(gx,top);ctx.lineTo(gx,top+gridH);}
+  for(let y=0;y<=BH;y+=MAJOR){const gy=top+y*cell;ctx.moveTo(left,gy);ctx.lineTo(left+gridW,gy);}
+  ctx.stroke();
+  // 外框
+  ctx.lineWidth=2.4; ctx.strokeRect(left,top,gridW,gridH);
+
+  // ---- 坐标刻度（左 + 顶，每 5 格：5,10,15…）----
+  ctx.fillStyle=T.tick; ctx.font=`800 ${Math.max(10,Math.round(cell*0.5))}px Nunito,sans-serif`;
+  for(let x=MAJOR;x<=BW;x+=MAJOR) ctx.fillText(x,left+x*cell,top/2+2);
+  for(let y=MAJOR;y<=BH;y+=MAJOR) ctx.fillText(y,left/2-2,top+y*cell);
+
+  // ---- 底部 BOM 用量条 ----
+  const barX=left;
+  // 玻璃衬底
+  ctx.fillStyle='rgba(136,60,90,.06)';
+  roundRect(ctx,barX-8,barY-8,gridW+16,barH+16,14); ctx.fill();
+  ctx.strokeStyle=T.minor; ctx.lineWidth=1;
+  roundRect(ctx,barX-8,barY-8,gridW+16,barH+16,14); ctx.stroke();
+  // BOM 标签
+  ctx.fillStyle=T.major; ctx.textAlign='left';
+  ctx.font=`700 13px Fredoka,Nunito,sans-serif`;
+  ctx.fillText('BOM',barX+2,barY+barPad-2);
+  ctx.textAlign='center';
+  // 芯片（统一大小，左色块+色号 / 右数量）
+  bom.forEach((b,i)=>{
+    const r=Math.floor(i/cols), cidx=i%cols;
+    const rowW=Math.min(cols,bom.length-r*cols);
+    const rowStartX=barX+barLabelW+ (gridW-barLabelW-(rowW*chipW+(rowW-1)*chipGap))/2;
+    const cx0=rowStartX+cidx*(chipW+chipGap), cy0=barY+barPad+r*(chipH+chipGap);
+    // 芯片底
+    ctx.fillStyle='#FFFFFF';
+    roundRect(ctx,cx0,cy0,chipW,chipH,chipH/2); ctx.fill();
+    ctx.strokeStyle=T.minor; ctx.lineWidth=1;
+    roundRect(ctx,cx0,cy0,chipW,chipH,chipH/2); ctx.stroke();
+    // 左侧色块（圆豆）+ 色号
+    const swx=cx0+chipPadX+ (chipH-10)/2, swy=cy0+chipH/2;
+    ctx.fillStyle=b.hex; ctx.beginPath();ctx.arc(swx,swy,(chipH-10)/2,0,7);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.2)';ctx.beginPath();ctx.arc(swx,swy,(chipH-10)/4,0,7);ctx.fill();
+    ctx.fillStyle=b.light?'#3a2230':'#ffffff';
+    ctx.font=`800 9px Nunito,sans-serif`; ctx.fillText(b.code,swx,swy+0.5);
+    // 右侧：色号 + 数量
+    ctx.fillStyle='#4A1428'; ctx.font=`800 12px Nunito,sans-serif`;
+    ctx.textAlign='left';
+    ctx.fillText(b.code,swx+(chipH-10)/2+8,cy0+chipH/2-6);
+    ctx.fillStyle='#9A6B7C'; ctx.font=`700 11px Nunito,sans-serif`;
+    ctx.fillText('× '+b.qty,swx+(chipH-10)/2+8,cy0+chipH/2+8);
+    ctx.textAlign='center';
+  });
+
+  chartGeom={left,top,cell};
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+drawChart();
+
+/* 主题切换后重绘图纸（配色自适应） */
+document.getElementById('themeToggle').addEventListener('click',()=>setTimeout(drawChart,0));
+
+/* ===== 独立 BOM 物料清单卡片（页面下方功能区块，按用量从多到少） ===== */
+(function buildBOM(){
+  const el=document.getElementById('bomGrid');
+  if(!el) return;
+  const bom=[
+    {code:'A5',hex:'#E11D48',qty:486,light:false},
+    {code:'W1',hex:'#F5F0EA',qty:412,light:true },
+    {code:'H7',hex:'#2563EB',qty:358,light:false},
+    {code:'D4',hex:'#FDE047',qty:296,light:true },
+    {code:'E3',hex:'#22C55E',qty:244,light:false},
+    {code:'I4',hex:'#7C3AED',qty:218,light:false},
+    {code:'C6',hex:'#FDBA74',qty:186,light:true },
+    {code:'G6',hex:'#38BDF8',qty:152,light:true },
+    {code:'A8',hex:'#FB7185',qty:128,light:false},
+    {code:'F5',hex:'#2DD4BF',qty:96, light:true },
+    {code:'K1',hex:'#2A2A2E',qty:74, light:false},
+    {code:'B3',hex:'#FDA4AF',qty:52, light:true },
+  ];
+  const fg=b=>b.light?'#3a2230':'#ffffff';
+  el.innerHTML=bom.map((b,i)=>`
+    <div class="chip rise" style="animation-delay:${.2+i*.03}s" tabindex="0">
+      <span class="dot" style="background:${b.hex};color:${fg(b)};">${b.code}</span>
+      <span class="meta"><span class="code">${b.code}</span><span class="qty">× ${b.qty}</span></span>
+    </div>`).join('');
+})();
+
+/* ===== 滑条数值实时显示 ===== */
+document.querySelectorAll('input[type=range]').forEach(r=>{
+  const out=r.closest('div').querySelector('.text-sm.font-bold');
+  if(!out) return;
+  r.addEventListener('input',()=>{out.textContent=(r.value/100).toFixed(2);});
+});
+</script>
+</body>
+</html>

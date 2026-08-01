@@ -406,7 +406,8 @@ class PatternGenerator:
     
     def render_standard_chart(self, bead_pixel_size: int = CHART_BEAD_PX, major_every: int = 5,
                               palette=None, bead_mask=None, fade_masked: bool = True,
-                              supersample: int = CHART_SUPERSAMPLE) -> np.ndarray:
+                              supersample: int = CHART_SUPERSAMPLE,
+                              mask_bg=None) -> np.ndarray:
         """
         Render a standard perler-bead chart (the exported/printed form).
 
@@ -430,6 +431,9 @@ class PatternGenerator:
             fade_masked: When False, ignore the mask entirely (full render).
             supersample: Render at Nx resolution then LANCZOS-downscale for
                 crisper text (1 = off). Auto-disabled on very large grids.
+            mask_bg: Optional (r,g,b) solid fill for masked-out cells instead of
+                the white fade (e.g. (255,255,255) or (0,0,0)). The code text and
+                BOM are skipped for masked cells either way.
 
         Returns:
             Rendered standard chart as an RGB ndarray
@@ -556,10 +560,14 @@ class PatternGenerator:
                 x1 = left_margin + x * cell
                 y1 = top_margin + y * cell
 
-                # masked-out cells: fade the fill toward white and skip the code
+                # masked-out cells: either fill a solid background (mask_bg) or
+                # fade the fill toward white; either way skip the code + BOM.
                 masked_out = use_fade and not bm[y, x]
                 if masked_out:
-                    rgb = tuple(int(round(c + (255 - c) * MASK_FADE)) for c in rgb)
+                    if mask_bg is not None:
+                        rgb = tuple(int(c) for c in mask_bg)
+                    else:
+                        rgb = tuple(int(round(c + (255 - c) * MASK_FADE)) for c in rgb)
                 draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
 
                 if masked_out:

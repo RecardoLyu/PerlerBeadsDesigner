@@ -3,13 +3,87 @@ Image segmentation module for foreground/background separation
 """
 import cv2
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import os
+
+
+class IterativeGrabCutState:
+    """Reusable GrabCut session state (sunk from the Tkinter UI).
+
+    Holds the GrabCut background/foreground model so successive refinement
+    calls can accumulate corrections. Pure-numpy, thread-safe to run inside a
+    background worker; the caller is responsible for marshaling UI updates.
+
+    Lifecycle:
+        state = IterativeGrabCutState(image)
+        mask = state.segment_rect((x, y, w, h))      # or segment_mask(init_mask)
+        ... user scribbles fg/bg annotations ...
+        mask = state.refine(fgd_annotation, bgd_annotation)
+    """
+
+    def __init__(self, image: np.ndarray):
+        if image is None or len(image.shape) != 3:
+            raise ValueError("请提供有效的RGB图像")
+        self.image = image.copy()
+        self.h, self.w = image.shape[:2]
+        self.bgd_model = np.zeros((1, 65), np.float64)
+        self.fgd_model = np.zeros((1, 65), np.float64)
+        self.gc_mask: Optional[np.ndarray] = None
+
+    @staticmethod
+    def _to_binary(mask: np.ndarray) -> np.ndarray:
+        return np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+                        255, 0).astype(np.uint8)
+
+    def segment_rect(self, rect: Tuple[int, int, int, int], iters: int = 5) -> np.ndarray:
+        """Initial GrabCut from a bounding rectangle (x, y, w, h)."""
+        x, y, w, h = (int(v) for v in rect)
+        if w < 2 or h < 2:
+            raise ValueError("初始矩形过小")
+        mask = np.zeros((self.h, self.w), dtype=np.uint8)
+        cv2.grabCut(self.image, mask, (x, y, w, h), self.bgd_model,
+                    self.fgd_model, iters, cv2.GC_INIT_WITH_RECT)
+        self.gc_mask = self._to_binary(mask)
+        return self.gc_mask.copy()
+
+    def segment_mask(self, init_mask: np.ndarray, iters: int = 5) -> np.ndarray:
+        """Initial GrabCut from a binary init mask (>0 = probable foreground)."""
+        if init_mask is None or not np.any(init_mask > 0):
+            raise ValueError("初始掩码为空")
+        mask = np.full((self.h, self.w), cv2.GC_PR_BGD, dtype=np.uint8)
+        mask[init_mask > 0] = cv2.GC_PR_FGD
+        cv2.grabCut(self.image, mask, None, self.bgd_model, self.fgd_model,
+                    iters, cv2.GC_INIT_WITH_MASK)
+        self.gc_mask = self._to_binary(mask)
+        return self.gc_mask.copy()
+
+    def refine(self, fgd_annotation: Optional[np.ndarray] = None,
+               bgd_annotation: Optional[np.ndarray] = None,
+               iters: int = 3) -> np.ndarray:
+        """Refine the current result with foreground/background scribbles.
+
+        Args:
+            fgd_annotation: binary scribble, >0 = definite foreground
+            bgd_annotation: binary scribble, >0 = definite background
+        """
+        if self.gc_mask is None:
+            raise ValueError("尚未运行初始分割")
+        mask = np.full((self.h, self.w), cv2.GC_PR_BGD, dtype=np.uint8)
+        if fgd_annotation is not None:
+            mask[fgd_annotation > 0] = cv2.GC_FGD
+        if bgd_annotation is not None:
+            mask[bgd_annotation > 0] = cv2.GC_BGD
+        # Previous result as prior
+        mask[self.gc_mask > 0] = cv2.GC_PR_FGD
+        cv2.grabCut(self.image, mask, None, self.bgd_model, self.fgd_model,
+                    iters, cv2.GC_INIT_WITH_MASK)
+        self.gc_mask = self._to_binary(mask)
+        return self.gc_mask.copy()
 
 
 class ImageSegmentation:
     """Handles image segmentation and foreground detection"""
-    
+
     def __init__(self):
         self.mask = None
         self.marked_image = None

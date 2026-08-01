@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>拼豆图纸设计器 · App 骨架</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ===== 设计 token ===== */
+:root{
+  --color-primary:#E11D48; --color-on-primary:#FFFFFF;
+  --color-secondary:#FB7185; --color-accent:#2563EB; --color-on-accent:#FFFFFF;
+  --color-violet:#A78BFA; --color-violet-deep:#7C3AED;
+  --color-bg:#FFF1F2; --color-bg-2:#FFE4E6;
+  --color-surface:rgba(255,255,255,.55); --color-surface-strong:rgba(255,255,255,.75);
+  --color-foreground:#4A1428; --color-foreground-strong:#881337;
+  --color-muted:#F0ECF2; --color-muted-fg:#9A6B7C;
+  --color-border:rgba(225,29,72,.18);
+  --color-destructive:#DC2626; --color-ring:#E11D48;
+  --glass-blur:18px;
+  --space-1:8px; --space-2:16px; --space-3:24px; --space-4:32px; --space-6:48px;
+  --ease:cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"]{
+  --color-primary:#FB7185; --color-on-primary:#2A0A12;
+  --color-secondary:#FDA4AF; --color-accent:#60A5FA; --color-on-accent:#0B1220;
+  --color-violet:#C4B5FD; --color-violet-deep:#A78BFA;
+  --color-bg:#1A0F14; --color-bg-2:#241019;
+  --color-surface:rgba(46,22,32,.45); --color-surface-strong:rgba(58,28,40,.6);
+  --color-foreground:#F6E4EA; --color-foreground-strong:#FBD5DE;
+  --color-muted:#2E1620; --color-muted-fg:#B98A99;
+  --color-border:rgba(251,113,133,.22);
+  --color-destructive:#F87171; --color-ring:#FB7185;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Nunito',"PingFang SC","Microsoft YaHei",sans-serif;
+  background:linear-gradient(135deg,var(--color-bg),var(--color-bg-2));
+  color:var(--color-foreground);
+  min-width:1280px;overflow:hidden;
+  transition:background-color .3s,color .3s,border-color .3s;
+}
+/* ===== 漂浮 blob ===== */
+.blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0;}
+[data-theme="dark"] .blob{opacity:.3}
+.blob-1{width:520px;height:520px;background:#FB7185;top:-140px;left:-120px;animation:drift1 14s ease-in-out infinite}
+.blob-2{width:460px;height:460px;background:#A78BFA;bottom:-160px;left:36%;animation:drift2 18s ease-in-out infinite}
+.blob-3{width:420px;height:420px;background:#FDBA74;top:20%;right:-140px;animation:drift3 16s ease-in-out infinite}
+@keyframes drift1{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,-18px)}}
+@keyframes drift2{0%,100%{transform:translate(0,0)}50%{transform:translate(-22px,16px)}}
+@keyframes drift3{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,20px)}}
+/* ===== 玻璃 ===== */
+.glass{
+  background:var(--color-surface);
+  backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  border:1px solid var(--color-border);
+  border-radius:24px;
+  box-shadow:0 8px 32px rgba(136,19,55,.12), inset 0 1px 0 rgba(255,255,255,.35);
+}
+[data-theme="dark"] .glass{box-shadow:0 8px 32px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)}
+/* ===== 布局骨架 ===== */
+.shell{position:relative;z-index:1;display:grid;grid-template-rows:64px 1fr 40px;height:100vh;gap:var(--space-2);padding:var(--space-2);}
+/* 顶部栏 */
+.topbar{display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-2);border-radius:20px;}
+.brand{display:flex;align-items:center;gap:12px;font-family:'Fredoka',"PingFang SC",sans-serif;font-size:20px;font-weight:600;color:var(--color-foreground-strong);}
+.brand svg{width:30px;height:30px}
+.nav{position:relative;display:flex;background:var(--color-muted);border:1px solid var(--color-border);border-radius:999px;padding:5px;gap:4px;}
+.nav-pill{position:relative;z-index:2;padding:8px 26px;border:none;border-radius:999px;background:transparent;font-family:'Nunito',sans-serif;font-weight:700;font-size:14px;color:var(--color-muted-fg);cursor:pointer;transition:color .25s var(--ease);}
+.nav-pill.active{color:var(--color-on-primary)}
+.nav-thumb{position:absolute;top:5px;bottom:5px;border-radius:999px;background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));box-shadow:0 4px 14px rgba(124,58,237,.4);transition:left .3s var(--ease),width .3s var(--ease);z-index:1}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.icon-btn{width:40px;height:40px;display:grid;place-items:center;border-radius:16px;border:1px solid var(--color-border);background:var(--color-surface);cursor:pointer;color:var(--color-foreground);transition:all .25s var(--ease);}
+.icon-btn:hover{transform:translateY(-2px)}
+.icon-btn:active{transform:scale(.94)}
+.icon-btn svg{width:19px;height:19px}
+.icon-btn:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
+/* 中部左右分栏 */
+.middle{display:grid;grid-template-columns:auto 1fr;gap:var(--space-2);min-height:0;}
+/* 左侧参数面板 */
+.sidebar{width:300px;display:flex;flex-direction:column;gap:var(--space-2);transition:width .3s var(--ease);overflow:hidden;}
+.sidebar.collapsed{width:56px}
+.collapse-btn{align-self:flex-start;width:40px;height:40px;display:grid;place-items:center;border-radius:14px;border:1px solid var(--color-border);background:var(--color-surface);cursor:pointer;color:var(--color-muted-fg);transition:all .25s var(--ease);}
+.collapse-btn svg{width:18px;height:18px;transition:transform .3s var(--ease)}
+.sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+.side-cards{display:flex;flex-direction:column;gap:var(--space-2);overflow:hidden auto;transition:opacity .25s,transform .3s var(--ease)}
+.sidebar.collapsed .side-cards{opacity:0;transform:translateX(-12px);pointer-events:none}
+.side-card{padding:var(--space-2) var(--space-3);}
+.side-card h3{font-size:14px;font-weight:700;color:var(--color-foreground-strong);display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.side-card h3 svg{width:16px;height:16px;color:var(--color-primary)}
+.side-card p{font-size:12px;color:var(--color-muted-fg);line-height:1.5}
+.fake-slider{height:6px;border-radius:999px;background:var(--color-muted);position:relative;margin:8px 0}
+.fake-slider::after{content:"";position:absolute;left:0;top:0;bottom:0;width:56%;border-radius:999px;background:linear-gradient(90deg,var(--color-secondary),var(--color-primary));}
+.fake-slider::before{content:"";position:absolute;left:52%;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--color-primary);box-shadow:0 2px 6px rgba(0,0,0,.18);z-index:2}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chip{padding:5px 14px;border-radius:999px;font-size:12px;font-weight:700;background:var(--color-muted);color:var(--color-muted-fg);border:1px solid var(--color-border);cursor:pointer;transition:all .25s var(--ease)}
+.chip.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;border-color:transparent}
+/* 右侧主区 */
+.maincard{position:relative;display:flex;flex-direction:column;padding:var(--space-3);overflow:hidden;}
+.canvas-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2)}
+.canvas-head h2{font-family:'Fredoka',"PingFang SC",sans-serif;font-size:17px;color:var(--color-foreground-strong)}
+.view-toggle{display:flex;gap:6px;background:var(--color-muted);border:1px solid var(--color-border);border-radius:999px;padding:4px}
+.view-toggle button{border:none;background:transparent;padding:6px 14px;border-radius:999px;font-family:'Nunito';font-size:12px;font-weight:700;color:var(--color-muted-fg);cursor:pointer;transition:all .25s var(--ease)}
+.view-toggle button.on{background:var(--color-surface-strong);color:var(--color-foreground-strong);box-shadow:0 2px 8px rgba(136,19,55,.15)}
+.canvas{position:relative;flex:1;border-radius:20px;overflow:hidden;border:1px solid var(--color-border);
+  background:
+   radial-gradient(circle at 25% 30%, rgba(251,113,133,.55), transparent 45%),
+   radial-gradient(circle at 75% 70%, rgba(167,139,250,.55), transparent 45%),
+   radial-gradient(circle at 55% 15%, rgba(253,186,116,.5), transparent 40%),
+   linear-gradient(135deg,#FBD5DE,#C4B5FD);
+}
+[data-theme="dark"] .canvas{background:
+   radial-gradient(circle at 25% 30%, rgba(251,113,133,.35), transparent 45%),
+   radial-gradient(circle at 75% 70%, rgba(167,139,250,.35), transparent 45%),
+   linear-gradient(135deg,#3A1626,#241333)}
+/* 画布角落工具按钮 */
+.tool-corner{position:absolute;display:flex;flex-direction:column;gap:8px}
+.tc-tl{top:14px;left:14px}.tc-tr{top:14px;right:14px}
+.tool-mini{width:38px;height:38px;display:grid;place-items:center;border-radius:14px;background:var(--color-surface);backdrop-filter:blur(12px);border:1px solid var(--color-border);color:var(--color-foreground);cursor:pointer;transition:all .25s var(--ease)}
+.tool-mini:hover{transform:translateY(-2px)}
+.tool-mini:active{transform:scale(.92)}
+.tool-mini svg{width:17px;height:17px}
+/* 鹰眼 minimap */
+.minimap{position:absolute;right:14px;bottom:14px;width:120px;height:86px;border-radius:16px;background:var(--color-surface-strong);backdrop-filter:blur(12px);border:1px solid var(--color-border);padding:6px;box-shadow:0 6px 18px rgba(136,19,55,.18)}
+.minimap .inner{position:relative;width:100%;height:100%;border-radius:10px;overflow:hidden;
+  background:radial-gradient(circle at 30% 35%,rgba(251,113,133,.6),transparent 50%),radial-gradient(circle at 70% 70%,rgba(167,139,250,.6),transparent 50%),linear-gradient(135deg,#FBD5DE,#C4B5FD)}
+.minimap .viewport{position:absolute;left:28%;top:22%;width:40%;height:44%;border:2px solid var(--color-primary);border-radius:4px;background:rgba(255,255,255,.18)}
+/* 区域用途标注 */
+.tag{font-size:10px;letter-spacing:.4px;color:var(--color-muted-fg);opacity:.65;font-weight:600}
+/* 底部状态栏 */
+.statusbar{display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-2);border-radius:16px;font-size:12.5px}
+.busy{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--color-primary)}
+.dots{display:flex;gap:4px}
+.dots span{width:7px;height:7px;border-radius:50%;background:var(--color-primary);animation:bounce 1s infinite var(--ease)}
+.dots span:nth-child(2){animation-delay:.15s}.dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-6px);opacity:1}}
+.status-right{margin-left:auto;color:var(--color-muted-fg)}
+/* 入场 stagger */
+@keyframes rise{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}
+.anim{animation:rise .5s var(--ease) backwards}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div>
+
+<div class="shell">
+  <!-- ===== 顶部栏 ===== -->
+  <header class="topbar glass anim">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5" stroke="url(#g)" stroke-width="2"/><circle cx="8" cy="8" r="2.4" fill="#E11D48"/><circle cx="16" cy="8" r="2.4" fill="#A78BFA"/><circle cx="8" cy="16" r="2.4" fill="#FDBA74"/><circle cx="16" cy="16" r="2.4" fill="#FB7185"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E11D48"/><stop offset="1" stop-color="#7C3AED"/></linearGradient></defs></svg>
+      拼豆图纸设计器
+      <span class="tag">顶部栏 · 品牌</span>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-thumb" id="navThumb"></div>
+      <button class="nav-pill active" data-view="图像处理">图像处理</button>
+      <button class="nav-pill" data-view="图纸生成">图纸生成</button>
+    </nav>
+    <div class="top-right">
+      <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
+        <svg id="sunIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg id="moonIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+      </button>
+      <button class="icon-btn" title="帮助" aria-label="帮助">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.2a2.7 2.7 0 1 1 4 2.4c-.9.5-1.4 1-1.4 2"/><circle cx="12" cy="16.8" r=".4" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== 中部 ===== -->
+  <div class="middle">
+    <!-- 左侧参数面板 -->
+    <aside class="sidebar glass anim" id="sidebar" style="animation-delay:.08s">
+      <button class="collapse-btn" id="collapseBtn" title="收起面板" aria-label="收起面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="side-cards">
+        <div class="side-card glass">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>亮度 / 对比度 <span class="tag">参数卡片</span></h3>
+          <div class="fake-slider"></div>
+          <div class="fake-slider"></div>
+          <p>亮度 +12 · 对比度 +8</p>
+        </div>
+        <div class="side-card glass">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" opacity=".5"/></svg>高斯模糊</h3>
+          <div class="fake-slider"></div>
+          <p>核大小 5 · 自动建议已启用</p>
+        </div>
+        <div class="side-card glass">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg>裁剪 / 旋转</h3>
+          <div class="chip-row">
+            <span class="chip on">↺ 90°</span><span class="chip">↻ 90°</span><span class="chip">180°</span><span class="chip">翻转</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧主预览区 -->
+    <main class="maincard glass anim" style="animation-delay:.16s">
+      <div class="canvas-head">
+        <h2 id="canvasTitle">图像处理 · 预览画布 <span class="tag">右侧主区</span></h2>
+        <div class="view-toggle">
+          <button class="on">原图</button><button>原图+高亮</button><button>Mask</button><button>应用结果</button>
+        </div>
+      </div>
+      <div class="canvas">
+        <div class="tool-corner tc-tl">
+          <button class="tool-mini" title="放大" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg></button>
+          <button class="tool-mini" title="缩小" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg></button>
+        </div>
+        <div class="tool-corner tc-tr">
+          <button class="tool-mini" title="平移" aria-label="平移"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg></button>
+          <button class="tool-mini" title="适应窗口" aria-label="适应窗口"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button>
+        </div>
+        <div class="minimap" title="鹰眼导航"><span class="tag" style="position:absolute;top:-18px;left:2px">鹰眼 minimap</span><div class="inner"><div class="viewport"></div></div></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 底部状态栏 ===== -->
+  <footer class="statusbar glass anim" style="animation-delay:.24s">
+    <div class="busy"><div class="dots"><span></span><span></span><span></span></div>计算中…</div>
+    <span class="tag">状态栏</span>
+    <span class="status-right">图像 1024×768 · 52×52 格 · 颜色 ≤ 24 · 已就绪</span>
+  </footer>
+</div>
+
+<script>
+const html=document.documentElement;
+const themeBtn=document.getElementById('themeBtn');
+const sun=document.getElementById('sunIcon'),moon=document.getElementById('moonIcon');
+themeBtn.addEventListener('click',()=>{
+  const dark=html.getAttribute('data-theme')==='dark';
+  html.setAttribute('data-theme',dark?'light':'dark');
+  sun.style.display=dark?'block':'none';
+  moon.style.display=dark?'none':'block';
+});
+/* 主导航胶囊滑动 */
+const nav=document.getElementById('nav'),thumb=document.getElementById('navThumb'),pills=[...nav.querySelectorAll('.nav-pill')],title=document.getElementById('canvasTitle');
+function moveThumb(el){thumb.style.left=el.offsetLeft+'px';thumb.style.width=el.offsetWidth+'px';}
+pills.forEach(p=>p.addEventListener('click',()=>{
+  pills.forEach(x=>x.classList.remove('active'));p.classList.add('active');moveThumb(p);
+  title.innerHTML=p.dataset.view+' · 预览画布 <span class="tag">右侧主区</span>';
+}));
+moveThumb(pills[0]);window.addEventListener('resize',()=>moveThumb(nav.querySelector('.active')));
+/* 侧栏收起 */
+const sidebar=document.getElementById('sidebar');
+document.getElementById('collapseBtn').addEventListener('click',()=>sidebar.classList.toggle('collapsed'));
+/* 视图切换占位 */
+document.querySelectorAll('.view-toggle button,.chip').forEach(b=>b.addEventListener('click',()=>{
+  const g=b.parentElement;[...g.children].forEach(x=>x.classList.remove('on'));b.classList.add('on');
+}));
+</script>
+</body>
+</html>

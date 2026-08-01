@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>拼豆图纸设计器 v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/shell.css">
+</head>
+<body>
+<div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="modal-mask" id="helpModal">
+  <div class="help-modal glass">
+    <header>
+      <h2>使用说明</h2>
+      <button class="icon-btn" id="helpClose" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="help-body" id="helpBody">加载中…</div>
+  </div>
+</div>
+
+<div class="shell">
+  <!-- ===== 顶部栏 ===== -->
+  <header class="topbar glass anim">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5" stroke="url(#g)" stroke-width="2"/><circle cx="8" cy="8" r="2.4" fill="#E11D48"/><circle cx="16" cy="8" r="2.4" fill="#A78BFA"/><circle cx="8" cy="16" r="2.4" fill="#FDBA74"/><circle cx="16" cy="16" r="2.4" fill="#FB7185"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E11D48"/><stop offset="1" stop-color="#7C3AED"/></linearGradient></defs></svg>
+      拼豆图纸设计器
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-thumb" id="navThumb"></div>
+      <button class="nav-pill active" data-view="图像处理">图像处理</button>
+      <button class="nav-pill" data-view="图纸生成">图纸生成</button>
+    </nav>
+    <div class="top-right">
+      <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
+        <svg id="sunIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg id="moonIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+      </button>
+      <button class="icon-btn" id="helpBtn" title="帮助" aria-label="帮助">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.2a2.7 2.7 0 1 1 4 2.4c-.9.5-1.4 1-1.4 2"/><circle cx="12" cy="16.8" r=".4" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== 中部 ===== -->
+  <div class="middle">
+    <!-- 左侧参数面板（两个视图的卡片都在此，按视图显隐） -->
+    <aside class="sidebar glass anim" id="sidebar" style="animation-delay:.08s">
+      <button class="collapse-btn" id="collapseBtn" title="收起面板" aria-label="收起面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="side-cards">
+
+        <!-- ===== 视图：图像处理 ===== -->
+        <div id="view-preprocess" style="display:flex;flex-direction:column;gap:var(--space-2)">
+          <div class="panel-card glass">
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>基本调整</h3>
+            <input type="file" id="loadFile" accept="image/*" hidden>
+            <button class="btn btn-primary" id="loadBtn" style="width:100%">加载图像</button>
+            <div class="slider-row"><label>亮度</label><input type="range" id="brightness" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整图像整体明暗。1 为不变，大于 1 变亮，小于 1 变暗。"><output id="brightnessOut">1.00</output></div>
+            <div class="slider-row"><label>对比度</label><input type="range" id="contrast" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整明暗反差。大于 1 增强对比，小于 1 降低对比。"><output id="contrastOut">1.00</output></div>
+            <div class="slider-row"><label>高斯模糊</label><input type="range" id="blur" min="1" max="15" step="2" value="1" data-tip="对图像做高斯平滑，去除噪点与细碎纹理，让生成的图纸更干净。1 表示不模糊。"><output id="blurOut">1</output></div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-ghost" id="applyBasic" style="flex:1" data-tip="把当前滑块调整叠加到当前图像上，可连续多次迭代调整。">应用调整</button>
+              <button class="btn btn-ghost" id="resetBtn" style="flex:1" data-tip="放弃所有调整，回到最初加载的原始图像。">恢复原图</button>
+            </div>
+            <p class="hint">每次「应用调整」都会叠加在当前图上，可连续迭代；「恢复原图」回到最初加载的图像。</p>
+          </div>
+          <!-- 分割模块卡片由后续 preprocess 模块注入 -->
+          <div id="segCards"></div>
+        </div>
+
+        <!-- ===== 视图：图纸生成 ===== -->
+        <div id="view-pattern" style="display:none;flex-direction:column;gap:var(--space-2)">
+          <div class="panel-card glass">
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 3v18"/></svg>图纸参数</h3>
+            <div class="num-row"><label>宽度(豆)</label><input type="number" id="wBeads" value="52" min="4" max="400"></div>
+            <div class="num-row"><label>高度(豆)</label><input type="number" id="hBeads" value="52" min="4" max="400"></div>
+            <div class="check-row"><input type="checkbox" id="keepRatio" checked><label for="keepRatio">保持图像比例</label></div>
+            <div class="num-row"><label>颜色上限</label><input type="number" id="maxColors" value="0" min="0" max="221" data-tip="限制图纸使用的最多颜色数，0 表示不限制。颜色越少越省豆、越易拼。"></div>
+            <div class="slider-row"><label>细节保留</label><input type="range" id="salience" min="0" max="2" step="0.1" value="1" data-tip="显著性细节保留强度：值越大越能保住图像中的小细节与边缘，避免被量化抹平。"><output id="salienceOut">1.0</output></div>
+            <div class="num-row"><label>颜色度量</label>
+              <select class="sel" id="colorMetric" data-tip="拟合豆色时计算颜色差异的方法。CIEDE2000 最接近人眼感知，推荐默认。">
+                <option value="weighted" data-tip="按人眼对红绿蓝不同敏感度加权的 RGB 距离，快速">加权距离</option>
+                <option value="euclidean" data-tip="RGB 空间直线距离，最简单但有时与人眼感受偏差大">欧氏距离</option>
+                <option value="lab" data-tip="转换到 Lab 色彩空间后求距离，比 RGB 更符合感知">Lab色空</option>
+                <option value="ciede76" data-tip="Lab 空间的经典色差公式，感知均匀性较好">CIE76</option>
+                <option value="ciede2000" selected data-tip="最新色差标准，最接近人眼感知，推荐默认">CIEDE2000</option>
+              </select>
+            </div>
+            <div class="check-row"><input type="checkbox" id="dither"><label for="dither" data-tip="抖动：用相邻豆的颜色交错模拟过渡色，超出调色板的颜色也能近似表现。开启后可调强度。">抖动</label></div>
+            <div class="slider-row" id="ditherRow" style="display:none"><label>抖动强度</label><input type="range" id="ditherStrength" min="0" max="1" step="0.05" value="1" data-tip="抖动的强弱：越大交错越明显，过渡越平滑但噪点增多。"><output id="ditherStrengthOut">1.00</output></div>
+            <div class="check-row"><input type="checkbox" id="icmOn"><label for="icmOn" data-tip="高阶优化(ICM)：迭代地微调每颗豆的颜色选择，减少局部色偏与孤岛噪点，结果更干净。开启后可调平滑强度。">高阶优化(ICM)</label></div>
+            <div class="slider-row" id="icmRow" style="display:none"><label>ICM平滑</label><input type="range" id="icm" min="0.1" max="1" step="0.05" value="0.5" data-tip="ICM 平滑强度：越大越倾向与周围豆同色，图更平滑；越小越保留原图差异。"><output id="icmOut">0.50</output></div>
+            <div class="check-row"><input type="checkbox" id="useMask" checked><label for="useMask" data-tip="若已做分割，仅用 Mask 前景生成图纸，背景不计入 BOM、不渲染色号。">使用分割 Mask</label></div>
+            <div class="num-row"><label>Mask背景</label>
+              <select class="sel" id="maskBg" data-tip="被分割 Mask 掉的背景格怎么显示：淡化=向白减淡（默认），纯白/纯黑=填纯色。背景不计入 BOM、不渲染色号。">
+                <option value="none" selected data-tip="背景格向白色减淡显示，保留隐约轮廓（默认）">淡化</option>
+                <option value="white" data-tip="背景格填纯白色">纯白</option>
+                <option value="black" data-tip="背景格填纯黑色">纯黑</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="genBtn" style="width:100%;margin-top:8px">生成图纸</button>
+          </div>
+          <!-- 导出 + BOM 卡片由 pattern 模块注入 -->
+          <div id="patternCards"></div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- 右侧主预览区 -->
+    <main class="maincard glass anim" style="animation-delay:.16s">
+      <div class="canvas-head">
+        <h2 id="canvasTitle">图像处理 · 预览画布</h2>
+        <div class="view-toggle" id="viewToggle">
+          <button class="on" data-mode="original">原图</button>
+          <button data-mode="highlight">原图+高亮</button>
+          <button data-mode="mask">Mask</button>
+          <button data-mode="applied">应用结果</button>
+        </div>
+      </div>
+      <div class="canvas" id="canvas">
+        <div class="viewport" id="viewportEl">
+          <img alt="预览">
+          <div class="empty" id="emptyHint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-6 6"/></svg>
+            尚未加载图像<br>点击左侧「加载图像」开始
+          </div>
+        </div>
+        <div class="tool-corner tc-tl">
+          <button class="tool-mini" id="zoomIn" title="放大" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg></button>
+          <button class="tool-mini" id="zoomOut" title="缩小" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg></button>
+        </div>
+        <div class="tool-corner tc-tr">
+          <button class="tool-mini" id="panBtn" title="平移模式" aria-label="平移模式"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg></button>
+          <button class="tool-mini" id="fitBtn" title="适应窗口" aria-label="适应窗口"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button>
+        </div>
+        <div class="minimap" title="鹰眼导航"><div class="inner"><img alt=""><div class="vp"></div></div></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 底部状态栏 ===== -->
+  <footer class="statusbar glass anim" style="animation-delay:.24s">
+    <div class="busy" id="busy"><span class="kaomoji" id="kaomoji">(◕‿◕)</span><span id="busyText">计算中…</span></div>
+    <span class="status-msg" id="statusMsg">就绪</span>
+    <span class="status-right" id="statusRight">…</span>
+  </footer>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/viewer.js"></script>
+<script src="/js/shell.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/dropdown.js"></script>
+<script src="/js/scribble.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/segment.js"></script>
+<script src="/js/pattern.js"></script>
+</body>
+</html>

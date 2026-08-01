@@ -8,13 +8,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="PerlerBeadsDesigner",
-    version="1.0.0",
-    author="Your Name",
+    version="2.0.0",
+    author="RecardoLyu",
     author_email="your.email@example.com",
     description="A tool to design pixel art patterns for perler beads",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/PerlerBeadsDesigner",
+    url="https://github.com/RecardoLyu/PerlerBeadsDesigner",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -27,7 +27,6 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "PyQt6>=6.6.0",
         "numpy>=1.24.0",
         "opencv-python>=4.8.0",
         "Pillow>=10.0.0",
@@ -36,10 +35,14 @@ setup(
         "reportlab>=4.0.0",
         "requests>=2.31.0",
         "beautifulsoup4>=4.12.0",
+        "fastapi>=0.110.0",
+        "uvicorn>=0.29.0",
+        "pywebview>=5.1",
+        "python-multipart>=0.0.9",
     ],
     entry_points={
         "console_scripts": [
-            "perler-beads-designer=src.main:main",
+            "perler-beads-designer=src.webapp.main:main",
         ],
     },
 )

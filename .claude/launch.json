@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "design-index",
+      "url": "http://localhost:8899",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8899", "--directory", "design/v2.0.0"],
+      "port": 8899
+    },
+    {
+      "name": "v2-backend",
+      "url": "http://127.0.0.1:8900",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "src.webapp.app:app", "--host", "127.0.0.1", "--port", "8900"],
+      "port": 8900
+    }
+  ]
+}
