@@ -407,8 +407,8 @@ exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern', 'A4')
 
 ## 联系方式
 
-- Email: your.email@example.com
-- GitHub: https://github.com/yourusername
+- Email: lvyh24@mails.tsinghua.edu.cn
+- GitHub: https://github.com/RecardoLyu
 
 ## 致谢
 
