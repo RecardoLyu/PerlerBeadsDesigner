@@ -134,7 +134,7 @@ class ImageSegmentation:
         
         return mask
     
-    def watershed_auto(self, image: np.ndarray) -> np.ndarray:
+    def watershed_auto(self, image: np.ndarray, fg_ratio: float = 0.4) -> np.ndarray:
         """
         Marker-based watershed with automatic seeds (no user input).
 
@@ -145,6 +145,9 @@ class ImageSegmentation:
 
         Args:
             image: Input image (RGB)
+            fg_ratio: Distance-transform threshold ratio (0-1) used to pick the
+                sure-foreground seeds. Larger -> more conservative (smaller,
+                more certain) foreground seeds. Default 0.4.
 
         Returns:
             Binary mask (0/255), foreground = 255
@@ -170,7 +173,7 @@ class ImageSegmentation:
         sure_bg = cv2.dilate(opening, kernel, iterations=3)
         dist = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
         max_dist = dist.max() if dist.max() > 0 else 1.0
-        _, sure_fg = cv2.threshold(dist, 0.4 * max_dist, 255, cv2.THRESH_BINARY)
+        _, sure_fg = cv2.threshold(dist, fg_ratio * max_dist, 255, cv2.THRESH_BINARY)
         sure_fg = sure_fg.astype(np.uint8)
         unknown = cv2.subtract(sure_bg, sure_fg)
 

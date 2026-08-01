@@ -1260,6 +1260,9 @@ class MainWindow(tk.Tk):
         self.original_loaded_image = None  # Original loaded image (before any adjustment)
         self.current_mask = None
         self.mask_applied_result = None  # Result after applying mask to image
+        # Original image composited with a translucent orange mask highlight,
+        # produced after an automatic segmentation run.
+        self.seg_overlay_image = None
         self.current_pattern = None
         self.current_bom = None
         self.aspect_ratio = 1.0
@@ -1385,7 +1388,7 @@ class MainWindow(tk.Tk):
         self.seg_display_var = tk.StringVar(value="原图")
         self.seg_display_combo = ttk.Combobox(top_panel,
                                              textvariable=self.seg_display_var,
-                                             values=["原图", "Mask", "Mask应用结果"],
+                                             values=["原图", "原图+高亮", "Mask", "Mask应用结果"],
                                              state="readonly", width=15)
         self.seg_display_combo.pack(side="left", padx=5)
         self.seg_display_combo.bind("<<ComboboxSelected>>", self._on_seg_display_changed)
@@ -1430,7 +1433,12 @@ class MainWindow(tk.Tk):
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
         # === Gaussian Blur section ===
-        ttk.Label(frame, text="高斯模糊:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
+        blur_title = ttk.Label(frame, text="高斯模糊:", font=("Arial", 9, "bold"))
+        blur_title.pack(fill="x", pady=2)
+        attach_tooltip(blur_title,
+            "高斯模糊:对图像做平滑去噪,核越大越模糊(奇数,1-31)\n"
+            "「自动建议」按图像尺寸给出合适核,「应用模糊」生效\n"
+            "分割/生成图纸前适度模糊可减少噪点")
 
         blur_size = ttk.Frame(frame)
         blur_size.pack(fill="x", pady=1)
@@ -1439,6 +1447,7 @@ class MainWindow(tk.Tk):
         self.blur_kernel.delete(0, tk.END)
         self.blur_kernel.insert(0, '20')
         self.blur_kernel.pack(side="left", padx=2)
+        attach_tooltip(self.blur_kernel, "高斯核大小(奇数,1-31):越大越模糊")
 
         ttk.Button(frame, text="自动建议",
                   command=self._suggest_blur_kernel).pack(fill="x", pady=1)
@@ -1448,20 +1457,22 @@ class MainWindow(tk.Tk):
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
         # === 图像裁剪 (合并自"裁剪"子tab) ===
-        ttk.Label(frame, text="图像裁剪:", font=("Arial", 9, "bold")).pack(fill="x", pady=2)
+        crop_title = ttk.Label(frame, text="图像裁剪:", font=("Arial", 9, "bold"))
+        crop_title.pack(fill="x", pady=2)
 
-        instructions = (
+        crop_instructions = (
             "操作说明:\n"
             "• 拖拽: 矩形裁剪\n"
             "• Ctrl+拖拽: 从中心\n"
             "• Shift+拖拽: 正方形\n"
             "• Ctrl+Shift: 中心正方形"
         )
-        ttk.Label(frame, text=instructions, justify="left",
-                 font=("Arial", 8), foreground="gray").pack(fill="x", pady=2)
+        attach_tooltip(crop_title, crop_instructions)
 
-        ttk.Button(frame, text="启用裁剪",
-                  command=self._enable_crop_mode).pack(fill="x", pady=1)
+        b_crop_enable = ttk.Button(frame, text="启用裁剪",
+                  command=self._enable_crop_mode)
+        b_crop_enable.pack(fill="x", pady=1)
+        attach_tooltip(b_crop_enable, crop_instructions)
         ttk.Button(frame, text="应用裁剪",
                   command=self._apply_crop).pack(fill="x", pady=1)
         ttk.Button(frame, text="取消裁剪",
@@ -1575,8 +1586,7 @@ class MainWindow(tk.Tk):
         brush_scale.pack(side="left", padx=2)
         attach_tooltip(brush_scale, "拖动调整前景/背景涂抹笔触的粗细")
         self.brush_preview = tk.Canvas(f_brush, width=44, height=44,
-                                       bg="white", highlightthickness=1,
-                                       highlightbackground="#cccccc")
+                                       bg="SystemButtonFace", highlightthickness=0)
         self.brush_preview.pack(side="left", padx=3)
         attach_tooltip(self.brush_preview, "当前笔触真实粗细(圆形)")
         self._draw_brush_preview(12)
@@ -1616,8 +1626,55 @@ class MainWindow(tk.Tk):
             "分水岭 Watershed: 自动种子分水岭,边缘贴合,适合轮廓清晰的主体\n"
             "Otsu 自适应阈值: 一键快速二值化,适合主体与背景明暗对比强\n"
             "SLIC 超像素: 按颜色聚成小块再聚合,适合平涂/卡通素材,边缘整齐")
+        method_combo.bind("<<ComboboxSelected>>", self._on_seg_method_changed)
+
+        # Per-method parameter zone (only the selected method's row is shown)
+        self.slic_nseg_var = tk.IntVar(value=150)
+        self.ws_ratio_var = tk.DoubleVar(value=0.40)
+        self.gc_margin_var = tk.DoubleVar(value=0.20)
+        self.seg_param_frame = ttk.Frame(frame)
+        self.seg_param_frame.pack(fill="x", pady=1)
+
+        f_param_gc = ttk.Frame(self.seg_param_frame)
+        ttk.Label(f_param_gc, text="矩形边距:").pack(side="left")
+        gc_margin_spin = tk.Spinbox(f_param_gc, from_=0.05, to=0.45, increment=0.05,
+                                    width=6, format="%.2f", textvariable=self.gc_margin_var)
+        gc_margin_spin.pack(side="left", padx=2)
+        attach_tooltip(gc_margin_spin, "初始矩形相对图宽的留白比例:越小框越大")
+
+        f_param_ws = ttk.Frame(self.seg_param_frame)
+        ttk.Label(f_param_ws, text="前景比例:").pack(side="left")
+        ws_ratio_spin = tk.Spinbox(f_param_ws, from_=0.2, to=0.8, increment=0.05,
+                                   width=6, format="%.2f", textvariable=self.ws_ratio_var)
+        ws_ratio_spin.pack(side="left", padx=2)
+        attach_tooltip(ws_ratio_spin, "确定前景的距离变换阈值比例:越大前景越保守")
+
+        f_param_slic = ttk.Frame(self.seg_param_frame)
+        ttk.Label(f_param_slic, text="超像素数:").pack(side="left")
+        slic_nseg_spin = tk.Spinbox(f_param_slic, from_=20, to=500, increment=10,
+                                    width=6, textvariable=self.slic_nseg_var)
+        slic_nseg_spin.pack(side="left", padx=2)
+        attach_tooltip(slic_nseg_spin, "SLIC 聚类块数:越大边缘越细、越慢")
+
+        f_param_otsu = ttk.Frame(self.seg_param_frame)
+        ttk.Label(f_param_otsu, text="该方法全自动,无需参数",
+                  foreground="gray").pack(side="left")
+
+        self._seg_param_rows = {
+            "grabcut": f_param_gc,
+            "watershed": f_param_ws,
+            "slic": f_param_slic,
+            "otsu": f_param_otsu,
+        }
+        self._on_seg_method_changed()  # show the row for the initial method
+
         ttk.Button(frame, text="执行分割",
                   command=self._segmentate_grabcut).pack(fill="x", pady=1)
+        b_apply_autoseg = ttk.Button(frame, text="应用分割结果",
+                  command=self._apply_autoseg_result)
+        b_apply_autoseg.pack(fill="x", pady=1)
+        attach_tooltip(b_apply_autoseg,
+            "将自动分割的Mask应用为最终结果:前景保留彩色,背景变纯白")
 
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=3)
 
@@ -1935,7 +1992,10 @@ class MainWindow(tk.Tk):
                 self.image_processor.current_image = image.copy()
                 self.current_image = image.copy()
                 self.original_loaded_image = image.copy()  # Save for brightness/contrast reset
-                
+                self.current_mask = None
+                self.mask_applied_result = None
+                self.seg_overlay_image = None
+
                 # Display in preprocessing interactive display (merged image-load view)
                 if hasattr(self, 'seg_display'):
                     self.seg_display.set_image(image)
@@ -2206,6 +2266,13 @@ class MainWindow(tk.Tk):
         if selected == "原图":
             if self.current_image is not None:
                 self.seg_display.set_image(self.current_image)
+        elif selected == "原图+高亮":
+            if self.seg_overlay_image is not None:
+                self.seg_display.set_image(self.seg_overlay_image)
+            elif self.current_image is not None:
+                self.seg_display.set_image(self.current_image)
+            else:
+                messagebox.showwarning("警告", "请先执行分割操作")
         elif selected == "Mask":
             if self.current_mask is not None:
                 mask_display = cv2.cvtColor(self.current_mask, cv2.COLOR_GRAY2RGB)
@@ -2217,7 +2284,50 @@ class MainWindow(tk.Tk):
                 self.seg_display.set_image(self.mask_applied_result)
             else:
                 messagebox.showwarning("警告", "请先应用分割结果")
-    
+
+    def _on_seg_method_changed(self, event=None):
+        """Show only the parameter row matching the selected auto-seg method."""
+        if not hasattr(self, "_seg_param_rows"):
+            return
+        method = self._seg_method_map.get(self.seg_method_var.get(), "grabcut")
+        for key, row in self._seg_param_rows.items():
+            if key == method:
+                row.pack(fill="x")
+            else:
+                row.pack_forget()
+
+    def _apply_autoseg_result(self):
+        """Apply the automatic-segmentation mask: bake it onto the original image
+        (foreground keeps color, background becomes white) and show it."""
+        try:
+            if self.current_mask is None:
+                raise ValueError("请先执行分割")
+
+            # Bake the mask onto the original image -> white background
+            image = self.image_processor.current_image
+            if len(image.shape) == 2:
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            else:
+                image_rgb = image.copy()
+            mask_binary = (self.current_mask > 127).astype(np.uint8) * 255
+            result = np.ones_like(image_rgb) * 255
+            result[mask_binary == 255] = image_rgb[mask_binary == 255]
+            self.mask_applied_result = result.copy()
+
+            # Make sure the normal display (not the iterative one) is shown
+            if self.igc_display_visible:
+                self.igc_display.pack_forget()
+                self.seg_display.pack(fill="both", expand=True)
+                self.igc_display_visible = False
+
+            self.seg_display.set_image(result)
+            self.seg_display.set_mode("view")
+            self.seg_display_var.set("Mask应用结果")
+            self.seg_display_label.config(text="Mask应用结果")
+            self.status_var.set("分割结果已应用: 前景保留彩色，背景为白色")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
     def _segmentate_grabcut(self):
         """Run the selected automatic segmentation method (background thread)."""
         try:
@@ -2240,13 +2350,16 @@ class MainWindow(tk.Tk):
 
             def _work():
                 if method == "watershed":
-                    return self.segmentation.watershed_auto(image)
+                    return self.segmentation.watershed_auto(
+                        image, fg_ratio=float(self.ws_ratio_var.get()))
                 if method == "otsu":
                     return self.segmentation.otsu_segment(image)
                 if method == "slic":
-                    return self.segmentation.slic_segment(image)
-                x1, y1 = int(w * 0.2), int(h * 0.2)
-                x2, y2 = int(w * 0.8), int(h * 0.8)
+                    return self.segmentation.slic_segment(
+                        image, n_segments=int(self.slic_nseg_var.get()))
+                m = float(self.gc_margin_var.get())
+                x1, y1 = int(w * m), int(h * m)
+                x2, y2 = int(w * (1 - m)), int(h * (1 - m))
                 return self.segmentation.grabcut_rect(image, x1, y1, x2, y2)
 
             def _done(mask, err):
@@ -2257,10 +2370,19 @@ class MainWindow(tk.Tk):
                 if token != self._seg_token:
                     return  # superseded by a newer run / image load
                 self.current_mask = mask
-                # Display original image
-                self.seg_display.set_image(image)
-                self.seg_display_var.set("原图")
-                self.seg_display_label.config(text="原图")
+                # Composite a translucent orange highlight of the mask onto the
+                # original image so the segmentation result is visible at a glance
+                # (same idiom as the iterative-GrabCut overlay).
+                if len(image.shape) == 2:
+                    image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+                else:
+                    image_rgb = image.copy()
+                overlay = np.zeros_like(image_rgb)
+                overlay[mask > 127] = [255, 140, 0]  # orange (RGB)
+                self.seg_overlay_image = cv2.addWeighted(image_rgb, 0.6, overlay, 0.4, 0)
+                self.seg_display.set_image(self.seg_overlay_image)
+                self.seg_display_var.set("原图+高亮")
+                self.seg_display_label.config(text="原图+高亮")
                 self.status_var.set(f"{name}分割完成")
 
             self._run_async(_work, _done)
@@ -2280,12 +2402,21 @@ class MainWindow(tk.Tk):
         return "ellipse"
 
     def _apply_morph_result(self, mask, op_name):
-        """Shared: store mask, refresh display, set status."""
+        """Shared: store mask, sync it everywhere, refresh the visible display."""
         self.current_mask = mask
-        mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-        self.seg_display.set_image(mask_display)
-        self.seg_display_var.set("Mask")
-        self.seg_display_label.config(text="Mask")
+        # Push the morphed mask back into the iterative display so a later
+        # "应用分割结果" bakes the POST-morphology mask (not the stale one).
+        if self.igc_display.gc_mask is not None:
+            self.igc_display.gc_mask = mask.copy()
+        # Refresh whichever display is currently on screen.
+        if self.igc_display_visible:
+            self.igc_display._update_display()
+        else:
+            mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+            self.seg_display.set_image(mask_display)
+            self.seg_display.set_mode("view")
+            self.seg_display_var.set("Mask")
+            self.seg_display_label.config(text="Mask")
         self.status_var.set(f"{op_name}完成")
 
     def _morph_open(self):
@@ -2428,6 +2559,7 @@ class MainWindow(tk.Tk):
             self.current_image = self.image_processor.current_image.copy()
             self.current_mask = None
             self.mask_applied_result = None
+            self.seg_overlay_image = None
             self.current_pattern = None
             # Reset aspect ratio
             h, w = self.current_image.shape[:2]
@@ -2557,6 +2689,7 @@ class MainWindow(tk.Tk):
             # Geometry changed → invalidate any mask / pattern built on old dims
             self.current_mask = None
             self.mask_applied_result = None
+            self.seg_overlay_image = None
             self.current_pattern = None
             self.seg_display.set_image(self.current_image)
             self.seg_display.set_mode('view')
