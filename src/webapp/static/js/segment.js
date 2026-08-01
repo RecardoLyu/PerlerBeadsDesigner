@@ -46,7 +46,7 @@
     </div>
 
     <div class="panel-card glass">
-      <h3 style="cursor:help" data-tip="一键自动分割：从四种算法（GrabCut矩形/分水岭/Otsu/SLIC）中选一种，点「执行分割」自动抠出前景，无需手动框选或涂抹。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
+      <h3 style="cursor:help" data-tip="一键自动分割：从四种算法（GrabCut矩形/分水岭/Otsu/SLIC）中选一种，点「执行分割」自动抠出前景，无需手动框选或涂抹。执行后可在「Mask / 原图+高亮」查看，再点「应用分割结果」把 Mask 保留为独立层（生成图纸仅用前景、背景不计入 BOM）。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
       <div class="num-row"><label>方法</label>
         <select class="sel" id="segMethod" data-tip="自动分割算法选择">
           <option value="grabcut_rect" data-tip="以矩形框选初始化做迭代分割，适合边界清晰的主体">GrabCut矩形</option>
@@ -59,7 +59,6 @@
       <div class="slider-row" id="slicRow" style="display:none"><label>超像素数</label><input type="range" id="nSeg" min="50" max="400" step="10" value="150" data-tip="SLIC：把图像聚成多少个超像素块，越多越精细、越慢。"><output id="nSegOut">150</output></div>
       <button class="btn btn-primary" id="autoSegBtn" style="width:100%;margin-top:8px" data-tip="按所选方法自动分割出前景 Mask">执行分割</button>
       <button class="btn btn-ghost" id="autoApplyBtn" style="width:100%;margin-top:6px" data-tip="保留原图与 Mask，生成图纸仅用前景、背景不计入 BOM">应用分割结果</button>
-      <p class="hint">执行后可在「Mask / 原图+高亮」查看，再「应用分割结果」保留为独立 Mask 层。</p>
     </div>
 
     <div class="panel-card glass">

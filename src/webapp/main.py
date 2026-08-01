@@ -55,7 +55,14 @@ def _wait_server(port: int, timeout: float = 15.0) -> bool:
 
 def start_server(port: int):
     try:
-        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        # console=False（无控制台）打包时 sys.stdout/stderr 为 None，uvicorn 的
+        # logging 配置会调 sys.stdout.isatty() 直接 AttributeError → 服务器起不来、
+        # 窗口「拒绝连接」。log_config=None 让 uvicorn 跳过日志配置（错误由 _log_error 记）。
+        kwargs = {}
+        if getattr(sys, 'frozen', False) and sys.stdout is None:
+            kwargs['log_config'] = None
+        config = uvicorn.Config(app, host="127.0.0.1", port=port,
+                                log_level="warning", **kwargs)
         server = uvicorn.Server(config)
         server.run()
     except Exception:
@@ -75,8 +82,11 @@ class _NativeDialogs:
             import webview
             win = webview.windows[0] if webview.windows else None
             if win is None:
+                _log_error("choose_dir: 无 webview 窗口")
                 return ""
-            res = win.create_file_dialog(webview.OPEN_FOLDER)
+            # pywebview 6.x: 文件夹/打开/保存枚举在 webview.FileDialog
+            # (FOLDER/OPEN/SAVE)，不再是旧版的 webview.OPEN_FOLDER 常量。
+            res = win.create_file_dialog(webview.FileDialog.FOLDER)
             return res[0] if res else ""
         except Exception:
             _log_error("choose_dir 失败:\n" + traceback.format_exc())
@@ -90,7 +100,7 @@ class _NativeDialogs:
             if win is None:
                 return ""
             res = win.create_file_dialog(
-                webview.OPEN_DIALOG,
+                webview.FileDialog.OPEN,
                 file_types=("图像文件 (*.png;*.jpg;*.jpeg;*.bmp;*.webp)", "所有文件 (*.*)"))
             return res[0] if res else ""
         except Exception:

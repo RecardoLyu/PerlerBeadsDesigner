@@ -50,12 +50,25 @@
    radial-gradient(circle at 25% 30%, rgba(251,113,133,.35), transparent 45%),
    radial-gradient(circle at 75% 70%, rgba(167,139,250,.35), transparent 45%),
    linear-gradient(135deg,var(--color-bg-2),var(--color-bg));}
-.canvas .viewport{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;cursor:grab}
+.canvas .viewport{position:absolute;inset:0;overflow:hidden;cursor:grab}
 .canvas .viewport.panning{cursor:grabbing}
-.canvas img{display:block;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;
-  transform-origin:0 0;image-rendering:auto;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.canvas img{position:absolute;left:0;top:0;display:block;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;
+  transform-origin:0 0;image-rendering:auto;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.25);
+  visibility:hidden}                 /* 无 src 时隐藏破图占位框，有图 (.has-img) 才显示 */
+.canvas img.has-img{visibility:visible}
 .canvas .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--color-muted-fg);font-size:14px;gap:10px;text-align:center;pointer-events:none}
 .canvas .empty svg{width:52px;height:52px;opacity:.5}
+
+/* 拖拽导入放置区：默认隐藏，拖拽悬停时显示虚线半透明遮罩 */
+.dropzone{position:absolute;inset:0;z-index:6;display:none;place-items:center;pointer-events:none}
+.dropzone.show{display:grid}
+.dropzone-inner{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 56px;border-radius:24px;
+  border:2.5px dashed var(--color-primary);background:color-mix(in srgb,var(--color-primary) 12%, transparent);
+  backdrop-filter:blur(3px);color:var(--color-primary);
+  box-shadow:0 0 0 9999px color-mix(in srgb,var(--color-bg) 45%, transparent) inset, 0 12px 40px rgba(124,58,237,.18)}
+.dropzone-inner svg{width:56px;height:56px}
+.dropzone-text{font-size:17px;font-weight:800;color:var(--color-foreground-strong)}
+.dropzone-ext{font-size:12.5px;font-weight:600;color:var(--color-muted-fg);letter-spacing:.3px}
 
 /* 画布角落工具按钮 */
 .tool-corner{position:absolute;display:flex;flex-direction:column;gap:8px;z-index:5}

@@ -292,6 +292,86 @@ class ImageSegmentation:
         self.mask = mask
         return mask
 
+    def _slic_superpixels(self, image: np.ndarray, n_segments: int,
+                          compactness: float = 10.0, iters: int = 10) -> np.ndarray:
+        """Self-contained SLIC superpixel over-segmentation (numpy + cv2 only).
+
+        This is a pure-Python SLIC so the packaged app does not depend on the
+        fragile scikit-image Cython extensions (which hard-crash the frozen
+        exe). Labels are 0-based and connectivity-enforced, matching the shape
+        and label conventions the caller expects.
+
+        Pipeline: regular-grid seeds -> k-means in (l,a,b,x,y) space with
+        assignment restricted to a 2S×2S window per cluster -> connectivity
+        enforcement to relabel small detached fragments.
+        """
+        h, w = image.shape[:2]
+        n = max(1, int(n_segments))
+        step = max(1, int(round(np.sqrt(float(h * w) / n))))
+
+        # Lab float space; spatial coords normalized to the same numeric scale
+        # as Lab (~0-255) so `compactness` balances color vs. space as in SLIC.
+        lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB).astype(np.float32)
+        m = compactness / step
+        scale = 255.0 / max(h, w)
+        xx = (np.arange(w, dtype=np.float32) * scale)[None, :].repeat(h, 0)
+        yy = (np.arange(h, dtype=np.float32) * scale)[:, None].repeat(w, 1)
+        feats = np.dstack([lab[:, :, 0], lab[:, :, 1], lab[:, :, 2], m * xx, m * yy])
+        F = feats.shape[2]
+
+        # Seeds on a regular grid offset half a step from the borders.
+        ys = np.arange(step // 2, h, step)
+        xs = np.arange(step // 2, w, step)
+        if len(ys) == 0 or len(xs) == 0:  # image smaller than one cell
+            return np.zeros((h, w), np.int32)
+        centers = feats[np.ix_(ys, xs)].reshape(-1, F).astype(np.float64)
+        K = centers.shape[0]
+
+        labels = np.full((h, w), -1, np.int32)
+        for _ in range(max(1, iters)):
+            # Assign each pixel to its nearest center, searching only the
+            # 2S×2S neighbourhood of each center (classic SLIC speedup).
+            dist = np.full((h, w), np.inf, np.float64)
+            for k in range(K):
+                cy, cx = int(round(centers[k, 4] / m / scale)), int(round(centers[k, 3] / m / scale))
+                y0, y1 = max(0, cy - step), min(h, cy + step)
+                x0, x1 = max(0, cx - step), min(w, cx + step)
+                if y0 >= y1 or x0 >= x1:
+                    continue
+                d = ((feats[y0:y1, x0:x1] - centers[k]) ** 2).sum(axis=2)
+                sub = dist[y0:y1, x0:x1]
+                better = d < sub
+                sub[better] = d[better]
+                labels[y0:y1, x0:x1][better] = k
+            # Recompute centers as cluster means.
+            flat = labels.ravel()
+            counts = np.bincount(flat, minlength=K).astype(np.float64)
+            counts[counts == 0] = 1.0
+            for c in range(F):
+                centers[:, c] = np.bincount(flat, weights=feats[:, :, c].ravel(),
+                                            minlength=K) / counts
+
+        # Enforce connectivity: relabel small detached 4-connected fragments
+        # to their largest neighbouring label so every superpixel is one blob.
+        out = np.zeros((h, w), np.int32)
+        next_label = 0
+        for k in range(K):
+            binmask = (labels == k).astype(np.uint8)
+            num, cc = cv2.connectedComponents(binmask, connectivity=4)
+            for cid in range(1, num):
+                comp = cc == cid
+                if num > 2 and comp.sum() < (step * step) // 4:
+                    # Tiny detached fragment -> adopt the most common adjacent label.
+                    dil = cv2.dilate(comp.astype(np.uint8), np.ones((3, 3), np.uint8))
+                    neigh = out[(dil > 0) & (~comp) & (out > 0)]
+                    lbl = int(np.bincount(neigh).argmax()) if neigh.size else next_label
+                    out[comp] = lbl
+                    next_label = max(next_label, lbl + 1)
+                else:
+                    out[comp] = next_label
+                    next_label += 1
+        return out
+
     def slic_segment(self, image: np.ndarray, n_segments: int = 150) -> np.ndarray:
         """
         SLIC superpixel segmentation aggregated into a foreground mask.
@@ -311,10 +391,7 @@ class ImageSegmentation:
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
 
-        from skimage.segmentation import slic
-
-        segments = slic(image, n_segments=n_segments, compactness=10,
-                        start_label=0, channel_axis=-1)
+        segments = self._slic_superpixels(image, n_segments, compactness=10.0)
 
         # Score each superpixel by how "subject-like" it is. Perler-bead
         # subjects are usually colorful; plain backgrounds are flat/gray, so

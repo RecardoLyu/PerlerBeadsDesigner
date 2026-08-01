@@ -59,9 +59,9 @@
         <!-- ===== 视图：图像处理 ===== -->
         <div id="view-preprocess" style="display:flex;flex-direction:column;gap:var(--space-2)">
           <div class="panel-card glass">
-            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>基本调整</h3>
+            <h3 style="cursor:help" data-tip="加载图像后调亮度/对比度/高斯模糊。每次「应用调整」都会叠加在当前图上，可连续多次迭代；「恢复原图」回到最初加载的图像。高斯核应用后保持上一步的值，便于继续同核迭代。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>基本调整</h3>
             <input type="file" id="loadFile" accept="image/*" hidden>
-            <button class="btn btn-primary" id="loadBtn" style="width:100%">加载图像</button>
+            <button class="btn btn-primary" id="loadBtn" style="width:100%" data-tip="从文件选择图像加载；也可直接把图片拖到右侧画布。">加载图像</button>
             <div class="slider-row"><label>亮度</label><input type="range" id="brightness" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整图像整体明暗。1 为不变，大于 1 变亮，小于 1 变暗。"><output id="brightnessOut">1.00</output></div>
             <div class="slider-row"><label>对比度</label><input type="range" id="contrast" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整明暗反差。大于 1 增强对比，小于 1 降低对比。"><output id="contrastOut">1.00</output></div>
             <div class="slider-row"><label>高斯模糊</label><input type="range" id="blur" min="1" max="15" step="2" value="1" data-tip="对图像做高斯平滑，去除噪点与细碎纹理，让生成的图纸更干净。1 表示不模糊。"><output id="blurOut">1</output></div>
@@ -69,7 +69,6 @@
               <button class="btn btn-ghost" id="applyBasic" style="flex:1" data-tip="把当前滑块调整叠加到当前图像上，可连续多次迭代调整。">应用调整</button>
               <button class="btn btn-ghost" id="resetBtn" style="flex:1" data-tip="放弃所有调整，回到最初加载的原始图像。">恢复原图</button>
             </div>
-            <p class="hint">每次「应用调整」都会叠加在当前图上，可连续迭代；「恢复原图」回到最初加载的图像。</p>
           </div>
           <!-- 分割模块卡片由后续 preprocess 模块注入 -->
           <div id="segCards"></div>
@@ -130,7 +129,15 @@
           <img alt="预览">
           <div class="empty" id="emptyHint">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-6 6"/></svg>
-            尚未加载图像<br>点击左侧「加载图像」开始
+            尚未加载图像<br>点击左侧「加载图像」，或把图片拖到此处
+          </div>
+          <!-- 拖拽导入：悬停时显示虚线半透明放置区 -->
+          <div class="dropzone" id="dropzone">
+            <div class="dropzone-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              <div class="dropzone-text">松开以导入图片</div>
+              <div class="dropzone-ext">支持 PNG · JPG · JPEG · BMP · WEBP</div>
+            </div>
           </div>
         </div>
         <div class="tool-corner tc-tl">

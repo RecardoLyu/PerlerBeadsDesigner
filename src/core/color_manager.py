@@ -367,6 +367,34 @@ class ColorManager:
         """Get the current color palette"""
         return self.palette
 
+    def load_palette(self, data: List[Dict], colors_file: str = None):
+        """Swap in a different bead palette (other colors / numbering systems).
+
+        This is the extension point for supporting bead brands or custom color
+        sets beyond the bundled MARD 221 palette (e.g. Perler / Artkal / Hama,
+        or any custom code+name+hex list). The rest of the pipeline (matching,
+        quantize, BOM, chart render) works off ``self.palette`` generically, so
+        replacing it here propagates everywhere with no further changes.
+
+        Args:
+            data: list of color dicts, each ``{"code","name","hex"}`` and
+                optionally ``"lab"`` (measured CIE LAB for better matching).
+                Codes may use any numbering scheme (A1.., H1.., P01.., ...).
+            colors_file: optional path to persist this palette (sets
+                ``self.colors_file`` so future loads/saves use it).
+        """
+        self.palette = ColorPalette.from_dict(data)
+        self.palette.set_color_metric(self.color_metric)
+        if colors_file is not None:
+            self.colors_file = colors_file
+        return len(self.palette.colors)
+
+    def load_palette_file(self, filepath: str):
+        """Load + swap in a palette from a JSON file (see :meth:`load_palette`)."""
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
+            data = json.load(f)
+        return self.load_palette(data, colors_file=filepath)
+
     def set_color_metric(self, metric: str):
         """Set the color distance metric"""
         if self.palette:

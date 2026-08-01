@@ -5,7 +5,7 @@ Run: pyinstaller pyinstaller.spec
 
 import os
 import sys
-from PyInstaller.utils.hooks import get_module_file_attribute
+from PyInstaller.utils.hooks import get_module_file_attribute, collect_data_files, collect_submodules
 
 # Icons: .ico is a Windows-only format. On macOS PyInstaller would need .icns,
 # and on Linux the EXE icon is unsupported — passing the .ico there makes
@@ -60,22 +60,21 @@ a = Analysis(
         'src.webapp.state',
         'src.webapp.codecs',
     ],
-    # scikit-image (SLIC) pulls its optional Qt-based `skimage.future.graph`
-    # RAG tooling into the module graph, which drags BOTH PyQt5 and PyQt6 in
-    # and aborts the build ("multiple Qt bindings"). And its dependency scan
-    # imports torch, which hard-crashes (access violation) while PyInstaller
-    # loads its DLLs. We only use skimage.segmentation.slic, so exclude Qt
-    # bindings and all the heavy ML / plotting / notebook packages the app
-    # never uses.
+    # The dependency scan walks the whole import graph; some packages it finds
+    # in this dev environment are heavy and unused by the app, and a few (Qt
+    # bindings, torch) actively break the build — Qt pulls both PyQt5/PyQt6 in
+    # ("multiple Qt bindings" abort) and torch hard-crashes (access violation)
+    # while PyInstaller loads its DLLs. Exclude them all.
     excludes=[
         'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'qtpy',
         'torch', 'torchvision', 'torchaudio', 'tensorflow', 'keras', 'jax',
         'matplotlib', 'IPython', 'ipykernel', 'jupyter', 'notebook',
         'pandas', 'sympy', 'dask', 'distributed', 'sklearn',
-        # Heavy optional deps of skimage/scipy that SLIC does not use; the
-        # dependency scan otherwise bundles them and bloats the app by ~500MB.
-        'scikit-learn', 'pywt', 'imageio', 'tifffile', 'numba',
-        'llvmlite', 'networkx', 'docutils', 'sphinx',
+        # scikit-image is no longer used (SLIC is self-implemented in
+        # numpy+cv2) — exclude it and its heavy optional deps so the fragile
+        # Cython extensions are not bundled at all.
+        'skimage', 'scikit-image', 'scipy', 'pywt', 'imageio', 'tifffile',
+        'numba', 'llvmlite', 'networkx', 'docutils', 'sphinx',
         # Unrelated heavy packages present in this dev environment that the
         # dependency scan would otherwise bundle (none are used by the app).
         'playwright', 'panel', 'bokeh', 'pyarrow', 'astropy', 'statsmodels',
