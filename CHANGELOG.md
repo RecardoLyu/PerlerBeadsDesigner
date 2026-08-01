@@ -4,6 +4,20 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 标准。
 
+## [2.0.1] - 2026-08-01
+
+### 修复
+
+- **打包 exe 启动**：修复运行 `PerlerBeadsDesigner.exe` 报「127.0.0.1 拒绝连接」
+  - 静态目录改用 `_resource_path`（含 PyInstaller `_MEIPASS` 兜底），根路径正确挂载
+  - 服务器启动加异常日志（写 `webapp_error.log`），`_wait_server` 未就绪时记录可见错误
+  - spec 补 pywebview Windows（winforms / pythonnet / clr）后端 hiddenimport
+- **应用结果**：新增「应用结果」预览路由，前景保留彩色、**背景纯黑**（原为原图叠加高亮）
+- **视图切换**：点「应用分割结果」后自动切到「应用结果」视图（原为 Mask 视图）
+- **下拉置顶**：自绘下拉列表挂到 `<body>` 用 fixed 定位 + z-index 提升，不再被下方卡片遮挡
+- **输出路径**：后端 `os.makedirs` 的 OSError 转 400 给出可读提示；原生目录/文件对话框异常兜底返回空，不再误报
+- **悬浮提示**：为「自动分割」「形态学」标题加悬浮说明
+
 ## [2.0.0] - 2026-08-01
 
 ### 重大更新：UI 全面重写为 Web 架构

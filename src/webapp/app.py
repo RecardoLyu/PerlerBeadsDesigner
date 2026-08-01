@@ -14,7 +14,7 @@ from fastapi.responses import Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .state import STATE
+from .state import STATE, _resource_path
 from .codecs import ndarray_to_png, png_to_ndarray
 from src.core.pattern_generator import PatternConfig
 from src.utils import segmentation as segmod
@@ -77,7 +77,10 @@ def set_output_dir(req: OutputDirReq):
     p = os.path.abspath(req.path.strip())
     if not p:
         raise HTTPException(400, detail="输出路径不能为空")
-    os.makedirs(p, exist_ok=True)
+    try:
+        os.makedirs(p, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(400, detail=f"无法创建/访问输出目录: {e}")
     STATE.output_dir = p
     return {"ok": True, "output_dir": p}
 
@@ -326,6 +329,21 @@ def get_overlay():
     return _png(blended)
 
 
+@app.get("/api/segment/applied")
+def get_applied():
+    """Foreground kept in colour, background pure black (the 'applied' preview)."""
+    img = _err(STATE.require_image)
+    if STATE.mask is None:
+        raise HTTPException(404, detail="尚无分割 mask")
+    mask = STATE.mask
+    if mask.shape[:2] != img.shape[:2]:
+        mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
+                          interpolation=cv2.INTER_NEAREST)
+    out = np.zeros_like(img)               # 背景纯黑
+    out[mask > 127] = img[mask > 127]      # 前景保留彩色
+    return _png(out)
+
+
 @app.post("/api/segment/apply")
 def segment_apply():
     """Confirm the mask as a working layer WITHOUT baking it into the image.
@@ -482,6 +500,8 @@ def export(req: ExportReq):
 # --------------------------------------------------------------------------
 # Static frontend (served last so /api wins)
 # --------------------------------------------------------------------------
-_STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+# frozen (PyInstaller) 下 __file__ 解析不可靠，统一走 state._resource_path
+# （含 sys._MEIPASS 兜底），否则 app.mount 被跳过、根路径无路由 → exe 拒绝连接。
+_STATIC = _resource_path('src', 'webapp', 'static')
 if os.path.isdir(_STATIC):
     app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")

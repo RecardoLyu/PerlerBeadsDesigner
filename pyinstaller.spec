@@ -49,8 +49,11 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
-        # pywebview native window
+        # pywebview native window + Windows (winforms) backend
         'webview',
+        'webview.platforms.winforms',
+        'pythonnet',
+        'clr',
         # webapp backend modules
         'src.webapp',
         'src.webapp.app',

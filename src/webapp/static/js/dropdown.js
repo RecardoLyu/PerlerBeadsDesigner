@@ -45,21 +45,48 @@
       label.textContent = cur ? cur.textContent : v;
       if (fire) sel.dispatchEvent(new Event('change', { bubbles: true }));
     }
+    /* 列表挂 <body> 用 fixed 定位：脱离 panel-card 的 stacking context，
+       否则下方兄弟卡片（backdrop-filter）会盖在下拉之上（置顶显示）。 */
+    function place() {
+      const r = btn.getBoundingClientRect();
+      list.style.left = r.left + 'px';
+      list.style.width = r.width + 'px';
+      // 默认在按钮下方；若下方空间不足且上方更空则翻到上方
+      const below = window.innerHeight - r.bottom;
+      const need = Math.min(list.offsetHeight || 240, 240);
+      if (below < need + 12 && r.top > below) {
+        list.style.top = Math.max(6, r.top - need - 6) + 'px';
+      } else {
+        list.style.top = (r.bottom + 6) + 'px';
+      }
+    }
     function open() {
       closeAll();
       wrap.classList.add('open');
+      document.body.appendChild(list);   // 提升层级，fixed 定位
+      list.classList.add('open');
+      place();
       // 悬停当前选中项的说明，呼出即见
       const on = list.querySelector('.gsel-opt.on') || list.querySelector('.gsel-opt');
       if (on && on.dataset.tip) {
         on.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       }
     }
-    function close() { wrap.classList.remove('open'); }
+    function close() {
+      wrap.classList.remove('open');
+      list.classList.remove('open');
+      if (list.parentNode === document.body) wrap.appendChild(list);  // 归还，避免遗留
+    }
     function toggle() { wrap.classList.contains('open') ? close() : open(); }
 
     btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+    document.addEventListener('click', (e) => { if (!wrap.contains(e.target) && !list.contains(e.target)) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    // 滚动/缩放时若开着则重定位（保持贴合按钮）
+    window.addEventListener('resize', () => { if (wrap.classList.contains('open')) place(); });
+    document.addEventListener('scroll', (e) => {
+      if (wrap.classList.contains('open') && !list.contains(e.target)) place();
+    }, true);
 
     // 初始标签
     setValue(sel.value, false);
@@ -77,6 +104,7 @@
 
   function closeAll() {
     document.querySelectorAll('.gsel.open').forEach(g => g.classList.remove('open'));
+    document.querySelectorAll('.gsel-list.open').forEach(l => l.classList.remove('open'));
   }
 
   // 自动增强所有 .sel 下拉（页面加载后）

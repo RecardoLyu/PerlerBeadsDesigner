@@ -57,6 +57,7 @@ const API = (() => {
     segmentMorphUndo: () => _blobUrl('/api/segment/morph/undo', {}),
     segmentMorphRedo: () => _blobUrl('/api/segment/morph/redo', {}),
     maskUrl: () => '/api/segment/mask',
+    appliedUrl: () => '/api/segment/applied',
     segmentApply: () => _blobUrl('/api/segment/apply', {}),
     overlayUrl: () => '/api/segment/overlay',
     patternGenerate: (req) => _json('/api/pattern/generate', req),

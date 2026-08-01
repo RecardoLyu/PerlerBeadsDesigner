@@ -136,8 +136,8 @@ select.sel:focus{outline:2px solid var(--color-ring)}
 .gsel-btn .gsel-label{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gsel-btn svg{width:14px;height:14px;flex:none;color:var(--color-muted-fg);transition:transform .2s var(--ease)}
 .gsel.open .gsel-btn svg{transform:rotate(180deg)}
-.gsel-list{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;margin:0;padding:5px;list-style:none;border-radius:14px;max-height:240px;overflow-y:auto;display:none}
-.gsel.open .gsel-list{display:block;animation:rise .22s var(--ease)}
+.gsel-list{position:fixed;z-index:150;margin:0;padding:5px;list-style:none;border-radius:14px;max-height:240px;overflow-y:auto;display:none}
+.gsel-list.open{display:block;animation:rise .22s var(--ease)}
 .gsel-opt{padding:7px 11px;border-radius:10px;font-size:12.5px;font-weight:600;color:var(--color-foreground);cursor:pointer;transition:background .15s}
 .gsel-opt:hover{background:var(--color-muted)}
 .gsel-opt.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff}

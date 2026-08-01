@@ -46,7 +46,7 @@
     </div>
 
     <div class="panel-card glass">
-      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
+      <h3 style="cursor:help" data-tip="一键自动分割：从四种算法（GrabCut矩形/分水岭/Otsu/SLIC）中选一种，点「执行分割」自动抠出前景，无需手动框选或涂抹。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
       <div class="num-row"><label>方法</label>
         <select class="sel" id="segMethod" data-tip="自动分割算法选择">
           <option value="grabcut_rect" data-tip="以矩形框选初始化做迭代分割，适合边界清晰的主体">GrabCut矩形</option>
@@ -63,7 +63,7 @@
     </div>
 
     <div class="panel-card glass">
-      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/></svg>形态学</h3>
+      <h3 style="cursor:help" data-tip="对已有 Mask 做形态学修整：开/闭运算去噪补洞、腐蚀/膨胀收放边界；可调核大小与结构元素形状，每次在上一步结果上迭代，最多可撤销/重做 3 步。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/></svg>形态学</h3>
       <div class="num-row"><label>操作</label>
         <select class="sel" id="morphOp" data-tip="形态学操作选择">
           <option value="open" data-tip="先腐蚀后膨胀：去除前景小噪点、断开细小粘连">开运算</option>
@@ -258,7 +258,7 @@
       if (mode === 'original') viewer.setImage(API.currentImageUrl() + '?t=' + Date.now());
       else if (mode === 'mask') viewer.setImage(API.maskUrl() + '?t=' + Date.now());
       else if (mode === 'highlight') viewer.setImage(API.overlayUrl() + '?t=' + Date.now());
-      else if (mode === 'applied') viewer.setImage(API.overlayUrl() + '?t=' + Date.now());
+      else if (mode === 'applied') viewer.setImage(API.appliedUrl() + '?t=' + Date.now());
       busy.done('就绪');
     } catch (err) { window.fail('无内容: ' + err.message); }
   }
@@ -334,8 +334,8 @@
       await API.segmentApply();
       exitInteraction();
       await refreshStatus();
-      setMaskOnlyView();
-      viewer.setImage(API.maskUrl() + '?t=' + Date.now());
+      setAppliedView();
+      viewer.setImage(API.appliedUrl() + '?t=' + Date.now());
       busy.done('Mask 已生效：背景不计入图纸');
     } catch (err) { window.fail('失败: ' + err.message); }
   });
@@ -401,15 +401,15 @@
     } catch (err) { busy.set(err.message); }
   });
 
-  /* ---- 应用分割结果（保留原图 + Mask 独立层，不烘焙；应用后显示 mask 结果） ---- */
+  /* ---- 应用分割结果（保留原图 + Mask 独立层，不烘焙；应用后显示黑底前景结果） ---- */
   $('applySegBtn').addEventListener('click', async () => {
     try {
       busy.start('应用分割 Mask…');
       await API.segmentApply();
       exitInteraction();
       await refreshStatus();
-      setMaskOnlyView();
-      viewer.setImage(API.maskUrl() + '?t=' + Date.now());
+      setAppliedView();
+      viewer.setImage(API.appliedUrl() + '?t=' + Date.now());
       busy.done('Mask 已生效：背景不计入图纸');
     } catch (err) { window.fail('失败: ' + err.message); }
   });
@@ -420,6 +420,9 @@
   }
   function setMaskOnlyView() {
     [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'mask'));
+  }
+  function setAppliedView() {
+    [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'applied'));
   }
   function setOriginalView() {
     [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'original'));
