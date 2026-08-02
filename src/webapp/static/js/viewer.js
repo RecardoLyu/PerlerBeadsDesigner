@@ -5,7 +5,10 @@ class Viewer {
     this.viewport = canvasEl.querySelector('.viewport');
     this.img = canvasEl.querySelector('img');
     this.minimap = canvasEl.querySelector('.minimap');
-    this.miniImg = this.minimap?.querySelector('img') || null;
+    // 迷你图用 <canvas>，直接 drawImage(主图 img) 取已渲染好的像素 —— 彻底绕开
+    // WebView2 对第二张 <img> 不触发合成/解码导致「白色背景」的缺陷。
+    this.miniCanvas = this.minimap?.querySelector('canvas') || null;
+    this.miniCtx = this.miniCanvas ? this.miniCanvas.getContext('2d') : null;
     this.vp = this.minimap?.querySelector('.vp') || null;
     this.scale = 1; this.tx = 0; this.ty = 0;
     this.panning = false; this._ps = null; this._pstart = null;
@@ -66,60 +69,13 @@ class Viewer {
 
   async setImage(url) {
     if (!url) { this.img.removeAttribute('src'); this.img.classList.remove('has-img'); this._hideMini(); return; }
-    // pywebview 的 WebView2 对 blob: objectURL 赋给 <img> 的渲染不稳定（已知缺陷，
-    // 主图能渲染而第二张并发 blob 的迷你图常解码/合成失败）→ 把 blob 统一转成
-    // dataURL（WebView2 渲染稳定），主图和迷你图共用同一张，避免两个独立 blob 并发差异。
-    let src = url;
-    if (typeof url === 'string' && url.startsWith('blob:')) {
-      try {
-        const blob = await (await fetch(url)).blob();
-        src = await new Promise((res, rej) => {
-          const fr = new FileReader();
-          fr.onload = () => res(fr.result);
-          fr.onerror = rej;
-          fr.readAsDataURL(blob);
-        });
-      } catch { /* 转换失败则退回原 blob，维持旧行为 */ }
-    }
     // 给同源 URL 追加时间戳，强制刷新缓存（data:/blob: 不含 '?' 原样返回）。
-    const busted = this._bust(src);
-    // 主图
-    this.img.onload = () => { this.img.classList.add('has-img'); this.fit(); };
+    const busted = this._bust(url);
+    // 主图加载完成后：显示 + 适应 + 画鹰眼（迷你图直接 drawImage 主图像素）。
+    this.img.onload = () => { this.img.classList.add('has-img'); this.fit(); this._updateMini(); };
     this.img.src = busted;
     // 缓存命中时已 complete，onload 不再触发 → 立即补一次
-    if (this.img.complete && this.img.naturalWidth) { this.img.classList.add('has-img'); this.fit(); }
-
-    // 鹰眼缩略图：关键在 WebView2 的稳定性。直接对迷你 <img> 赋值常出现
-    // 「解码/合成不触发 → 灰块」。这里先用一个**独立 Image 元素**预加载并
-    // 调 decode() 强制解码，解码成功后才把同一 dataURL 赋给迷你图，并顺手
-    // 复用解码结果画 VP 框。decode() 在 Chromium/WebView2 都支持，能绕开
-    // 「img.src 已设置但不触发合成」的坑。
-    if (this.miniImg) {
-      this._setMini(busted);
-    }
-  }
-
-  async _setMini(src) {
-    // 先预解码（独立元素，不进 DOM）。失败也不阻塞主图。
-    let pre = null;
-    try {
-      pre = new Image();
-      pre.src = src;
-      if (pre.decode) await pre.decode();
-      else if (!(pre.complete && pre.naturalWidth)) {
-        await new Promise((res, rej) => { pre.onload = res; pre.onerror = rej; });
-      }
-    } catch { pre = null; }
-
-    const apply = () => {
-      if (this.miniImg.src !== src) this.miniImg.src = src;
-      this._updateMini();
-    };
-    this.miniImg.onload = apply;
-    this.miniImg.onerror = () => this._hideMini();
-    this.miniImg.src = src;
-    // 预解码已成功或缓存命中 → 立即补一次，不等 onload
-    if (pre || (this.miniImg.complete && this.miniImg.naturalWidth)) apply();
+    if (this.img.complete && this.img.naturalWidth) { this.img.classList.add('has-img'); this.fit(); this._updateMini(); }
   }
 
   _bust(url) {
@@ -157,28 +113,44 @@ class Viewer {
   }
 
   _updateMini() {
-    if (!this.minimap || !this.img.src || !this.miniImg) return;
-    const r = this.viewport.getBoundingClientRect();
+    if (!this.minimap || !this.img.src || !this.miniCtx) return;
     const iw = this.img.naturalWidth, ih = this.img.naturalHeight;
     if (!iw) return;
-    // visible image rect (image coords)
+    const r = this.viewport.getBoundingClientRect();
+    // 用 CSS 内容盒尺寸（减 padding），而不是量 getBoundingClientRect ——
+    // minimap 在「未 show」时是 display:none，量出来是 0，会导致永远加不上 show。
+    const cs = getComputedStyle(this.minimap);
+    const iwCss = (parseFloat(cs.width)  || 124) - (parseFloat(cs.paddingLeft)  || 0) - (parseFloat(cs.paddingRight)  || 0);
+    const ihCss = (parseFloat(cs.height) || 88)  - (parseFloat(cs.paddingTop)   || 0) - (parseFloat(cs.paddingBottom) || 0);
+    if (iwCss < 2 || ihCss < 2) return;
+
+    // 用主图当前已渲染好的像素画到迷你 canvas。devicePixelRatio 适配，保证缩略图锐利不糊。
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(2, Math.round(iwCss * dpr));
+    const ch = Math.max(2, Math.round(ihCss * dpr));
+    if (this.miniCanvas.width !== cw || this.miniCanvas.height !== ch) {
+      this.miniCanvas.width = cw; this.miniCanvas.height = ch;
+    }
+    const ctx = this.miniCtx;
+    ctx.clearRect(0, 0, cw, ch);
+    const mScale = Math.min(iwCss / iw, ihCss / ih);
+    const drawW = iw * mScale * dpr, drawH = ih * mScale * dpr;
+    const offX = (cw - drawW) / 2, offY = (ch - drawH) / 2;
+    try { ctx.drawImage(this.img, offX, offY, drawW, drawH); } catch { return; }
+
+    // visible image rect (image coords) → 投影到 inner 盒子百分比
     const vx = -this.tx / this.scale, vy = -this.ty / this.scale;
     const vw = r.width / this.scale, vh = r.height / this.scale;
-    // the inner box renders the image with object-fit:contain — find that rect
-    const inner = this.minimap.querySelector('.inner');
-    const ir = inner.getBoundingClientRect();
-    const mScale = Math.min(ir.width / iw, ir.height / ih);
-    const offX = (ir.width - iw * mScale) / 2;
-    const offY = (ir.height - ih * mScale) / 2;
-    // project visible rect into inner-box pixels, clamped to image bounds
-    const x1 = offX + Math.max(0, vx) * mScale;
-    const y1 = offY + Math.max(0, vy) * mScale;
-    const x2 = offX + Math.min(iw, vx + vw) * mScale;
-    const y2 = offY + Math.min(ih, vy + vh) * mScale;
-    this.vp.style.left = (x1 / ir.width * 100) + '%';
-    this.vp.style.top = (y1 / ir.height * 100) + '%';
-    this.vp.style.width = Math.max(4, (x2 - x1) / ir.width * 100) + '%';
-    this.vp.style.height = Math.max(4, (y2 - y1) / ir.height * 100) + '%';
+    const offXp = (iwCss - iw * mScale) / 2;
+    const offYp = (ihCss - ih * mScale) / 2;
+    const x1 = offXp + Math.max(0, vx) * mScale;
+    const y1 = offYp + Math.max(0, vy) * mScale;
+    const x2 = offXp + Math.min(iw, vx + vw) * mScale;
+    const y2 = offYp + Math.min(ih, vy + vh) * mScale;
+    this.vp.style.left = (x1 / iwCss * 100) + '%';
+    this.vp.style.top = (y1 / ihCss * 100) + '%';
+    this.vp.style.width = Math.max(4, (x2 - x1) / iwCss * 100) + '%';
+    this.vp.style.height = Math.max(4, (y2 - y1) / ihCss * 100) + '%';
     this.minimap.classList.add('show');
   }
   _hideMini() { this.minimap?.classList.remove('show'); }
@@ -191,6 +163,14 @@ class Viewer {
       e.preventDefault(); e.stopPropagation();
       const cr = this.canvas.getBoundingClientRect();
       const mr = this.minimap.getBoundingClientRect();
+      // 先把当前实际渲染位置（可能来自 CSS 的 right/bottom 定位）写进 style.left/top。
+      // 否则首次点击时 style.left/top 为空，松手吸附 parseFloat(...)||0 → 0 → 闪到左上角。
+      if (!this.minimap.style.left) {
+        this.minimap.style.left = (mr.left - cr.left) + 'px';
+        this.minimap.style.top = (mr.top - cr.top) + 'px';
+        this.minimap.style.right = 'auto';
+        this.minimap.style.bottom = 'auto';
+      }
       this._miniDrag = {
         dx: e.clientX - mr.left, dy: e.clientY - mr.top,
         cr, w: mr.width, h: mr.height,
