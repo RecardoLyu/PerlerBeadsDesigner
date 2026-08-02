@@ -136,6 +136,7 @@
       if (s.has_pattern) {
         try {
           viewer.setImage(await API.patternChart(window._chartReq()));
+          if (window.setChartViewActive) window.setChartViewActive();
           // 视图刚切换布局未稳定，下一帧再居中
           requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
         } catch (e) {}
@@ -214,6 +215,7 @@
       busy.done(`已生成 ${res.width}×${res.height} 图纸 · 共 ${res.bom.total_beads} 豆`);
       if (window.exitScribbleInteraction) window.exitScribbleInteraction();
       viewer.setImage(await API.patternChart(window._chartReq()));
+      if (window.setChartViewActive) window.setChartViewActive();
       requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
       if (window.onPatternGenerated) window.onPatternGenerated(res);
     } catch (err) { window.fail('生成失败: ' + err.message); }

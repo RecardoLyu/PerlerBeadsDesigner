@@ -251,13 +251,26 @@
 
   /* ---- 显示切换联动（高亮模式） ---- */
   const vt = $('viewToggle');
-  async function showMode(mode) {
+  /* 图纸预览：有图纸则渲染标准图纸，无图纸则提示并回退到原图高亮 */
+  async function _showChart(btn) {
+    const s = await API.status();
+    if (!s.has_pattern) {
+      busy.set('尚未生成图纸，请先到「图纸生成」视图点「生成图纸」');
+      [...vt.children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'original'));
+      viewer.setImage(API.currentImageUrl() + '?t=' + Date.now());
+      return;
+    }
+    viewer.setImage(await API.patternChart(window._chartReq()));
+    requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
+  }
+  async function showMode(mode, btn) {
     try {
       busy.start('切换显示…');
       if (mode === 'original') viewer.setImage(API.currentImageUrl() + '?t=' + Date.now());
       else if (mode === 'mask') viewer.setImage(API.maskUrl() + '?t=' + Date.now());
       else if (mode === 'highlight') viewer.setImage(API.overlayUrl() + '?t=' + Date.now());
       else if (mode === 'applied') viewer.setImage(API.appliedUrl() + '?t=' + Date.now());
+      else if (mode === 'chart') { await _showChart(btn); busy.done('就绪'); return; }
       busy.done('就绪');
     } catch (err) { window.fail('无内容: ' + err.message); }
   }
@@ -266,8 +279,12 @@
   $('viewToggle').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     [...$('viewToggle').children].forEach(x => x.classList.remove('on')); b.classList.add('on');
-    showMode(b.dataset.mode);
+    showMode(b.dataset.mode, b);
   });
+  /* 供 app.js 在生成图纸 / 切到图纸视图后，把「图纸预览」设为当前选中 */
+  window.setChartViewActive = () => {
+    [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'chart'));
+  };
 
   /* ---- 单一动作按钮：按当前步骤分发 初始分割(框选形状) / 迭代分割(涂抹) ---- */
   $('segActionBtn').addEventListener('click', async () => {
