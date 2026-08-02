@@ -34,12 +34,12 @@ class CandyColors {
   static const Color violetDeepDark = Color(0xFFA78BFA);
   static const Color bgDark = Color(0xFF1A0F14);
   static const Color bg2Dark = Color(0xFF241019);
-  static const Color surfaceDark = Color(0x732E1620); // rgba(46,22,32,.45)
-  static const Color surfaceStrongDark = Color(0x993A1C28); // rgba(58,28,40,.6)
+  static const Color surfaceDark = Color(0xD1261218); // rgba(38,18,24,.82)：加浓，浅色图透上来时叠层文字/图标仍清晰
+  static const Color surfaceStrongDark = Color(0xE63A1C28); // rgba(58,28,40,.9)：更不透明，保证对比度
   static const Color foregroundDark = Color(0xFFF6E4EA);
   static const Color foregroundStrongDark = Color(0xFFFBD5DE);
   static const Color mutedDark = Color(0xFF2E1620);
-  static const Color mutedFgDark = Color(0xFFB98A99);
+  static const Color mutedFgDark = Color(0xFFD9B3C0); // 提亮，暗玻璃上更耐读
   static const Color borderDark = Color(0x38FB7185); // rgba(251,113,133,.22)
   static const Color destructiveDark = Color(0xFFF87171);
 }

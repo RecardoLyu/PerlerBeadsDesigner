@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -11,14 +12,65 @@ import '../algo/quantizer.dart';
 import '../algo/slic.dart';
 import '../ui/canvas/chart_painter.dart';
 
-/// 主题模式（亮/暗），跟随原型主题切换逻辑
+/// 主题模式（亮/暗/跟随系统）。
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.light);
-  void toggle() => state = state == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+  ThemeModeNotifier() : super(ThemeMode.system);
+  void set(ThemeMode m) => state = m;
+  /// 顶栏快捷切换：亮 ↔ 暗（跟随系统需到设置里选）。
+  void toggle() => state = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
 }
 
 final themeModeProvider =
     StateNotifierProvider<ThemeModeNotifier, ThemeMode>((_) => ThemeModeNotifier());
+
+/// 应用设置：算法默认参数。各面板初始值从这里取。
+class AppSettings {
+  final int defWidth; // 图纸宽（豆）
+  final bool keepRatio; // 保持图像比例
+  final int maxColors; // 颜色上限（0=不限）
+  final double salience; // 细节保留
+  final String metric; // 颜色度量
+  final bool dither; // 抖动
+  final double ditherStrength;
+  final bool icm; // 高阶优化
+  final double icmSmooth;
+  final double brushSize; // 迭代分割笔触粗细（直径 px）
+  final String segMethod; // 自动分割默认方法
+  const AppSettings({
+    this.defWidth = 104,
+    this.keepRatio = true,
+    this.maxColors = 0,
+    this.salience = 1.0,
+    this.metric = 'ciede2000',
+    this.dither = false,
+    this.ditherStrength = 1.0,
+    this.icm = false,
+    this.icmSmooth = 0.5,
+    this.brushSize = 12,
+    this.segMethod = 'watershed',
+  });
+
+  AppSettings copyWith({
+    int? defWidth, bool? keepRatio, int? maxColors, double? salience,
+    String? metric, bool? dither, double? ditherStrength, bool? icm,
+    double? icmSmooth, double? brushSize, String? segMethod,
+  }) =>
+      AppSettings(
+        defWidth: defWidth ?? this.defWidth,
+        keepRatio: keepRatio ?? this.keepRatio,
+        maxColors: maxColors ?? this.maxColors,
+        salience: salience ?? this.salience,
+        metric: metric ?? this.metric,
+        dither: dither ?? this.dither,
+        ditherStrength: ditherStrength ?? this.ditherStrength,
+        icm: icm ?? this.icm,
+        icmSmooth: icmSmooth ?? this.icmSmooth,
+        brushSize: brushSize ?? this.brushSize,
+        segMethod: segMethod ?? this.segMethod,
+      );
+}
+
+final settingsProvider = StateProvider<AppSettings>((_) => const AppSettings());
 
 /// 状态行文案
 final statusMessageProvider = StateProvider<String>((_) => '就绪');
@@ -138,6 +190,50 @@ Uint8List compositeMask(Uint8List rgb, Uint8List mask, int w, int h, CanvasViewM
         rgba[j] = r; rgba[j+1] = g; rgba[j+2] = b;
     }
     rgba[j + 3] = 255;
+  }
+  return rgba;
+}
+
+/// 异步分块版 compositeMask：按行块处理，每块结束 `await` 让出事件循环一次。
+/// 大图（原图分辨率，百万像素级）逐像素合成是最重的一帧，会占满主 isolate 阻塞
+/// 状态行颜文字动画。分块让出让动画帧得以插入，颜文字在计算中也能持续跳动。
+/// 仅 _rebuildComposite 用；其它小图场景仍用同步 compositeMask。
+Future<Uint8List> compositeMaskAsync(Uint8List rgb, Uint8List mask, int w, int h, CanvasViewMode mode) async {
+  final rgba = Uint8List(w * h * 4);
+  const rowsPerChunk = 64; // 每 64 行让出一次事件循环
+  for (var y0 = 0; y0 < h; y0 += rowsPerChunk) {
+    final yEnd = (y0 + rowsPerChunk) < h ? (y0 + rowsPerChunk) : h;
+    for (var y = y0; y < yEnd; y++) {
+      final rowBase = y * w;
+      for (var x = 0; x < w; x++) {
+        final i = rowBase + x, j = i * 4;
+        final r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+        final fg = mask[i] > 0;
+        switch (mode) {
+          case CanvasViewMode.mask:
+            if (fg) { rgba[j] = 255; rgba[j+1] = 255; rgba[j+2] = 255; }
+            else { rgba[j] = 30; rgba[j+1] = 30; rgba[j+2] = 30; }
+          case CanvasViewMode.highlight:
+            if (fg) { rgba[j] = r; rgba[j+1] = g; rgba[j+2] = b; }
+            else {
+              rgba[j] = (r * 0.3).round(); rgba[j+1] = (g * 0.3).round(); rgba[j+2] = (b * 0.3).round();
+            }
+          case CanvasViewMode.applied:
+            if (fg) { rgba[j] = r; rgba[j+1] = g; rgba[j+2] = b; }
+            else {
+              final gray = ((r * 299 + g * 587 + b * 114) ~/ 1000);
+              final v = (gray * 0.4 + 255 * 0.6).round();
+              rgba[j] = v; rgba[j+1] = v; rgba[j+2] = v;
+            }
+          case CanvasViewMode.original:
+          case CanvasViewMode.pattern:
+            rgba[j] = r; rgba[j+1] = g; rgba[j+2] = b;
+        }
+        rgba[j + 3] = 255;
+      }
+    }
+    // 让出事件循环，给动画/手势/重绘一次运行机会
+    await Future.delayed(Duration.zero);
   }
   return rgba;
 }
@@ -271,6 +367,10 @@ class SegmentState {
   final int redoCount;
   final ui.Image? composite; // 合成显示图（计算域小图，画布直接显示）
   final int compositeVersion; // 每次重建 +1，画布据此刷新
+  final Uint8List? fgDisplay; // 前景涂抹显示缓冲（计算域小图 0/255，供叠层画点）
+  final Uint8List? bgDisplay; // 背景涂抹显示缓冲
+  final int scribbleVersion; // 涂抹显示缓冲变化 +1，叠层据此重绘
+  final double brushRadius; // 当前笔触半径（原图像素），叠层据此调点大小
   const SegmentState({
     this.mask,
     this.width = 0,
@@ -281,6 +381,10 @@ class SegmentState {
     this.redoCount = 0,
     this.composite,
     this.compositeVersion = 0,
+    this.fgDisplay,
+    this.bgDisplay,
+    this.scribbleVersion = 0,
+    this.brushRadius = 6.0,
   });
 
   bool get hasMask => mask != null;
@@ -295,8 +399,13 @@ class SegmentState {
     int? redoCount,
     ui.Image? composite,
     int? compositeVersion,
+    Uint8List? fgDisplay,
+    Uint8List? bgDisplay,
+    int? scribbleVersion,
+    double? brushRadius,
     bool clearMask = false,
     bool clearComposite = false,
+    bool clearScribbleDisplay = false,
   }) =>
       SegmentState(
         mask: clearMask ? null : (mask ?? this.mask),
@@ -308,6 +417,10 @@ class SegmentState {
         redoCount: redoCount ?? this.redoCount,
         composite: clearComposite ? null : (composite ?? this.composite),
         compositeVersion: compositeVersion ?? this.compositeVersion,
+        fgDisplay: clearScribbleDisplay ? null : (fgDisplay ?? this.fgDisplay),
+        bgDisplay: clearScribbleDisplay ? null : (bgDisplay ?? this.bgDisplay),
+        scribbleVersion: scribbleVersion ?? this.scribbleVersion,
+        brushRadius: brushRadius ?? this.brushRadius,
       );
 }
 
@@ -323,66 +436,105 @@ class SegmentNotifier extends StateNotifier<SegmentState> {
   cv.Mat? _fgdModel;
   Uint8List? _gcMask; // 当前 GrabCut 二值结果（0/255）
 
+  // 合成重建令牌：快速连切视图时多个 _rebuildComposite 并发 await 解码，
+  // 后到者若落在先完成者之后会用过期模式覆盖 composite、并 dispose 掉画布正在显示的图
+  // → 「视图反复切换导致 mask 失效/闪回原图」。令牌单调递增，await 后若已过期则丢弃
+  // 自己解码的图（dispose 之），只让最后一次重建生效。
+  int _compositeToken = 0;
+
   /// 分割完成后重建合成显示图（当前 viewMode），存入 state.composite。
   /// 在状态层离线合成一次，画布直接显示这张 ui.Image，零逐像素计算。
   /// 合成在**原图分辨率**上进行（mask 从计算域小图放大回原图，用原图 rgbBytes），
   /// 保证显示锐利、不糊、尺寸不跳变 —— 只有 CV 计算用压缩小图。
   Future<void> _rebuildComposite({bool switchToMask = false}) async {
+    final token = ++_compositeToken;
     final m = state.mask;
     final img = _img;
     if (m == null || img == null || !_ensureWork() || _workRgb == null) {
       state = state.copyWith(clearComposite: true);
       return;
     }
-    final mode = _ref.read(viewModeProvider);
+    // switchToMask（分割完成）时目标视图是高亮：直接用高亮模式合成，
+    // 保证切过去显示的正是高亮图（否则会用切换前的旧模式合成，切过去内容不符）。
+    final mode = switchToMask ? CanvasViewMode.highlight : _ref.read(viewModeProvider);
     final dw = img.width, dh = img.height;
     // mask 是计算域小图（_workW×_workH），先放大回原图尺寸（nearest 保二值边缘）
     final bigMask = (dw == _workW && dh == _workH)
         ? m
         : BasicAdjust.resizeMask(m, _workW, _workH, dw, dh);
-    // 用原图合成 → 显示清晰
-    final rgba = compositeMask(img.rgbBytes, bigMask, dw, dh, mode);
+    // 用原图合成 → 显示清晰（分块异步让出事件循环，避免阻塞颜文字动画）
+    final rgba = await compositeMaskAsync(img.rgbBytes, bigMask, dw, dh, mode);
+    // await 期间又有更新的重建进来（连切视图）→ 丢弃这次，不动 state。
+    if (token != _compositeToken) {
+      return;
+    }
     final uiImg = await rgbaToUiImage(rgba, dw, dh);
+    // 再次检查令牌（rgbaToUiImage 也是 await）
+    if (token != _compositeToken) {
+      uiImg.dispose();
+      return;
+    }
     state.composite?.dispose();
     state = state.copyWith(
       composite: uiImg,
       compositeVersion: state.compositeVersion + 1,
     );
-    // 分割完成（非视图切换触发的重建）→ composite 就绪后才切到 mask 视图，
+    // 分割完成（非视图切换触发的重建）→ composite 就绪后才切到高亮视图，
     // 保证画布立刻有图可显示，不会切过去还是原图。
+    // 默认高亮（前景原色+背景压暗）：比纯 Mask 更直观地看到抠出的目标长什么样，
+    // 也便于直接在上面涂抹精修（涂抹本就默认在高亮画布上进行）。
     if (switchToMask) {
-      _ref.read(viewModeProvider.notifier).state = CanvasViewMode.mask;
+      _ref.read(viewModeProvider.notifier).state = CanvasViewMode.highlight;
     }
   }
 
-  /// 切换视图模式时重建合成（供画布调用；不触发再次切视图）。
-  Future<void> refreshComposite() => _rebuildComposite();
+  /// 切换视图模式时按当前模式重建合成（供画布调用；不触发再次切视图）。
+  /// 防御：只在「确有 mask」时重建；无 mask（或工作图未就绪）保持现有 composite，
+  /// 避免竞态/时序把 composite 清成 null → 之后 mask/高亮/应用结果全显示原图、看似 mask 失效。
+  Future<void> refreshComposite() {
+    if (state.mask == null) return Future.value();
+    return _rebuildComposite();
+  }
 
   // 涂抹缓冲（画布收集，refine 时读取；尺寸=工作图）
   Uint8List? _fgScribble;
   Uint8List? _bgScribble;
   double _brushRadius = 6.0;
-  void setBrushRadius(double r) => _brushRadius = r;
+  void setBrushRadius(double r) {
+    _brushRadius = r;
+    state = state.copyWith(brushRadius: r);
+  }
 
-  /// 清空涂抹（开始新一轮迭代前）。缓冲为工作图域尺寸。
+  /// 把 fg/bg 缓冲发布为显示缓冲（引用同一对象，只读），版本 +1 让叠层重绘。
+  void _publishScribbleDisplay() {
+    state = state.copyWith(
+      fgDisplay: _fgScribble,
+      bgDisplay: _bgScribble,
+      scribbleVersion: state.scribbleVersion + 1,
+    );
+  }
+
+  /// 清空涂抹（开始新一轮迭代前）。缓冲为工作图域尺寸，并清空画布叠层显示。
   void clearScribbles() {
     if (!_ensureWork()) return;
     _fgScribble = Uint8List(_workW * _workH);
     _bgScribble = Uint8List(_workW * _workH);
+    // 重置笔触连线起点：新一笔不应与上一笔的末尾连线
+    _lastFg = null; _lastBg = null;
+    state = state.copyWith(
+      clearScribbleDisplay: true,
+      scribbleVersion: state.scribbleVersion + 1,
+    );
   }
 
-  /// 涂抹一笔：原图像素坐标 (x,y)，内部映射到工作图域。fg=true 前景 / false 背景。
-  void scribbleAt(double x, double y, {required bool fg}) {
-    if (!_ensureWork()) return;
-    _fgScribble ??= Uint8List(_workW * _workH);
-    _bgScribble ??= Uint8List(_workW * _workH);
-    final buf = fg ? _fgScribble! : _bgScribble!;
-    final w = _workW, h = _workH;
-    final p = _toMask(x, y);
-    final mx = p.$1, my = p.$2;
-    // 笔触半径也按比例缩到工作图域
-    final img = _img!;
-    final r = _brushRadius * _maskW / img.width;
+  // 每种笔色上一笔的掩码域坐标（用于相邻触摸点间插值补涂）。
+  // 手指快速滑动时触摸回调稀疏，若只在每点画一个圆会留缝（虚线感）；
+  // 在两点间按步长补涂可让笔触连续。抬起/清涂抹时重置，避免跨笔误连。
+  (double, double)? _lastFg;
+  (double, double)? _lastBg;
+
+  /// 在工作图域 (mx,my) 处盖一个半径 r 的圆点进 buf。
+  void _stamp(Uint8List buf, double mx, double my, double r, int w, int h) {
     final x0 = (mx - r).floor().clamp(0, w - 1), x1 = (mx + r).ceil().clamp(0, w - 1);
     final y0 = (my - r).floor().clamp(0, h - 1), y1 = (my + r).ceil().clamp(0, h - 1);
     final r2 = r * r;
@@ -394,6 +546,46 @@ class SegmentNotifier extends StateNotifier<SegmentState> {
     }
   }
 
+  /// 涂抹一笔：原图像素坐标 (x,y)，内部映射到工作图域。fg=true 前景 / false 背景。
+  /// 相邻两触摸点间按半径一半步长插值补涂，保证快速滑动时笔触连续（不留缝）。
+  /// 每笔都同步进显示缓冲（叠层画点），多笔/前景背景全程保留，不再只看到上一步。
+  void scribbleAt(double x, double y, {required bool fg}) {
+    if (!_ensureWork()) return;
+    _fgScribble ??= Uint8List(_workW * _workH);
+    _bgScribble ??= Uint8List(_workW * _workH);
+    final buf = fg ? _fgScribble! : _bgScribble!;
+    final w = _workW, h = _workH;
+    final p = _toMask(x, y);
+    final mx = p.$1, my = p.$2;
+    // 笔触半径也按比例缩到工作图域
+    final img = _img!;
+    final r = _brushRadius * _maskW / img.width;
+
+    // 与上一笔连线插值：步长取半径一半（至少 0.5px），密集补涂消除缝隙
+    final last = fg ? _lastFg : _lastBg;
+    if (last != null) {
+      final dx = mx - last.$1, dy = my - last.$2;
+      final len = sqrt(dx * dx + dy * dy);
+      final step = (r * 0.5).clamp(0.5, 4.0);
+      if (len > step) {
+        final n = (len / step).ceil();
+        for (var i = 1; i <= n; i++) {
+          final t = i / n;
+          _stamp(buf, last.$1 + dx * t, last.$2 + dy * t, r, w, h);
+        }
+      }
+    }
+    _stamp(buf, mx, my, r, w, h);
+    if (fg) { _lastFg = (mx, my); } else { _lastBg = (mx, my); }
+
+    _publishScribbleDisplay();
+  }
+
+  /// 抬起结束一笔：重置笔触连线起点，下一笔不与本笔末尾连线（避免跨笔误连）。
+  void endStroke() {
+    _lastFg = null; _lastBg = null;
+  }
+
   /// 提交涂抹并迭代分割。对应 refine（需已有初始分割）。
   Future<void> commitRefine() async {
     final fg = _fgScribble, bg = _bgScribble;
@@ -401,8 +593,20 @@ class SegmentNotifier extends StateNotifier<SegmentState> {
     final hasBg = bg != null && bg.any((v) => v > 0);
     if (!hasFg && !hasBg) { _status('请先在画布上涂抹前景/背景'); return; }
     await grabCutRefine(hasFg ? fg : null, hasBg ? bg : null);
-    // refine 完成后清掉涂抹，准备下一轮
+    // refine 完成后清掉涂抹与画布痕迹，准备下一轮
     _fgScribble = null; _bgScribble = null;
+    state = state.copyWith(
+      clearScribbleDisplay: true,
+      scribbleVersion: state.scribbleVersion + 1,
+    );
+  }
+
+  /// 进入涂抹交互：清空上一轮痕迹，并默认切到高亮叠加画布上涂抹（若已有 mask）。
+  void beginScribble() {
+    clearScribbles();
+    if (state.hasMask) {
+      _ref.read(viewModeProvider.notifier).state = CanvasViewMode.highlight;
+    }
   }
 
   // 撤销/重做栈（各存 8 步 mask 快照）
@@ -459,9 +663,38 @@ class SegmentNotifier extends StateNotifier<SegmentState> {
       _workRgb = BasicAdjust.resizeRgb(img.rgbBytes, w, h, _workW, _workH);
     }
     _workSrcW = w; _workSrcH = h; _workTarget = target;
+    final oldW = _maskW, oldH = _maskH;
     _maskW = _workW; _maskH = _workH;
-    // 掩码域变了，旧掩码/涂抹/session 失效
+    // 掩码域变了（图纸宽/原图变化 → 下采样目标变）。旧域与新域都是同一原图按不同
+    // scale 下采样，宽高比一致，仅分辨率不同 —— 故旧 mask 可最近邻重采样到新域保留
+    // 前景结构（不清空），避免「改图纸大小 / 生成图纸后切回 Mask 就消失」。
+    // 撤销/重做栈与涂抹缓冲是逐帧旧域数据、跨域无意义，清空；GrabCut session 作废。
     _gcMask = null; _fgScribble = null; _bgScribble = null;
+    _undo.clear(); _redo.clear();
+    final oldMask = state.mask;
+    if (oldMask != null && oldW > 0 && oldH > 0 && oldMask.length == oldW * oldH) {
+      // 旧 mask 重采样到新域，保留分割结果
+      final resized = BasicAdjust.resizeMask(oldMask, oldW, oldH, _workW, _workH);
+      state.composite?.dispose();
+      state = SegmentState(
+        mask: resized,
+        width: _workW,
+        height: _workH,
+        brushRadius: state.brushRadius,
+        compositeVersion: state.compositeVersion + 1,
+      );
+      // 异步用新域 mask 重建合成显示图（沿用当前视图模式）
+      _rebuildComposite();
+    } else {
+      // 无旧 mask（或域异常）→ 清空状态
+      state.composite?.dispose();
+      state = SegmentState(
+        width: _workW,
+        height: _workH,
+        brushRadius: state.brushRadius,
+        compositeVersion: state.compositeVersion + 1,
+      );
+    }
     return true;
   }
 

@@ -10,23 +10,14 @@ import 'package:opencv_dart/opencv_dart.dart' as cv;
 class CvOps {
   CvOps._();
 
-  /// dartcv4 native 连通性探针：执行一个最小 OpenCV 操作。
-  /// 若 dartcv4 native 库在本机 ABI 上加载/调用失败，这里会抛错或 SIGSEGV。
-  /// 返回 true 表示 dartcv4 可用。用于 M2 前的环境自检。
-  static bool selfTest() {
-    final src = cv.Mat.fromList(4, 4, cv.MatType.CV_8UC3,
-        Uint8List.fromList(List.generate(4 * 4 * 3, (i) => (i * 7) % 256)));
-    final dst = cv.gaussianBlur(src, (3, 3), 0);
-    final ok = dst.rows == 4 && dst.cols == 4;
-    src.dispose();
-    dst.dispose();
-    return ok;
-  }
-
   static cv.Mat _toMat(Uint8List rgb, int h, int w) =>
       cv.Mat.fromList(h, w, cv.MatType.CV_8UC3, rgb);
 
-  static Uint8List _fromMat(cv.Mat m) => m.data;
+  // 注意：dartcv4 的 Mat.data 是 native 内存的【视图】而非拷贝，Mat dispose 后视图即悬空
+  // （读到已释放内存 → 全 0/脏数据）。必须拷出副本。这正是「同一形态学连着按两次必全黑」
+  // 的根因：第一次读到刚释放还没被覆写的内存（碰巧正常），第二次同尺寸调用复用该地址、
+  // 内存已被覆写 → 输出全黑。膨胀/闭运算同样中招，与核大小、前景面积无关。
+  static Uint8List _fromMat(cv.Mat m) => Uint8List.fromList(m.data);
 
   // ---- 高斯模糊（对应 applyBasic 的高斯核；ksize 奇数，1=不模糊）----
   static Uint8List gaussianBlur(Uint8List rgb, int h, int w, int ksize) {

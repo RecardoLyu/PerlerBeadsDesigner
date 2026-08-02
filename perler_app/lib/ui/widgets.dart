@@ -146,16 +146,48 @@ class SliderRow extends StatelessWidget {
 }
 
 /// 标签 + 下拉 一行
+/// 风格贴合糖果玻璃拟态：弹出菜单用 surfaceStrong 玻璃底 + 圆角 + 主题色描边，
+/// 下拉箭头/文字用主题色，避免 Material 默认灰白弹窗与整体风格脱节。
+/// 可选 [leading]：给每个选项在文字前画一个小示意（如分割形状/结构元素图形），
+/// 与文字左对齐、垂直居中（替代塞进文字里的 Unicode 字符，渲染更精细、对齐更稳）。
 class SelectRow<T> extends StatelessWidget {
   final String label;
   final T value;
   final List<(T, String)> items;
   final ValueChanged<T> onChanged;
-  const SelectRow({super.key, required this.label, required this.value, required this.items, required this.onChanged});
+  /// 可选：按选项值返回前置示意小图标（约 18px），null 表示不画。
+  final Widget? Function(T value)? leading;
+  const SelectRow({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.leading,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.candy;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    Widget itemChild(T v, String text) {
+      final lead = leading?.call(v);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (lead != null) ...[
+            SizedBox(width: 20, height: 20, child: Center(child: lead)),
+            const SizedBox(width: 9),
+          ],
+          Text(text,
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: c.foreground)),
+        ],
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -165,8 +197,16 @@ class SelectRow<T> extends StatelessWidget {
             child: DropdownButtonFormField<T>(
               value: value,
               isExpanded: true,
+              // 弹出菜单：玻璃底 + 大圆角，贴合整体拟态风
+              dropdownColor: c.surfaceStrong,
+              borderRadius: BorderRadius.circular(16),
+              elevation: 6,
+              icon: Icon(Icons.keyboard_arrow_down_rounded, color: primary, size: 22),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.foreground),
               decoration: const InputDecoration(),
-              items: items.map((e) => DropdownMenuItem(value: e.$1, child: Text(e.$2, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)))).toList(),
+              items: items
+                  .map((e) => DropdownMenuItem(value: e.$1, child: itemChild(e.$1, e.$2)))
+                  .toList(),
               onChanged: (v) => v != null ? onChanged(v) : null,
             ),
           ),
@@ -242,3 +282,92 @@ class PanelDivider extends StatelessWidget {
   Widget build(BuildContext context) =>
       Container(height: 1, color: context.candy.border, margin: const EdgeInsets.symmetric(vertical: 14));
 }
+
+/// 手绘形状示意小图标：替代塞进文字里的 Unicode 字符（▭⬭●■┼◆…），
+/// 用 CustomPainter 画出标准、统一线宽/圆角的图形，颜色跟主题色，渲染精细且对齐稳定。
+/// 供 SelectRow.leading 使用（初始分割形状 / 形态学结构元素）。
+enum ShapeGlyphKind {
+  rect,      // 矩形（分割形状 / 矩形结构元素）
+  ellipse,   // 椭圆
+  freehand,  // 自由曲线
+  cross,     // 十字
+  vline,     // 垂直线
+  hline,     // 水平线
+  diamond,   // 菱形
+}
+
+class ShapeGlyph extends StatelessWidget {
+  final ShapeGlyphKind kind;
+  final double size;
+  const ShapeGlyph(this.kind, {super.key, this.size = 18});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _ShapeGlyphPainter(kind, color),
+    );
+  }
+}
+
+class _ShapeGlyphPainter extends CustomPainter {
+  final ShapeGlyphKind kind;
+  final Color color;
+  const _ShapeGlyphPainter(this.kind, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..strokeWidth = 1.7
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final w = size.width, h = size.height;
+    final inset = w * 0.16;
+    final rect = Rect.fromLTRB(inset, h * 0.28, w - inset, h * 0.72);
+
+    switch (kind) {
+      case ShapeGlyphKind.rect:
+        canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, Radius.circular(w * 0.08)), stroke);
+      case ShapeGlyphKind.ellipse:
+        canvas.drawOval(rect, stroke);
+      case ShapeGlyphKind.freehand:
+        // 一条手绘感曲线（三段二次贝塞尔）
+        final p = Path()
+          ..moveTo(w * 0.14, h * 0.68)
+          ..quadraticBezierTo(w * 0.22, h * 0.28, w * 0.42, h * 0.44)
+          ..quadraticBezierTo(w * 0.58, h * 0.58, w * 0.66, h * 0.36)
+          ..quadraticBezierTo(w * 0.74, h * 0.18, w * 0.88, h * 0.30);
+        canvas.drawPath(p, stroke);
+        // 起笔小点
+        canvas.drawCircle(Offset(w * 0.14, h * 0.68), w * 0.05,
+            Paint()..color = color);
+      case ShapeGlyphKind.cross:
+        final cx = w / 2, cy = h / 2, arm = w * 0.26;
+        final p = Path()
+          ..moveTo(cx, cy - arm)..lineTo(cx, cy + arm)
+          ..moveTo(cx - arm, cy)..lineTo(cx + arm, cy);
+        canvas.drawPath(p, stroke);
+      case ShapeGlyphKind.vline:
+        canvas.drawLine(Offset(w / 2, inset), Offset(w / 2, h - inset), stroke);
+      case ShapeGlyphKind.hline:
+        canvas.drawLine(Offset(inset, h / 2), Offset(w - inset, h / 2), stroke);
+      case ShapeGlyphKind.diamond:
+        final cx = w / 2, cy = h / 2, r = w * 0.30;
+        final p = Path()
+          ..moveTo(cx, cy - r)
+          ..lineTo(cx + r, cy)
+          ..lineTo(cx, cy + r)
+          ..lineTo(cx - r, cy)
+          ..close();
+        canvas.drawPath(p, stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShapeGlyphPainter old) => old.kind != kind || old.color != color;
+}
+

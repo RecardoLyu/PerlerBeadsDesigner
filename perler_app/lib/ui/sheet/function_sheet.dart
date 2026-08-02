@@ -33,17 +33,20 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
   void _onTabTap(SheetTab t) {
     final same = _tab == t;
     setState(() => _tab = t);
-    // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开
+    // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开。
+    // 注意：用 easeOutCubic 而非 easeOutBack —— easeOutBack 过冲会让 _ctrl.size
+    // 瞬时越出 [min,max] 区间，DraggableScrollableSheet 尺寸异常 → 巨大/负高度
+    // → RenderFlex 「BOTTOM OVERFLOWED BY 99696 PIXELS」断言（红黄闪烁的根源）。
     if (same) {
       final cur = _ctrl.size;
       final target = (cur - _half).abs() < 0.02 ? _collapsed : _half;
       _ctrl.animateTo(target,
           duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutBack);
+          curve: Curves.easeOutCubic);
     } else {
       _ctrl.animateTo(_half,
           duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutBack);
+          curve: Curves.easeOutCubic);
     }
   }
 
@@ -89,13 +92,16 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
       snap: true,
       snapSizes: const [_collapsed, _half, _full],
       builder: (context, scroll) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: kGlassBlur, sigmaY: kGlassBlur),
             child: Container(
               decoration: BoxDecoration(
-                color: c.surface,
+                // 暗色下用更实的底色：浅色图像透过玻璃模糊后仍可能偏亮，
+                // 加浓不透明度保证叠在上面的文字/图标可读。
+                color: dark ? c.surfaceStrong : c.surface,
                 border: Border(top: BorderSide(color: c.border)),
               ),
               child: Column(
@@ -187,15 +193,22 @@ class _TabBar extends StatelessWidget {
               onTap: () => onTap(it.$1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutBack,
+                curve: Curves.easeOutCubic,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   gradient: on ? candyPrimaryGradient(Theme.of(context).brightness) : null,
                   borderRadius: BorderRadius.circular(15),
-                  boxShadow: on
-                      ? [BoxShadow(color: c.violetDeep.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 4))]
-                      : null,
+                  // 阴影始终给非空列表：AnimatedContainer 在 null↔list 间隐式插值时，
+                  // 中间帧会产生非法 blurRadius（NaN/负）触发 dart:ui 断言 → 红黄错误闪烁。
+                  // 未选中态用「零模糊全透明」阴影占位，插值全程合法。
+                  boxShadow: [
+                    BoxShadow(
+                      color: on ? c.violetDeep.withOpacity(0.35) : Colors.transparent,
+                      blurRadius: on ? 14 : 0,
+                      offset: on ? const Offset(0, 4) : Offset.zero,
+                    )
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

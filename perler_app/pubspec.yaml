@@ -1,7 +1,7 @@
 name: perler_app
 description: 拼豆图纸生成器 · 安卓移动版（Flutter + opencv_dart）
 publish_to: "none"
-version: 0.1.0+1
+version: 2.1.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

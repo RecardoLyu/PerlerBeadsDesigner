@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/candy_theme.dart';
@@ -312,11 +313,13 @@ class _CanvasContent extends ConsumerStatefulWidget {
 class _CanvasContentState extends ConsumerState<_CanvasContent> {
   // 当前手势收集的图像像素坐标点
   final List<(double, double)> _pts = [];
-  // 当前涂抹轨迹（用于实时显示），含类型
-  final List<Offset> _scribbleDisplay = [];
   // 框选轨迹（显示坐标，用于实时画框选范围）
   final List<Offset> _selectDisplay = [];
-  bool _scribbleFg = true;
+  // 双指缩放/平移的起始快照（focal 固定缩放）
+  Matrix4 _startMatrix = Matrix4.identity();
+  Offset _startFocal = Offset.zero;
+  // 双指手势进行中：单指涂抹/框选已开始后又加了第二指时，取消单指手势避免误涂/误框
+  bool _multiTouch = false;
 
   /// 图像在 child 坐标系里的实际显示矩形（BoxFit.contain）。
   Rect _imageRect(Size box) {
@@ -344,43 +347,74 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
   Offset _clampToRect(Offset p, Rect r) =>
       Offset(p.dx.clamp(r.left, r.right), p.dy.clamp(r.top, r.bottom));
 
-  void _onStart(DragStartDetails d, Size box, CanvasInteraction mode) {
+  /// 涂抹一笔（单指）。
+  void _scribblePoint(Offset local, Size box, CanvasInteraction mode) {
     final imgRect = _imageRect(box);
-    final p = _toImageClamped(d.localPosition, imgRect);
-    setState(() {
+    final p = _toImageClamped(local, imgRect);
+    ref.read(segmentProvider.notifier)
+        .scribbleAt(p.$1, p.$2, fg: mode == CanvasInteraction.scribbleFg);
+  }
+
+  // ---- 瞬时手势：单指=涂抹/框选，双指=平移+捏合缩放 ----
+  // scale 手势单指时 scale==1.0 且 focalPoint 跟随手指 → 当作拖拽；
+  // 双指时 scale 变化 → 手动做 focal 固定缩放/平移（InteractiveViewer 此时禁用自带手势）。
+
+  void _onScaleStart(ScaleStartDetails d, Size box, CanvasInteraction mode) {
+    _multiTouch = d.pointerCount >= 2;
+    if (_multiTouch) {
+      // 双指：取消可能已开始/即将开始的单指手势，进入缩放平移
+      _pts.clear();
+      _selectDisplay.clear();
+      _startMatrix = widget.tx.value.clone();
+      _startFocal = d.focalPoint;
+    } else {
+      // 单指：涂抹/框选起点
+      final imgRect = _imageRect(box);
+      final p = _toImageClamped(d.localFocalPoint, imgRect);
       _pts.clear();
       _pts.add(p);
-      _scribbleDisplay.clear();
-      _scribbleDisplay.add(_clampToRect(d.localPosition, imgRect));
       _selectDisplay.clear();
-      _selectDisplay.add(_clampToRect(d.localPosition, imgRect));
-      _scribbleFg = mode == CanvasInteraction.scribbleFg;
-    });
-    if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
-      ref.read(segmentProvider.notifier)
-          .scribbleAt(p.$1, p.$2, fg: mode == CanvasInteraction.scribbleFg);
+      _selectDisplay.add(_clampToRect(d.localFocalPoint, imgRect));
+      if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
+        _scribblePoint(d.localFocalPoint, box, mode);
+      }
     }
   }
 
-  void _onUpdate(DragUpdateDetails d, Size box, CanvasInteraction mode) {
+  void _onScaleUpdate(ScaleUpdateDetails d, Size box, CanvasInteraction mode) {
+    if (d.pointerCount >= 2) _multiTouch = true;
+    if (_multiTouch) {
+      // 双指平移 + 捏合缩放：以起始 focal 为锚点
+      final scale = d.scale.clamp(0.2, 12.0);
+      final m = _startMatrix.clone();
+      final inv = Matrix4.inverted(_startMatrix);
+      final anchor = MatrixUtils.transformPoint(inv, _startFocal);
+      m.translate(anchor.dx, anchor.dy);
+      m.scale(scale);
+      m.translate(-anchor.dx, -anchor.dy);
+      m.translate(d.focalPoint.dx - _startFocal.dx, d.focalPoint.dy - _startFocal.dy);
+      widget.tx.value = m;
+      return;
+    }
+    // 单指拖拽：涂抹/框选轨迹
     final imgRect = _imageRect(box);
-    final p = _toImageClamped(d.localPosition, imgRect);
-    setState(() {
-      if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
-        _scribbleDisplay.add(_clampToRect(d.localPosition, imgRect));
-        ref.read(segmentProvider.notifier)
-            .scribbleAt(p.$1, p.$2, fg: mode == CanvasInteraction.scribbleFg);
-      } else {
-        _pts.add(p);
-        _selectDisplay.add(_clampToRect(d.localPosition, imgRect));
-      }
-    });
+    final p = _toImageClamped(d.localFocalPoint, imgRect);
+    if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
+      _scribblePoint(d.localFocalPoint, box, mode);
+    } else {
+      _pts.add(p);
+      setState(() {
+        _selectDisplay.add(_clampToRect(d.localFocalPoint, imgRect));
+      });
+    }
   }
 
-  void _onEnd(DragEndDetails d, CanvasInteraction mode) {
-    if (mode == CanvasInteraction.selectRect ||
-        mode == CanvasInteraction.selectEllipse ||
-        mode == CanvasInteraction.selectFree) {
+  void _onScaleEnd(ScaleEndDetails d, CanvasInteraction mode) {
+    if (!_multiTouch &&
+        (mode == CanvasInteraction.selectRect ||
+            mode == CanvasInteraction.selectEllipse ||
+            mode == CanvasInteraction.selectFree) &&
+        _pts.isNotEmpty) {
       final shape = switch (mode) {
         CanvasInteraction.selectRect => SelectShape.rect,
         CanvasInteraction.selectEllipse => SelectShape.ellipse,
@@ -395,6 +429,11 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
       ref.read(interactionRequestProvider.notifier).state = CanvasInteraction.pan;
       ref.read(interactionProvider.notifier).state = CanvasInteraction.pan;
     }
+    // 涂抹结束一笔：重置笔触连线起点，下一笔另起（不与本笔末尾连线）
+    if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
+      ref.read(segmentProvider.notifier).endStroke();
+    }
+    _multiTouch = false;
     setState(() {
       _pts.clear();
       _selectDisplay.clear();
@@ -418,6 +457,12 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
     final mode = ref.watch(interactionProvider);
     final viewMode = ref.watch(viewModeProvider);
     final selecting = mode != CanvasInteraction.pan;
+    final scribbling = mode == CanvasInteraction.scribbleFg ||
+        mode == CanvasInteraction.scribbleBg;
+    // 涂抹叠层读状态层的持久化显示缓冲（多笔/前景背景全程保留，不只当前一笔）。
+    // watch 顶层 segment + version，scribbleAt 更新缓冲后 version+1 触发重绘。
+    final seg = ref.watch(segmentProvider);
+    ref.watch(segmentProvider.select((s) => s.scribbleVersion));
 
     final imageChild = Center(
       child: _ImageWithMask(working: widget.working, mode: viewMode),
@@ -425,6 +470,7 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
 
     return LayoutBuilder(builder: (context, constraints) {
       final box = Size(constraints.maxWidth, constraints.maxHeight);
+      final imgRect = _imageRect(box);
       return InteractiveViewer(
         transformationController: widget.tx,
         minScale: 0.2,
@@ -435,9 +481,10 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
         scaleEnabled: !selecting,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPanStart: selecting ? (d) => _onStart(d, box, mode) : null,
-          onPanUpdate: selecting ? (d) => _onUpdate(d, box, mode) : null,
-          onPanEnd: selecting ? (d) => _onEnd(d, mode) : null,
+          // 瞬时手势：单指=涂抹/框选，双指=平移+捏合缩放
+          onScaleStart: selecting ? (d) => _onScaleStart(d, box, mode) : null,
+          onScaleUpdate: selecting ? (d) => _onScaleUpdate(d, box, mode) : null,
+          onScaleEnd: selecting ? (d) => _onScaleEnd(d, mode) : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -447,12 +494,20 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: _GesturePainter(
-                        select: _selectDisplay,
-                        scribble: _scribbleDisplay,
-                        scribbleFg: _scribbleFg,
-                        mode: mode,
-                      ),
+                      painter: scribbling
+                          ? _ScribblePainter(
+                              fg: seg.fgDisplay,
+                              bg: seg.bgDisplay,
+                              mw: seg.width,
+                              mh: seg.height,
+                              imgRect: imgRect,
+                              workingW: widget.working.width,
+                              brushRadiusImg: seg.brushRadius,
+                            )
+                          : _GesturePainter(
+                              select: _selectDisplay,
+                              mode: mode,
+                            ),
                     ),
                   ),
                 ),
@@ -464,37 +519,17 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
   }
 }
 
-/// 手势轨迹可视化：框选画轮廓（矩形/椭圆/自由曲线），涂抹画轨迹。
+/// 手势轨迹可视化：框选画轮廓（矩形/椭圆/自由曲线）。
 class _GesturePainter extends CustomPainter {
   final List<Offset> select; // 框选轨迹（显示坐标）
-  final List<Offset> scribble; // 涂抹轨迹（显示坐标）
-  final bool scribbleFg;
   final CanvasInteraction mode;
   _GesturePainter({
     required this.select,
-    required this.scribble,
-    required this.scribbleFg,
     required this.mode,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 涂抹：画轨迹线
-    if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
-      if (scribble.length < 2) return;
-      final p = Paint()
-        ..color = (scribbleFg ? const Color(0xFFEF4444) : const Color(0xFF22C55E))
-            .withOpacity(0.85)
-        ..strokeWidth = 6
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
-      final path = Path()..moveTo(scribble[0].dx, scribble[0].dy);
-      for (var i = 1; i < scribble.length; i++) {
-        path.lineTo(scribble[i].dx, scribble[i].dy);
-      }
-      canvas.drawPath(path, p);
-      return;
-    }
     // 框选：画轮廓
     if (select.length < 2) return;
     final stroke = Paint()
@@ -528,6 +563,51 @@ class _GesturePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_GesturePainter old) =>
-      old.scribble.length != scribble.length || old.select.length != select.length;
+  bool shouldRepaint(_GesturePainter old) => old.select.length != select.length;
+}
+
+/// 涂抹可视化：把状态层的 fg/bg 涂抹缓冲（计算域小图）按笔触尺寸画成半透明圆点。
+/// 前景=红、背景=绿，多笔/两种颜色全程保留；迭代分割提交后缓冲清空，叠层随之清空。
+class _ScribblePainter extends CustomPainter {
+  final Uint8List? fg, bg; // 计算域小图（mw*mh）0/255
+  final int mw, mh; // 缓冲尺寸（= mask 域 / 工作图域）
+  final Rect imgRect; // 图像在叠层坐标系的显示矩形（BoxFit.contain）
+  final int workingW; // 原图宽（px），用于把笔触半径换算成显示像素
+  final double brushRadiusImg; // 笔触半径（原图像素）
+  const _ScribblePainter({
+    required this.fg,
+    required this.bg,
+    required this.mw,
+    required this.mh,
+    required this.imgRect,
+    required this.workingW,
+    required this.brushRadiusImg,
+  });
+
+  void _paintBuf(Canvas canvas, Uint8List? buf, Color color, double cellW, double cellH) {
+    if (buf == null || mw <= 0 || mh <= 0) return;
+    final p = Paint()..color = color;
+    // 点的直径≈笔触直径（显示像素），保证「笔触粗细」可视化所见即所得
+    final r = (brushRadiusImg * imgRect.width / workingW).clamp(cellW * 0.5, 40.0);
+    for (var y = 0; y < mh; y++) {
+      for (var x = 0; x < mw; x++) {
+        if (buf[y * mw + x] == 0) continue;
+        final cx = imgRect.left + (x + 0.5) * cellW;
+        final cy = imgRect.top + (y + 0.5) * cellH;
+        canvas.drawCircle(Offset(cx, cy), r, p);
+      }
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cellW = imgRect.width / mw;
+    final cellH = imgRect.height / mh;
+    _paintBuf(canvas, bg, const Color(0xFF22C55E).withOpacity(0.5), cellW, cellH);
+    _paintBuf(canvas, fg, const Color(0xFFEF4444).withOpacity(0.5), cellW, cellH);
+  }
+
+  @override
+  bool shouldRepaint(_ScribblePainter old) =>
+      !identical(old.fg, fg) || !identical(old.bg, bg) || old.imgRect != imgRect;
 }

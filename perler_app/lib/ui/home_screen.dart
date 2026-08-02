@@ -5,6 +5,7 @@ import '../../theme/candy_theme.dart';
 import '../../state/app_state.dart';
 import 'canvas/canvas_area.dart';
 import 'sheet/function_sheet.dart';
+import 'settings/settings_screen.dart';
 
 /// 主界面：顶部精简栏 + 画布（上）+ Bottom Sheet 功能栏（下）
 class HomeScreen extends ConsumerWidget {
@@ -13,7 +14,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.candy;
-    final themeMode = ref.watch(themeModeProvider);
+    ref.watch(themeModeProvider); // 主题切换时重建顶栏图标
 
     return Scaffold(
       body: Container(
@@ -34,7 +35,7 @@ class HomeScreen extends ConsumerWidget {
               Column(
                 children: [
                   _TopBar(
-                    isDark: themeMode == ThemeMode.dark,
+                    isDark: Theme.of(context).brightness == Brightness.dark,
                     onToggleTheme: () => ref.read(themeModeProvider.notifier).toggle(),
                   ),
                   const _StatusLine(),
@@ -96,16 +97,16 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 9),
           Text('拼豆图纸生成器',
               style: TextStyle(fontFamily: 'Fredoka', fontSize: 17, fontWeight: FontWeight.w600, color: c.foregroundStrong)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(color: c.muted, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(999)),
-            child: Text('v2 移动版', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.mutedFg)),
-          ),
           const Spacer(),
           _IconBtn(icon: isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, onTap: onToggleTheme, tooltip: '切换主题'),
           const SizedBox(width: 9),
-          _IconBtn(icon: Icons.help_outline_rounded, onTap: () {}, tooltip: '帮助'),
+          _IconBtn(
+            icon: Icons.settings_rounded,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+            tooltip: '设置',
+          ),
         ],
       ),
     );
@@ -141,13 +142,23 @@ class _StatusLine extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.candy;
     final msg = ref.watch(statusMessageProvider);
+    final busy = ref.watch(busyProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
       child: Row(
         children: [
-          Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A))),
+          // 状态点：忙碌=红、空闲=绿（计算占满主 isolate 时颜文字会卡，
+          // 这个色点是立即可见的忙碌反馈）
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: 7, height: 7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: busy ? const Color(0xFFEF4444) : const Color(0xFF16A34A),
+            ),
+          ),
           const SizedBox(width: 8),
-          // 忙碌指示（颜文字 + 跳动省略号）放绿点右侧、状态文案左边的空处
+          // 颜文字常显（忙碌时轮换跳动，空闲时静态显示），文案在右
           const _BusyIndicator(),
           Expanded(child: Text(msg, style: TextStyle(fontSize: 11.5, color: c.mutedFg), overflow: TextOverflow.ellipsis)),
         ],
@@ -156,8 +167,8 @@ class _StatusLine extends ConsumerWidget {
   }
 }
 
-/// 忙碌指示：桌面版同款颜文字（1s 轮换 + 上下浮动）+ 跳动省略号。
-/// 仅在 busyProvider == true 时可见，让长任务期间界面不「卡死」而是有反馈。
+/// 状态行颜文字：桌面版同款（忙碌时 600ms 轮换 + 上下浮动 + 跳动省略号）。
+/// 常显：忙碌时轮换跳动并带省略号，空闲时静态显示一只，让状态行始终有这个标志性表情。
 class _BusyIndicator extends ConsumerStatefulWidget {
   const _BusyIndicator();
   @override
@@ -166,22 +177,21 @@ class _BusyIndicator extends ConsumerStatefulWidget {
 
 class _BusyIndicatorState extends ConsumerState<_BusyIndicator>
     with SingleTickerProviderStateMixin {
-  // 桌面版 busy 颜文字集合（src/webapp/static/js/shell.js KAOMOJI.busy）
-  static const _kaomoji = [
+  // 桌面版颜文字集合（src/webapp/static/js/shell.js KAOMOJI.busy / idle）
+  static const _kaomojiBusy = [
     '(◕‿◕)', '(｡♥‿♥｡)', '(≧◡≦)', '(ﾉ◕ヮ◕)ﾉ', '(◠‿◠)',
     '(✿◠‿◠)', '(¬‿¬)', '(☆▽☆)', '(ღ˘⌣˘ღ)', '(∩^o^)⊃',
   ];
+  static const _kaomojiIdle = '(´・ω・`)';
   late final AnimationController _ctl;
   int _tick = 0;
 
   @override
   void initState() {
     super.initState();
-    // 600ms 一拍；每拍换一个颜文字 + 递进省略号 + 上下浮动。
-    // 用 _tick 计数（而非相位换算），保证每帧颜文字必然不同、肉眼明显跳动。
     _ctl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
       ..addListener(() {
-        setState(() => _tick++);
+        if (mounted) setState(() => _tick++);
       })
       ..repeat();
   }
@@ -195,22 +205,25 @@ class _BusyIndicatorState extends ConsumerState<_BusyIndicator>
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(busyProvider);
-    if (!busy) return const SizedBox.shrink();
     final accent = Theme.of(context).colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.only(right: 7),
       child: AnimatedBuilder(
         animation: _ctl,
         builder: (_, __) {
-          final kaoIdx = _tick % _kaomoji.length;         // 每拍必然换脸
-          final dots = 1 + (_tick % 3);                    // 1→2→3 个点循环
-          final bob = (_tick % 2 == 0) ? -3.0 : 0.0;       // 上下跳
+          if (!busy) {
+            // 空闲：静态颜文字，不跳动、无省略号
+            return Text(_kaomojiIdle, style: TextStyle(fontSize: 13, color: accent, height: 1));
+          }
+          final kaoIdx = _tick % _kaomojiBusy.length;         // 每拍必然换脸
+          final dots = 1 + (_tick % 3);                        // 1→2→3 个点循环
+          final bob = (_tick % 2 == 0) ? -3.0 : 0.0;           // 上下跳
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Transform.translate(
                 offset: Offset(0, bob),
-                child: Text(_kaomoji[kaoIdx],
+                child: Text(_kaomojiBusy[kaoIdx],
                     style: TextStyle(fontSize: 13, color: accent, height: 1)),
               ),
               const SizedBox(width: 4),
