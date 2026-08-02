@@ -9,6 +9,13 @@
       "port": 8899
     },
     {
+      "name": "android-proto",
+      "url": "http://localhost:8922",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8922", "--directory", "design/mobile"],
+      "port": 8922
+    },
+    {
       "name": "v2-backend",
       "url": "http://127.0.0.1:8900",
       "runtimeExecutable": "python",

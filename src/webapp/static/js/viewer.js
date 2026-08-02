@@ -64,20 +64,62 @@ class Viewer {
     this.viewport.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  setImage(url) {
+  async setImage(url) {
     if (!url) { this.img.removeAttribute('src'); this.img.classList.remove('has-img'); this._hideMini(); return; }
-    // 给同源 URL 追加时间戳，强制刷新缓存（objectURL 不含 '?' 原样返回）。
-    // 主图与鹰眼缩略图用同一 bust 值，保证两者显示同一张图。
-    const busted = this._bust(url);
-    this.img.onload = () => {
-      this.img.classList.add('has-img'); this.fit();
-      if (this.miniImg) {
-        // 缩略图加载完成后再算视口框（此时 miniImg 才有尺寸，_updateMini 不提前返回）
-        this.miniImg.onload = () => this._updateMini();
-        this.miniImg.src = busted;
-      }
-    };
+    // pywebview 的 WebView2 对 blob: objectURL 赋给 <img> 的渲染不稳定（已知缺陷，
+    // 主图能渲染而第二张并发 blob 的迷你图常解码/合成失败）→ 把 blob 统一转成
+    // dataURL（WebView2 渲染稳定），主图和迷你图共用同一张，避免两个独立 blob 并发差异。
+    let src = url;
+    if (typeof url === 'string' && url.startsWith('blob:')) {
+      try {
+        const blob = await (await fetch(url)).blob();
+        src = await new Promise((res, rej) => {
+          const fr = new FileReader();
+          fr.onload = () => res(fr.result);
+          fr.onerror = rej;
+          fr.readAsDataURL(blob);
+        });
+      } catch { /* 转换失败则退回原 blob，维持旧行为 */ }
+    }
+    // 给同源 URL 追加时间戳，强制刷新缓存（data:/blob: 不含 '?' 原样返回）。
+    const busted = this._bust(src);
+    // 主图
+    this.img.onload = () => { this.img.classList.add('has-img'); this.fit(); };
     this.img.src = busted;
+    // 缓存命中时已 complete，onload 不再触发 → 立即补一次
+    if (this.img.complete && this.img.naturalWidth) { this.img.classList.add('has-img'); this.fit(); }
+
+    // 鹰眼缩略图：关键在 WebView2 的稳定性。直接对迷你 <img> 赋值常出现
+    // 「解码/合成不触发 → 灰块」。这里先用一个**独立 Image 元素**预加载并
+    // 调 decode() 强制解码，解码成功后才把同一 dataURL 赋给迷你图，并顺手
+    // 复用解码结果画 VP 框。decode() 在 Chromium/WebView2 都支持，能绕开
+    // 「img.src 已设置但不触发合成」的坑。
+    if (this.miniImg) {
+      this._setMini(busted);
+    }
+  }
+
+  async _setMini(src) {
+    // 先预解码（独立元素，不进 DOM）。失败也不阻塞主图。
+    let pre = null;
+    try {
+      pre = new Image();
+      pre.src = src;
+      if (pre.decode) await pre.decode();
+      else if (!(pre.complete && pre.naturalWidth)) {
+        await new Promise((res, rej) => { pre.onload = res; pre.onerror = rej; });
+      }
+    } catch { pre = null; }
+
+    const apply = () => {
+      if (this.miniImg.src !== src) this.miniImg.src = src;
+      this._updateMini();
+    };
+    this.miniImg.onload = apply;
+    this.miniImg.onerror = () => this._hideMini();
+    this.miniImg.src = src;
+    // 预解码已成功或缓存命中 → 立即补一次，不等 onload
+    if (pre || (this.miniImg.complete && this.miniImg.naturalWidth)) apply();
   }
 
   _bust(url) {

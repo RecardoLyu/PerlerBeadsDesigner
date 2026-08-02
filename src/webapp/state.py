@@ -43,6 +43,7 @@ class AppState:
         self.mask_undo: list = []                     # mask 历史（撤销），cap 3
         self.mask_redo: list = []                     # mask 历史（重做），cap 3
         self.output_dir: str = os.path.abspath("output")
+        self.grid_width: int = 104  # 图纸宽（豆），分割下采样目标据此算；生成图纸时同步
 
     # ---- image ----
     def has_image(self) -> bool:
@@ -90,9 +91,13 @@ class AppState:
             return True
 
     def new_grabcut_session(self) -> IterativeGrabCutState:
-        """Start a fresh iterative GrabCut session on the current image."""
+        """Start a fresh iterative GrabCut session on the current image.
+
+        GrabCut 在压缩工作图（4×图纸宽）上跑以提速，返回 mask 仍为原图尺寸。
+        """
         with self.lock:
-            self.segmentation = IterativeGrabCutState(self.require_image())
+            self.segmentation = IterativeGrabCutState(
+                self.require_image(), grid_w=self.grid_width)
             return self.segmentation
 
     def get_grabcut_session(self) -> IterativeGrabCutState:

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<title>拼豆图纸设计器 · 安卓移动端原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   设计 token · 玻璃拟态糖果系 · 亮/暗双主题（与桌面版一致）
+   ============================================================ */
+:root{
+  --color-primary:#E11D48; --color-on-primary:#FFFFFF;
+  --color-secondary:#FB7185; --color-accent:#2563EB; --color-on-accent:#FFFFFF;
+  --color-violet:#A78BFA; --color-violet-deep:#7C3AED;
+  --color-bg:#FFF1F2; --color-bg-2:#FFE4E6;
+  --color-surface:rgba(255,255,255,.55); --color-surface-strong:rgba(255,255,255,.75);
+  --color-foreground:#4A1428; --color-foreground-strong:#881337;
+  --color-muted:#F0ECF2; --color-muted-fg:#9A6B7C;
+  --color-border:rgba(225,29,72,.18);
+  --color-destructive:#DC2626; --color-ring:#E11D48;
+  --glass-blur:18px;
+  --space-1:8px; --space-2:16px; --space-3:24px;
+  --ease:cubic-bezier(.34,1.56,.64,1);
+  --font-head:'Fredoka',"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-body:'Nunito',"PingFang SC","Microsoft YaHei",sans-serif;
+}
+[data-theme="dark"]{
+  --color-primary:#FB7185; --color-on-primary:#2A0A12;
+  --color-secondary:#FDA4AF; --color-accent:#60A5FA; --color-on-accent:#0B1220;
+  --color-violet:#C4B5FD; --color-violet-deep:#A78BFA;
+  --color-bg:#1A0F14; --color-bg-2:#241019;
+  --color-surface:rgba(46,22,32,.45); --color-surface-strong:rgba(58,28,40,.6);
+  --color-foreground:#F6E4EA; --color-foreground-strong:#FBD5DE;
+  --color-muted:#2E1620; --color-muted-fg:#B98A99;
+  --color-border:rgba(251,113,133,.22);
+  --color-destructive:#F87171; --color-ring:#FB7185;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  background:linear-gradient(135deg,var(--color-bg),var(--color-bg-2));
+  color:var(--color-foreground);
+  overflow:hidden;
+  transition:background-color .3s,color .3s,border-color .3s;
+}
+
+/* 漂浮 blob */
+.blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0;}
+[data-theme="dark"] .blob{opacity:.3}
+.blob-1{width:420px;height:420px;background:#FB7185;top:-120px;left:-120px;animation:drift1 14s ease-in-out infinite}
+.blob-2{width:380px;height:380px;background:#A78BFA;bottom:-140px;right:-100px;animation:drift2 18s ease-in-out infinite}
+@keyframes drift1{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,-16px)}}
+@keyframes drift2{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,14px)}}
+
+/* 玻璃 */
+.glass{
+  background:var(--color-surface);
+  backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(160%);
+  border:1px solid var(--color-border);
+  box-shadow:0 8px 32px rgba(136,19,55,.12), inset 0 1px 0 rgba(255,255,255,.35);
+}
+[data-theme="dark"] .glass{box-shadow:0 8px 32px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)}
+
+/* ============================================================
+   舞台：桌面打开时居中一个手机壳；真机（窄屏）则占满
+   ============================================================ */
+.stage{position:fixed;inset:0;display:grid;place-items:center;z-index:1;padding:18px}
+.phone{
+  position:relative;width:100%;max-width:412px;height:100%;max-height:880px;
+  display:flex;flex-direction:column;overflow:hidden;
+  border-radius:38px;border:1px solid var(--color-border);
+  box-shadow:0 30px 90px rgba(90,10,40,.35), 0 0 0 10px rgba(20,8,16,.85);
+  background:linear-gradient(135deg,var(--color-bg),var(--color-bg-2));
+}
+@media (max-width:480px){
+  .stage{padding:0}
+  .phone{max-width:none;max-height:none;border-radius:0;box-shadow:none;border:none}
+}
+
+/* ===== 顶部精简栏 ===== */
+.topbar{flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px 10px}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-size:17px;font-weight:600;color:var(--color-foreground-strong)}
+.brand svg{width:26px;height:26px}
+.brand .ver{font-size:10px;font-weight:700;color:var(--color-muted-fg);background:var(--color-muted);border:1px solid var(--color-border);padding:2px 7px;border-radius:999px;font-family:var(--font-body)}
+.top-right{margin-left:auto;display:flex;gap:9px}
+.icon-btn{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;border:1px solid var(--color-border);background:var(--color-surface);cursor:pointer;color:var(--color-foreground);transition:all .22s var(--ease)}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn svg{width:18px;height:18px}
+
+/* ===== 画布区（上 2/3）===== */
+.canvas-wrap{flex:1;position:relative;padding:0 14px;min-height:0}
+.canvas{position:relative;width:100%;height:100%;border-radius:24px;overflow:hidden;border:1px solid var(--color-border);
+  background:
+   radial-gradient(circle at 25% 30%, rgba(251,113,133,.35), transparent 45%),
+   radial-gradient(circle at 75% 70%, rgba(167,139,250,.35), transparent 45%),
+   linear-gradient(135deg,var(--color-bg-2),var(--color-bg));}
+/* 空态 */
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--color-muted-fg);text-align:center;font-size:13.5px;gap:10px;pointer-events:none;padding:20px}
+.empty svg{width:52px;height:52px;opacity:.5;margin:0 auto}
+.empty .load-cta{pointer-events:auto;margin-top:6px}
+/* 视图模式切换（画布顶部浮层） */
+.view-toggle{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:var(--color-surface-strong);backdrop-filter:blur(12px);border:1px solid var(--color-border);border-radius:999px;padding:4px;z-index:5;max-width:calc(100% - 20px);overflow-x:auto}
+.view-toggle button{flex:none;border:none;background:transparent;padding:6px 12px;border-radius:999px;font-family:var(--font-body);font-size:11.5px;font-weight:700;color:var(--color-muted-fg);cursor:pointer;transition:all .22s var(--ease);white-space:nowrap}
+.view-toggle button.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.4)}
+/* 角落工具 */
+.tool-corner{position:absolute;display:flex;flex-direction:column;gap:8px;z-index:5}
+.tc-l{left:12px;top:50%;transform:translateY(-50%)}
+.tool-mini{width:40px;height:40px;display:grid;place-items:center;border-radius:14px;background:var(--color-surface);backdrop-filter:blur(12px);border:1px solid var(--color-border);color:var(--color-foreground);cursor:pointer;transition:all .22s var(--ease)}
+.tool-mini:active{transform:scale(.9)}
+.tool-mini.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;border-color:transparent}
+.tool-mini svg{width:18px;height:18px}
+/* 鹰眼 */
+.minimap{position:absolute;right:12px;bottom:12px;width:104px;height:74px;border-radius:15px;background:var(--color-surface-strong);backdrop-filter:blur(12px);border:1px solid var(--color-border);padding:5px;box-shadow:0 6px 18px rgba(136,19,55,.18);z-index:5}
+.minimap .inner{position:relative;width:100%;height:100%;border-radius:9px;overflow:hidden;
+  background:radial-gradient(circle at 30% 35%,rgba(251,113,133,.55),transparent 50%),radial-gradient(circle at 70% 70%,rgba(167,139,250,.55),transparent 50%),linear-gradient(135deg,#FBD5DE,#C4B5FD)}
+.minimap .vp{position:absolute;left:26%;top:20%;width:44%;height:48%;border:2px solid var(--color-primary);border-radius:3px;background:rgba(255,255,255,.16)}
+
+/* ===== 底部 Bottom Sheet（功能栏，下 1/3）===== */
+.sheet{
+  flex:none;position:relative;margin:10px 0 0;
+  border-radius:28px 28px 0 0;
+  border:1px solid var(--color-border);border-bottom:none;
+  display:flex;flex-direction:column;
+  height:var(--sheet-h,46%);
+  transition:height .38s var(--ease);
+  overflow:hidden;
+}
+.sheet.collapsed{--sheet-h:84px}
+.sheet.half{--sheet-h:46%}
+.sheet.full{--sheet-h:78%}
+/* 抓手 */
+.grabber{flex:none;padding:8px 0 2px;display:grid;place-items:center;cursor:grab}
+.grabber::before{content:"";width:44px;height:5px;border-radius:999px;background:var(--color-muted-fg);opacity:.5}
+/* 分类 Tab 条 */
+.tabs{flex:none;display:flex;gap:4px;padding:6px 10px 10px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 2px;border:none;border-radius:15px;background:transparent;color:var(--color-muted-fg);font-family:var(--font-body);font-size:11px;font-weight:700;cursor:pointer;transition:all .22s var(--ease)}
+.tab svg{width:20px;height:20px}
+.tab.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.35)}
+/* 面板内容 */
+.panels{flex:1;overflow-y:auto;padding:2px 16px 20px;-webkit-overflow-scrolling:touch}
+.panels::-webkit-scrollbar{width:5px}
+.panels::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:999px}
+.panel{display:none;animation:fadeUp .3s var(--ease)}
+.panel.on{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.panel h4{font-family:var(--font-head);font-size:14px;color:var(--color-foreground-strong);margin:8px 0 4px;display:flex;align-items:center;gap:7px}
+.panel h4 svg{width:15px;height:15px;color:var(--color-primary)}
+.panel .sub{font-size:11px;color:var(--color-muted-fg);margin:-2px 0 8px}
+
+/* ===== 控件（沿用桌面版样式，移动端加大触控目标）===== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:12px 16px;border:none;border-radius:16px;font-family:var(--font-body);font-weight:700;font-size:13.5px;cursor:pointer;transition:all .22s var(--ease);min-height:44px}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.35)}
+.btn-ghost{background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-primary)}
+.btn-block{width:100%}
+.btn-row{display:flex;gap:9px;margin-top:10px}
+.btn-row .btn{flex:1}
+.btn svg{width:16px;height:16px}
+
+.slider-row{display:flex;align-items:center;gap:11px;margin:11px 0;min-width:0}
+.slider-row label{font-size:12.5px;color:var(--color-muted-fg);min-width:58px;font-weight:600}
+.slider-row output{font-size:12.5px;font-weight:700;color:var(--color-foreground-strong);flex:none;min-width:46px;text-align:center;border:1px dashed var(--color-muted-fg);border-radius:9px;padding:4px 8px;background:var(--color-surface)}
+input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:7px;border-radius:999px;background:var(--color-muted);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2.5px solid var(--color-primary);box-shadow:0 2px 7px rgba(0,0,0,.2);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2.5px solid var(--color-primary);cursor:pointer}
+
+.num-row{display:flex;align-items:center;gap:9px;margin:10px 0;flex-wrap:wrap}
+.num-row label{font-size:12.5px;color:var(--color-muted-fg);min-width:58px;font-weight:600}
+.num-row .spacer{flex:1}
+input[type=number],input[type=text].tin{width:80px;padding:9px 11px;border-radius:13px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13.5px;font-weight:600}
+input[type=text].tin{flex:1;min-width:0}
+input[type=number]:focus,input[type=text].tin:focus{outline:2px solid var(--color-ring)}
+
+.check-row{display:flex;align-items:center;gap:9px;margin:11px 0;font-size:13px;color:var(--color-foreground);font-weight:600}
+.check-row input{width:19px;height:19px;accent-color:var(--color-primary);cursor:pointer}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.chip{padding:8px 15px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--color-muted);color:var(--color-muted-fg);border:1px solid var(--color-border);cursor:pointer;transition:all .22s var(--ease);min-height:36px;display:inline-flex;align-items:center}
+.chip.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;border-color:transparent}
+
+.sel-wrap{position:relative;flex:1;min-width:0}
+select.sel{width:100%;padding:10px 34px 10px 12px;border-radius:13px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;-webkit-appearance:none;appearance:none}
+.sel-wrap::after{content:"";position:absolute;right:13px;top:50%;width:8px;height:8px;border-right:2px solid var(--color-muted-fg);border-bottom:2px solid var(--color-muted-fg);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+select.sel:focus{outline:2px solid var(--color-ring)}
+
+.hint{font-size:11.5px;color:var(--color-muted-fg);line-height:1.5;margin-top:8px}
+.divider{height:1px;background:var(--color-border);margin:14px 0}
+
+/* BOM chip */
+.bom-row{display:flex;flex-wrap:wrap;gap:8px}
+.bom-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--color-muted);border:1px solid var(--color-border);font-size:12px;font-weight:700;color:var(--color-foreground)}
+.bom-chip .sw{width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:8.5px;font-weight:800;flex:none}
+
+/* 状态栏（画布上方，细一行） */
+.statusline{flex:none;display:flex;align-items:center;gap:8px;padding:0 18px 8px;font-size:11.5px;color:var(--color-muted-fg)}
+.statusline .dot{width:7px;height:7px;border-radius:50%;background:#16A34A}
+.statusline .right{margin-left:auto}
+
+/* toast */
+.toast{position:absolute;left:50%;bottom:calc(var(--sheet-h,46%) + 14px);transform:translateX(-50%);z-index:60;max-width:86%;padding:11px 18px;border-radius:16px;font-size:13px;font-weight:700;background:var(--color-surface-strong);backdrop-filter:blur(14px);border:1px solid var(--color-border);color:var(--color-foreground);box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .25s,bottom .38s var(--ease);text-align:center}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="blob blob-1"></div><div class="blob blob-2"></div>
+
+<div class="stage">
+  <div class="phone" id="phone">
+
+    <!-- ===== 顶部精简栏 ===== -->
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="5" stroke="url(#g)" stroke-width="2"/><circle cx="8" cy="8" r="2.4" fill="#E11D48"/><circle cx="16" cy="8" r="2.4" fill="#A78BFA"/><circle cx="8" cy="16" r="2.4" fill="#FDBA74"/><circle cx="16" cy="16" r="2.4" fill="#FB7185"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E11D48"/><stop offset="1" stop-color="#7C3AED"/></linearGradient></defs></svg>
+        拼豆图纸 <span class="ver">v2 · 移动版</span>
+      </div>
+      <div class="top-right">
+        <button class="icon-btn" id="themeBtn" aria-label="切换主题">
+          <svg id="sunIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg id="moonIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+        </button>
+        <button class="icon-btn" id="helpBtn" aria-label="帮助">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.2a2.7 2.7 0 1 1 4 2.4c-.9.5-1.4 1-1.4 2"/><circle cx="12" cy="16.8" r=".4" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ===== 状态行 ===== -->
+    <div class="statusline"><span class="dot"></span><span id="statusMsg">就绪</span><span class="right">原型演示 · 未连后端</span></div>
+
+    <!-- ===== 画布区（上 2/3）===== -->
+    <div class="canvas-wrap">
+      <div class="canvas">
+        <div class="view-toggle" id="viewToggle">
+          <button class="on">原图</button><button>高亮</button><button>Mask</button><button>应用结果</button>
+        </div>
+        <div class="empty" id="emptyHint">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-6 6"/></svg>
+            <div style="margin-top:8px">尚未加载图像</div>
+            <button class="btn btn-primary load-cta" id="loadCta">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              加载图像
+            </button>
+          </div>
+        </div>
+        <div class="tool-corner tc-l">
+          <button class="tool-mini" data-act="zoomIn" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg></button>
+          <button class="tool-mini" data-act="zoomOut" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg></button>
+          <button class="tool-mini" data-act="fit" aria-label="适应窗口"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button>
+        </div>
+        <div class="minimap" id="minimap"><div class="inner"><div class="vp"></div></div></div>
+      </div>
+    </div>
+
+    <!-- ===== 底部 Bottom Sheet 功能栏（下 1/3）===== -->
+    <div class="sheet glass half" id="sheet">
+      <div class="grabber" id="grabber"></div>
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-tab="adjust">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>
+          调整
+        </button>
+        <button class="tab" data-tab="segment">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+          分割
+        </button>
+        <button class="tab" data-tab="pattern">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 3v18"/></svg>
+          图纸
+        </button>
+        <button class="tab" data-tab="export">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+          导出
+        </button>
+        <button class="tab" data-tab="view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          视图
+        </button>
+      </div>
+
+      <div class="panels" id="panels">
+
+        <!-- ===== 面板：调整 ===== -->
+        <section class="panel on" data-panel="adjust">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3.4"/></svg>基本调整</h4>
+          <div class="sub">每次「应用调整」叠加在当前图上，可连续迭代</div>
+          <button class="btn btn-primary btn-block" data-demo="加载图像">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+            加载图像
+          </button>
+          <div class="slider-row"><label>亮度</label><input type="range" min="0.4" max="1.8" step="0.02" value="1"><output>1.00</output></div>
+          <div class="slider-row"><label>对比度</label><input type="range" min="0.4" max="1.8" step="0.02" value="1"><output>1.00</output></div>
+          <div class="slider-row"><label>高斯模糊</label><input type="range" min="1" max="15" step="2" value="1"><output>1</output></div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" data-demo="应用调整">应用调整</button>
+            <button class="btn btn-ghost" data-demo="恢复原图">恢复原图</button>
+          </div>
+        </section>
+
+        <!-- ===== 面板：分割 ===== -->
+        <section class="panel" data-panel="segment">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>迭代 GrabCut</h4>
+          <div class="chip-row" data-single>
+            <span class="chip on">初始分割</span><span class="chip">迭代分割</span>
+          </div>
+          <div class="num-row"><label>形状</label><div class="sel-wrap"><select class="sel"><option>矩形 ▭</option><option>椭圆 ⬭</option><option>自由曲线 ✎</option></select></div></div>
+          <button class="btn btn-ghost btn-block" data-demo="开始框选">开始框选</button>
+          <div class="slider-row"><label>笔触粗细</label><input type="range" min="4" max="40" step="2" value="12"><output>12</output></div>
+          <div class="chip-row" data-single>
+            <span class="chip on">前景(红)</span><span class="chip">背景(绿)</span><span class="chip" data-demo="清除涂抹">清除涂抹</span>
+          </div>
+          <div class="btn-row"><button class="btn btn-primary" data-demo="初始分割">初始分割</button></div>
+          <div class="btn-row"><button class="btn btn-ghost" data-demo="应用分割结果">应用分割结果</button></div>
+
+          <div class="divider"></div>
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h4>
+          <div class="num-row"><label>方法</label><div class="sel-wrap"><select class="sel" id="segMethod"><option value="grabcut_rect">GrabCut矩形</option><option value="watershed" selected>分水岭</option><option value="otsu">Otsu</option><option value="slic">SLIC</option></select></div></div>
+          <div class="slider-row" data-showfor="watershed"><label>前景比例</label><input type="range" min="0.1" max="0.9" step="0.05" value="0.4"><output>0.40</output></div>
+          <div class="slider-row" data-showfor="slic" style="display:none"><label>超像素数</label><input type="range" min="50" max="400" step="10" value="150"><output>150</output></div>
+          <div class="btn-row"><button class="btn btn-primary" data-demo="执行分割">执行分割</button></div>
+          <div class="btn-row"><button class="btn btn-ghost" data-demo="应用分割结果">应用分割结果</button></div>
+
+          <div class="divider"></div>
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/></svg>形态学</h4>
+          <div class="num-row"><label>操作</label><div class="sel-wrap"><select class="sel"><option>开运算</option><option>闭运算</option><option>腐蚀</option><option>膨胀</option></select></div></div>
+          <div class="slider-row"><label>核大小</label><input type="range" min="1" max="21" step="2" value="5"><output>5</output></div>
+          <div class="num-row"><label>结构元素</label><div class="sel-wrap"><select class="sel"><option>椭圆 ●</option><option>矩形 ■</option><option>十字 ┼</option><option>垂直线 │</option><option>水平线 ─</option><option>菱形 ◆</option></select></div></div>
+          <div class="btn-row"><button class="btn btn-primary" data-demo="应用形态学">应用形态学</button></div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" data-demo="撤销">↺ 撤销</button>
+            <button class="btn btn-ghost" data-demo="重做">↻ 重做</button>
+          </div>
+        </section>
+
+        <!-- ===== 面板：图纸 ===== -->
+        <section class="panel" data-panel="pattern">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 3v18"/></svg>图纸参数</h4>
+          <div class="num-row"><label>宽度(豆)</label><input type="number" value="52" min="4" max="400"><label style="min-width:auto">高</label><input type="number" value="52" min="4" max="400"></div>
+          <div class="check-row"><input type="checkbox" checked id="keepRatio"><label for="keepRatio">保持图像比例</label></div>
+          <div class="num-row"><label>颜色上限</label><input type="number" value="0" min="0" max="221"><span class="hint" style="margin:0">0 = 不限制</span></div>
+          <div class="slider-row"><label>细节保留</label><input type="range" min="0" max="2" step="0.1" value="1"><output>1.0</output></div>
+          <div class="num-row"><label>颜色度量</label><div class="sel-wrap"><select class="sel"><option>加权距离</option><option>欧氏距离</option><option>Lab色空</option><option>CIE76</option><option selected>CIEDE2000</option></select></div></div>
+          <div class="check-row"><input type="checkbox" id="dither"><label for="dither">抖动</label></div>
+          <div class="slider-row" id="ditherRow" style="display:none"><label>抖动强度</label><input type="range" min="0" max="1" step="0.05" value="1"><output>1.00</output></div>
+          <div class="check-row"><input type="checkbox" id="icmOn"><label for="icmOn">高阶优化(ICM)</label></div>
+          <div class="slider-row" id="icmRow" style="display:none"><label>ICM平滑</label><input type="range" min="0.1" max="1" step="0.05" value="0.5"><output>0.50</output></div>
+          <div class="check-row"><input type="checkbox" checked id="useMask"><label for="useMask">使用分割 Mask</label></div>
+          <div class="num-row"><label>Mask背景</label><div class="sel-wrap"><select class="sel"><option selected>淡化</option><option>纯白</option><option>纯黑</option></select></div></div>
+          <div class="btn-row"><button class="btn btn-primary" data-demo="生成图纸">生成图纸</button></div>
+        </section>
+
+        <!-- ===== 面板：导出 ===== -->
+        <section class="panel" data-panel="export">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>导出</h4>
+          <div class="num-row"><label>文件名</label><input type="text" class="tin" value="pattern"></div>
+          <div class="slider-row"><label>PNG缩放</label><input type="range" min="0.5" max="3" step="0.25" value="1"><output>1×</output></div>
+          <div class="num-row"><label>Mask背景</label><div class="sel-wrap"><select class="sel"><option selected>淡化</option><option>纯白</option><option>纯黑</option></select></div></div>
+          <div class="num-row"><label>纸张</label><div class="chip-row" style="margin:0" data-single><span class="chip on">A4</span><span class="chip">Letter</span></div></div>
+          <div class="check-row"><input type="checkbox" checked id="expPng"><label for="expPng">导出 PNG</label></div>
+          <div class="check-row"><input type="checkbox" checked id="expPdf"><label for="expPdf">导出 PDF</label></div>
+          <div class="btn-row"><button class="btn btn-ghost" data-demo="选择目录">选择目录…</button></div>
+          <div class="num-row"><label>输出路径</label><input type="text" class="tin" readonly value="（未设置）"></div>
+          <div class="btn-row"><button class="btn btn-primary" data-demo="一键导出">一键导出</button></div>
+          <p class="hint">文件将保存到上方输出路径。</p>
+
+          <div class="divider"></div>
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>物料清单 (BOM)</h4>
+          <div class="sub">生成图纸后显示所需豆子颜色与数量</div>
+          <div class="bom-row">
+            <span class="bom-chip"><span class="sw" style="background:#E11D48;color:#fff">A1</span>×236</span>
+            <span class="bom-chip"><span class="sw" style="background:#7C3AED;color:#fff">B4</span>×180</span>
+            <span class="bom-chip"><span class="sw" style="background:#FDBA74;color:#3b0a1c">C7</span>×121</span>
+            <span class="bom-chip"><span class="sw" style="background:#60A5FA;color:#0b1220">D2</span>×97</span>
+          </div>
+          <p class="hint">示例数据 · 共 634 豆 · 4 种颜色</p>
+        </section>
+
+        <!-- ===== 面板：视图 ===== -->
+        <section class="panel" data-panel="view">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>视图与画布</h4>
+          <div class="sub">画布显示模式（也可直接点画布顶部切换）</div>
+          <div class="chip-row" data-single id="viewChips">
+            <span class="chip on">原图</span><span class="chip">高亮</span><span class="chip">Mask</span><span class="chip">应用结果</span>
+          </div>
+          <div class="divider"></div>
+          <h4>画布操作</h4>
+          <div class="btn-row">
+            <button class="btn btn-ghost" data-demo="放大">放大</button>
+            <button class="btn btn-ghost" data-demo="缩小">缩小</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" data-demo="适应窗口">适应窗口</button>
+            <button class="btn btn-ghost" data-demo="平移模式">平移</button>
+          </div>
+          <p class="hint">真机上：双指捏合缩放 · 单指拖动平移 · 框选/涂抹直接在画布上操作（原型暂不演示手势）。</p>
+        </section>
+
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const html=document.documentElement, sheet=$('#sheet'), toast=$('#toast');
+  let toastT=null;
+
+  /* ---- toast ---- */
+  function showToast(msg){
+    toast.textContent=msg; toast.classList.add('show');
+    clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),1800);
+  }
+
+  /* ---- 主题切换 ---- */
+  const sun=$('#sunIcon'),moon=$('#moonIcon');
+  $('#themeBtn').addEventListener('click',()=>{
+    const dark=html.getAttribute('data-theme')==='dark';
+    html.setAttribute('data-theme',dark?'light':'dark');
+    sun.style.display=dark?'block':'none';
+    moon.style.display=dark?'none':'block';
+  });
+
+  /* ---- Bottom Sheet 三档 ---- */
+  const STATES=['collapsed','half','full'];
+  function setState(s){ STATES.forEach(x=>sheet.classList.remove(x)); sheet.classList.add(s); }
+  function curState(){ return STATES.find(x=>sheet.classList.contains(x))||'half'; }
+
+  /* ---- 分类 Tab ---- */
+  const tabs=$$('#tabs .tab'), panels=$$('#panels .panel');
+  function openPanel(name){
+    tabs.forEach(t=>t.classList.toggle('on',t.dataset.tab===name));
+    panels.forEach(p=>p.classList.toggle('on',p.dataset.panel===name));
+  }
+  tabs.forEach(t=>t.addEventListener('click',()=>{
+    const name=t.dataset.tab;
+    const already=t.classList.contains('on');
+    openPanel(name);
+    // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开
+    if(already && curState()==='half') setState('collapsed');
+    else setState('half');
+  }));
+
+  /* ---- 抓手循环三档 + 简单拖动 ---- */
+  $('#grabber').addEventListener('click',()=>{
+    const order={collapsed:'half',half:'full',full:'collapsed'};
+    setState(order[curState()]);
+  });
+  // 拖动（Pointer Events，桌面鼠标也可拖）
+  let dragY=null,startH=0;
+  const grab=$('#grabber');
+  grab.addEventListener('pointerdown',e=>{dragY=e.clientY;grab.setPointerCapture(e.pointerId);});
+  grab.addEventListener('pointermove',e=>{
+    if(dragY===null)return;
+    const dy=dragY-e.clientY; // 上拖为正
+    if(dy>40) setState(curState()==='collapsed'?'half':'full');
+    else if(dy<-40) setState(curState()==='full'?'half':'collapsed');
+  });
+  grab.addEventListener('pointerup',()=>{dragY=null;});
+
+  /* ---- 单选 chip 组 ---- */
+  $$('[data-single]').forEach(g=>{
+    g.addEventListener('click',e=>{
+      const c=e.target.closest('.chip'); if(!c||c.hasAttribute('data-demo'))return;
+      [...g.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on'));
+      c.classList.add('on');
+      // 视图 chips 与画布顶部 view-toggle 联动
+      if(g.id==='viewChips') syncViewToggle(c.textContent);
+    });
+  });
+
+  /* ---- 画布顶部视图切换 + 视图面板 chips 双向同步 ---- */
+  const vtBtns=$$('#viewToggle button');
+  function syncViewToggle(label){
+    vtBtns.forEach(b=>b.classList.toggle('on',b.textContent===label));
+    $$('#viewChips .chip').forEach(c=>c.classList.toggle('on',c.textContent===label));
+  }
+  vtBtns.forEach(b=>b.addEventListener('click',()=>{syncViewToggle(b.textContent);showToast('切换到「'+b.textContent+'」（演示）');}));
+
+  /* ---- 条件行显隐 ---- */
+  const segMethod=$('#segMethod');
+  function syncSegRows(){
+    $$('#panels [data-showfor]').forEach(r=>{ r.style.display = r.dataset.showfor===segMethod.value?'':'none'; });
+  }
+  segMethod.addEventListener('change',syncSegRows); syncSegRows();
+  const dither=$('#dither'),icm=$('#icmOn');
+  dither.addEventListener('change',()=>$('#ditherRow').style.display=dither.checked?'':'none');
+  icm.addEventListener('change',()=>$('#icmRow').style.display=icm.checked?'':'none');
+
+  /* ---- 滑块 output 回显 ---- */
+  $$('input[type=range]').forEach(r=>{
+    const out=r.parentElement.querySelector('output');
+    if(!out)return;
+    r.addEventListener('input',()=>{
+      const step=parseFloat(r.step);
+      out.textContent = step<1 ? (+r.value).toFixed(step<0.1?2:2).replace(/\.?0+$/,'') : r.value;
+    });
+  });
+
+  /* ---- 演示按钮 ---- */
+  $$('[data-demo]').forEach(b=>b.addEventListener('click',()=>showToast('「'+b.dataset.demo+'」· 原型演示')));
+  $('#loadCta').addEventListener('click',()=>{ showToast('原型演示：真机这里打开系统相册/文件'); });
+  $('#helpBtn').addEventListener('click',()=>showToast('原型演示：真机这里打开帮助'));
+  $$('.tool-mini').forEach(b=>b.addEventListener('click',()=>{
+    if(b.dataset.act==='pan'){ b.classList.toggle('on'); }
+    showToast('画布「'+(b.getAttribute('aria-label'))+'」· 演示');
+  }));
+
+  /* 初始 */
+  setState('half');
+})();
+</script>
+</body>
+</html>

@@ -152,6 +152,8 @@ def original_image():
 @app.post("/api/image/reset")
 def reset_image():
     STATE.set_mask(None)
+    STATE.bead_mask = None               # 派生遮罩一并失效，避免旧遮罩残留渲染
+    STATE.generator.bead_mask = None
     return _png(_err(STATE.processor.reset_to_original))
 
 
@@ -192,6 +194,8 @@ def image_basic(op: BasicOp):
         elif op.flip == "v":
             _err(STATE.processor.flip_vertical)
         STATE.set_mask(None)
+        STATE.bead_mask = None           # 派生遮罩一并失效，避免旧遮罩残留渲染
+        STATE.generator.bead_mask = None
         return _png(STATE.require_image())
 
 
@@ -327,10 +331,11 @@ def get_overlay():
     if mask.shape[:2] != img.shape[:2]:
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
                           interpolation=cv2.INTER_NEAREST)
-    overlay = img.copy()
-    overlay[mask > 127] = [255, 140, 0]
-    blended = cv2.addWeighted(img, 0.6, overlay, 0.4, 0)
-    return _png(blended)
+    fg = mask > 127
+    # 高亮 = 前景保留原色、背景 ×0.3 压暗（对齐手机端 compositeMask 的 highlight 分支）
+    blended = img.astype(np.float32) * 0.3
+    blended[fg] = img[fg].astype(np.float32)
+    return _png(np.clip(blended, 0, 255).astype(np.uint8))
 
 
 @app.get("/api/segment/applied")
@@ -343,9 +348,14 @@ def get_applied():
     if mask.shape[:2] != img.shape[:2]:
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
                           interpolation=cv2.INTER_NEAREST)
-    out = np.zeros_like(img)               # 背景纯黑
-    out[mask > 127] = img[mask > 127]      # 前景保留彩色
-    return _png(out)
+    fg = mask > 127
+    # 应用结果 = 前景保留原色、背景转灰再提亮 gray*0.4 + 255*0.6
+    # （对齐手机端 compositeMask 的 applied 分支：灰度压暗背景）
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    bg = gray * 0.4 + 255.0 * 0.6
+    out = np.repeat(bg[..., None], 3, axis=2)      # 背景灰度扩展到 3 通道
+    out[fg] = img[fg].astype(np.float32)           # 前景保留原色
+    return _png(np.clip(out, 0, 255).astype(np.uint8))
 
 
 @app.post("/api/segment/apply")
@@ -393,11 +403,18 @@ def pattern_generate(req: PatternReq):
             dither_strength=float(req.dither_strength),
             icm_smooth=float(req.icm_smooth),
         )
+        # 同步图纸宽，供后续分割下采样目标（4×图纸宽）使用
+        STATE.grid_width = int(req.width_beads)
         gen = STATE.generator
         pattern, bom = _err(gen.generate_pattern, img,
                             STATE.color_manager.palette, cfg,
                             STATE.color_manager)
-        # Build bead_mask from the working mask when requested.
+        # Build bead_mask from the working mask when requested. Unconditionally
+        # clear first so a stale mask never lingers when the user regenerates
+        # with use_mask off or after the mask was cleared (else chart/export
+        # would keep fading/excluding the old background → "换不回原图计算").
+        STATE.bead_mask = None
+        gen.bead_mask = None
         bead_mask = None
         if req.use_mask and STATE.mask is not None:
             bm = (STATE.mask > 127)
@@ -425,9 +442,11 @@ def pattern_chart(req: ChartReq):
     gen = STATE.generator
     if gen.pattern is None:
         raise HTTPException(400, detail="尚未生成图案")
+    # 渲染遮罩跟随当次 pattern 的生命周期（gen.bead_mask，generate 时对称清写），
+    # 不读游离的 STATE.bead_mask，避免取消勾选后旧遮罩仍残留渲染。
     chart = _err(gen.render_standard_chart,
                  int(req.bead_pixel_size), int(req.major_every),
-                 STATE.color_manager.palette, STATE.bead_mask, bool(req.fade_masked),
+                 STATE.color_manager.palette, gen.bead_mask, bool(req.fade_masked),
                  mask_bg=_mask_bg(req.mask_bg))
     return _png(chart)
 
@@ -486,7 +505,7 @@ def export(req: ExportReq):
     STATE.output_dir = outdir
     exporter = PatternExporter(outdir)
     chart = _err(gen.render_standard_chart, 30, 5, STATE.color_manager.palette,
-                 STATE.bead_mask, True, mask_bg=_mask_bg(req.mask_bg))
+                 gen.bead_mask, True, mask_bg=_mask_bg(req.mask_bg))
     base = os.path.join(outdir, req.filename)
     made = []
     if req.export_png:

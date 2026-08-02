@@ -6,6 +6,40 @@ import numpy as np
 from typing import Tuple, List, Optional
 import os
 
+# ---- 工作图加速（小图计算 + 原图渲染）----
+# 按奈奎斯特：图纸宽 Wg 豆的最高频率 ≈ Wg/2，处理分辨率 ≥ 2×Wg 即可无失真表达
+# 最终图纸；取 4×Wg 留 2× 余量保证边缘鲁棒。clamp 到 [WORK_MIN, WORK_MAX]：
+# 下限保证 GrabCut/GMM 有足够统计量，上限防大图拖慢/占内存。
+WORK_MIN = 256
+WORK_MAX = 1024
+NYQUIST_FACTOR = 4
+DEFAULT_GRID_W = 104
+
+
+def work_side(grid_w: int = DEFAULT_GRID_W) -> int:
+    """计算工作图目标边长：4×图纸宽，clamp 到 [WORK_MIN, WORK_MAX]。"""
+    return int(min(max(grid_w * NYQUIST_FACTOR, WORK_MIN), WORK_MAX))
+
+
+def work_view(image: np.ndarray, grid_w: int = DEFAULT_GRID_W):
+    """返回 (工作图, 放大回原图的函数)。小图不缩直接用原图；只在原图更大时等比缩小。
+
+    显示/存储始终以原图渲染，只有 CV 计算用这张压缩小图。
+    """
+    h, w = image.shape[:2]
+    target = work_side(grid_w)
+    longest = max(h, w)
+    if longest <= target:
+        return image, None
+    scale = target / longest
+    ww, wh = max(1, round(w * scale)), max(1, round(h * scale))
+    small = cv2.resize(image, (ww, wh), interpolation=cv2.INTER_AREA)
+
+    def to_original(mask: np.ndarray) -> np.ndarray:
+        return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    return small, to_original
+
 
 class IterativeGrabCutState:
     """Reusable GrabCut session state (sunk from the Tkinter UI).
@@ -14,6 +48,9 @@ class IterativeGrabCutState:
     calls can accumulate corrections. Pure-numpy, thread-safe to run inside a
     background worker; the caller is responsible for marshaling UI updates.
 
+    GrabCut 在压缩工作图（self.work）上跑以提速，返回的 mask 一律放大回原图
+    尺寸（INTER_NEAREST 保二值边缘），保证调用方拿到的 mask 与原图同尺寸。
+
     Lifecycle:
         state = IterativeGrabCutState(image)
         mask = state.segment_rect((x, y, w, h))      # or segment_mask(init_mask)
@@ -21,14 +58,36 @@ class IterativeGrabCutState:
         mask = state.refine(fgd_annotation, bgd_annotation)
     """
 
-    def __init__(self, image: np.ndarray):
+    def __init__(self, image: np.ndarray, grid_w: int = DEFAULT_GRID_W):
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
         self.image = image.copy()
         self.h, self.w = image.shape[:2]
+        self.work, self._to_orig = work_view(self.image, grid_w)
+        self.wh, self.ww = self.work.shape[:2]
         self.bgd_model = np.zeros((1, 65), np.float64)
         self.fgd_model = np.zeros((1, 65), np.float64)
-        self.gc_mask: Optional[np.ndarray] = None
+        self.gc_mask: Optional[np.ndarray] = None  # 原图尺寸的 0/255 mask
+
+    def _rect_to_work(self, rect: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+        """原图坐标矩形 → 工作图坐标。"""
+        x, y, w, h = rect
+        sx, sy = self.ww / self.w, self.wh / self.h
+        wx = int(round(x * sx)); wy = int(round(y * sy))
+        ww = max(2, int(round(w * sx))); wh = max(2, int(round(h * sy)))
+        wx = min(max(wx, 0), self.ww - 1); wy = min(max(wy, 0), self.wh - 1)
+        ww = min(ww, self.ww - wx); wh = min(wh, self.wh - wy)
+        return wx, wy, ww, wh
+
+    def _mask_to_work(self, mask: np.ndarray) -> np.ndarray:
+        """原图尺寸 mask/注记 → 工作图尺寸（无缩放时直接返回）。"""
+        if self._to_orig is None:
+            return mask
+        return cv2.resize(mask, (self.ww, self.wh), interpolation=cv2.INTER_NEAREST)
+
+    def _from_work(self, mask: np.ndarray) -> np.ndarray:
+        """工作图 mask → 原图尺寸（无缩放时直接返回）。"""
+        return mask if self._to_orig is None else self._to_orig(mask)
 
     @staticmethod
     def _to_binary(mask: np.ndarray) -> np.ndarray:
@@ -36,25 +95,27 @@ class IterativeGrabCutState:
                         255, 0).astype(np.uint8)
 
     def segment_rect(self, rect: Tuple[int, int, int, int], iters: int = 5) -> np.ndarray:
-        """Initial GrabCut from a bounding rectangle (x, y, w, h)."""
+        """Initial GrabCut from a bounding rectangle (x, y, w, h), 原图坐标。"""
         x, y, w, h = (int(v) for v in rect)
         if w < 2 or h < 2:
             raise ValueError("初始矩形过小")
-        mask = np.zeros((self.h, self.w), dtype=np.uint8)
-        cv2.grabCut(self.image, mask, (x, y, w, h), self.bgd_model,
+        wrect = self._rect_to_work((x, y, w, h))
+        mask = np.zeros((self.wh, self.ww), dtype=np.uint8)
+        cv2.grabCut(self.work, mask, wrect, self.bgd_model,
                     self.fgd_model, iters, cv2.GC_INIT_WITH_RECT)
-        self.gc_mask = self._to_binary(mask)
+        self.gc_mask = self._from_work(self._to_binary(mask))
         return self.gc_mask.copy()
 
     def segment_mask(self, init_mask: np.ndarray, iters: int = 5) -> np.ndarray:
-        """Initial GrabCut from a binary init mask (>0 = probable foreground)."""
+        """Initial GrabCut from a binary init mask (>0 = probable foreground), 原图尺寸。"""
         if init_mask is None or not np.any(init_mask > 0):
             raise ValueError("初始掩码为空")
-        mask = np.full((self.h, self.w), cv2.GC_PR_BGD, dtype=np.uint8)
-        mask[init_mask > 0] = cv2.GC_PR_FGD
-        cv2.grabCut(self.image, mask, None, self.bgd_model, self.fgd_model,
+        seed = self._mask_to_work(init_mask)
+        mask = np.full((self.wh, self.ww), cv2.GC_PR_BGD, dtype=np.uint8)
+        mask[seed > 0] = cv2.GC_PR_FGD
+        cv2.grabCut(self.work, mask, None, self.bgd_model, self.fgd_model,
                     iters, cv2.GC_INIT_WITH_MASK)
-        self.gc_mask = self._to_binary(mask)
+        self.gc_mask = self._from_work(self._to_binary(mask))
         return self.gc_mask.copy()
 
     def refine(self, fgd_annotation: Optional[np.ndarray] = None,
@@ -63,21 +124,21 @@ class IterativeGrabCutState:
         """Refine the current result with foreground/background scribbles.
 
         Args:
-            fgd_annotation: binary scribble, >0 = definite foreground
-            bgd_annotation: binary scribble, >0 = definite background
+            fgd_annotation: binary scribble (原图尺寸), >0 = definite foreground
+            bgd_annotation: binary scribble (原图尺寸), >0 = definite background
         """
         if self.gc_mask is None:
             raise ValueError("尚未运行初始分割")
-        mask = np.full((self.h, self.w), cv2.GC_PR_BGD, dtype=np.uint8)
+        mask = np.full((self.wh, self.ww), cv2.GC_PR_BGD, dtype=np.uint8)
         if fgd_annotation is not None:
-            mask[fgd_annotation > 0] = cv2.GC_FGD
+            mask[self._mask_to_work(fgd_annotation) > 0] = cv2.GC_FGD
         if bgd_annotation is not None:
-            mask[bgd_annotation > 0] = cv2.GC_BGD
-        # Previous result as prior
-        mask[self.gc_mask > 0] = cv2.GC_PR_FGD
-        cv2.grabCut(self.image, mask, None, self.bgd_model, self.fgd_model,
+            mask[self._mask_to_work(bgd_annotation) > 0] = cv2.GC_BGD
+        # Previous result as prior (工作图域)
+        mask[self._mask_to_work(self.gc_mask) > 0] = cv2.GC_PR_FGD
+        cv2.grabCut(self.work, mask, None, self.bgd_model, self.fgd_model,
                     iters, cv2.GC_INIT_WITH_MASK)
-        self.gc_mask = self._to_binary(mask)
+        self.gc_mask = self._from_work(self._to_binary(mask))
         return self.gc_mask.copy()
 
 
@@ -146,26 +207,25 @@ class ImageSegmentation:
         """
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
-        
-        # Convert to BGR
-        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        
-        # Create rectangle
-        rect = (x1, y1, x2 - x1, y2 - y1)
-        
-        # Initialize mask
-        mask = np.zeros(image.shape[:2], dtype=np.uint8)
-        
-        # Run GrabCut
+
+        # 在压缩工作图上跑 GrabCut（提速），mask 放大回原图尺寸
+        work, to_orig = work_view(image)
+        wh_, ww_ = work.shape[:2]
+        sx, sy = ww_ / image.shape[1], wh_ / image.shape[0]
+        wx1, wy1 = int(round(x1 * sx)), int(round(y1 * sy))
+        wx2, wy2 = int(round(x2 * sx)), int(round(y2 * sy))
+        rect = (wx1, wy1, max(2, wx2 - wx1), max(2, wy2 - wy1))
+
+        image_bgr = cv2.cvtColor(work, cv2.COLOR_RGB2BGR)
+        mask = np.zeros((wh_, ww_), dtype=np.uint8)
         bgdModel = np.zeros((1, 65), np.float64)
         fgdModel = np.zeros((1, 65), np.float64)
-        
         cv2.grabCut(image_bgr, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
-        
-        # Create output mask
+
         output_mask = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8') * 255
+        if to_orig is not None:
+            output_mask = to_orig(output_mask)
         self.mask = output_mask
-        
         return output_mask
     
     def watershed_segmentation(self, image: np.ndarray, 
@@ -229,7 +289,9 @@ class ImageSegmentation:
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
 
-        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # 在压缩工作图上跑（提速），mask 放大回原图尺寸
+        work, to_orig = work_view(image)
+        image_bgr = cv2.cvtColor(work, cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
@@ -260,6 +322,8 @@ class ImageSegmentation:
 
         # Foreground = all marker labels >= 2.
         mask = np.where(markers >= 2, 255, 0).astype(np.uint8)
+        if to_orig is not None:
+            mask = to_orig(mask)
         self.mask = mask
         return mask
 
@@ -277,7 +341,8 @@ class ImageSegmentation:
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
 
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        work, to_orig = work_view(image)
+        gray = cv2.cvtColor(work, cv2.COLOR_RGB2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
         _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         _, bw_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -289,6 +354,8 @@ class ImageSegmentation:
         # Light closing to fill pinholes.
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        if to_orig is not None:
+            mask = to_orig(mask)
         self.mask = mask
         return mask
 
@@ -391,15 +458,16 @@ class ImageSegmentation:
         if image is None or len(image.shape) != 3:
             raise ValueError("请提供有效的RGB图像")
 
-        segments = self._slic_superpixels(image, n_segments, compactness=10.0)
+        work, to_orig = work_view(image)
+        segments = self._slic_superpixels(work, n_segments, compactness=10.0)
 
         # Score each superpixel by how "subject-like" it is. Perler-bead
         # subjects are usually colorful; plain backgrounds are flat/gray, so
         # saturation separates them well. Fall back to brightness when the
         # image is near-grayscale (saturation carries no signal).
-        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        hsv = cv2.cvtColor(work, cv2.COLOR_RGB2HSV)
         sat = hsv[:, :, 1].astype(np.float32)
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float32)
+        gray = cv2.cvtColor(work, cv2.COLOR_RGB2GRAY).astype(np.float32)
 
         flat_seg = segments.ravel()
         counts = np.bincount(flat_seg)
@@ -436,6 +504,8 @@ class ImageSegmentation:
         fg_labels = high_fg if central_mass >= 0.5 else ~high_fg
 
         mask = (fg_labels[segments]).astype(np.uint8) * 255
+        if to_orig is not None:
+            mask = to_orig(mask)
         self.mask = mask
         return mask
 

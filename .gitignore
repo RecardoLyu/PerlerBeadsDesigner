@@ -6,16 +6,16 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
+# Distribution / packaging（仅根级，避免误伤 perler_app/ 的 Flutter 源码与 Gradle 文件）
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -30,8 +30,8 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
-build/
-dist/
+/build/
+/dist/
 
 # PyCharm
 .idea/
