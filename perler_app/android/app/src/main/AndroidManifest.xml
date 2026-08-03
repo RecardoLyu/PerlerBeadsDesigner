@@ -7,6 +7,10 @@
     <!-- Android 9 及以下写公共相册（导出 PNG） -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- 在线更新：联网检查/下载 APK -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 在线更新：调系统安装器安装下载好的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:label="拼豆图纸生成器"
         android:name="${applicationName}"
