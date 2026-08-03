@@ -58,6 +58,7 @@
   /* ---- 进入 / 退出 ---- */
   function enter() {
     if (!imgSize()[0]) { busy.set('请先加载图像'); return; }
+    if (window.setOriginalView) window.setOriginalView();   // 裁剪框必须画在原图上：先切回原图模式
     cropMode = true;
     box = null; drag = null;
     viewer._interactionLock = true;
@@ -207,6 +208,7 @@
       const url = await API.basic({ crop: [Math.round(n.x1), Math.round(n.y1), Math.round(n.x2), Math.round(n.y2)] });
       exit(true);
       viewer.setImage(url);
+      if (window.setOriginalView) window.setOriginalView();   // 换图必换模式：回原图
       await refreshStatus();
       busy.done('已裁剪，结果成为新「原图」');
       if (window.onImageLoaded) window.onImageLoaded();

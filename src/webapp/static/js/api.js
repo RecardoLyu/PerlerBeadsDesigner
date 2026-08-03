@@ -67,5 +67,12 @@ const API = (() => {
     patternBom: () => _get('/api/pattern/bom'),
     patternPreview: (px) => '/api/pattern/preview?bead_pixel_size=' + (px || 10),
     export: (req) => _json('/api/export', req),
+    getVersion: () => _get('/api/version'),
+    getSettings: () => _get('/api/settings'),
+    saveSettings: (settings) => _json('/api/settings', { settings }),
+    updateCheck: () => _get('/api/update/check'),
+    updateDownload: () => _json('/api/update/download', {}),
+    updateProgress: () => _get('/api/update/progress'),
+    updateApply: () => _json('/api/update/apply', {}),
   };
 })();

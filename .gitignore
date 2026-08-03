@@ -72,6 +72,8 @@ output/
 *.tmp
 *.log
 .DS_Store
+# 桌面端运行时用户偏好（安装目录自动生成，不进 git）
+/settings.json
 
 # 打包产物（不进 git；APK/exe 作为 Release 资产上传）
 *.apk

@@ -184,7 +184,9 @@
     } catch (e) { body.innerHTML = '<p>帮助加载失败: ' + e.message + '</p>'; }
   }
   function closeHelp() { modal.classList.remove('show'); }
-  document.getElementById('helpBtn').addEventListener('click', openHelp);
+  window.openHelp = openHelp;   // 供设置页「查看使用指南」复用（顶栏帮助按钮已并入设置）
+  const helpBtn = document.getElementById('helpBtn');
+  if (helpBtn) helpBtn.addEventListener('click', openHelp);
   document.getElementById('helpClose').addEventListener('click', closeHelp);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeHelp(); });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHelp(); });

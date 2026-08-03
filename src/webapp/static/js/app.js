@@ -24,8 +24,13 @@
   syncEmpty();
 
   /* ---- 加载图像（pywebview 原生对话框优先，浏览器降级 file input） ---- */
+  /* 加载图像后同步导出文件名（占位名/无源名时保持现状） */
+  window.syncExportName = (sourceName) => {
+    if (sourceName && $('expName')) $('expName').value = sourceName;
+  };
   const _afterLoad = async (url) => {
     viewer.setImage(url);
+    if (window.setOriginalView) window.setOriginalView();   // 换图必换模式：回原图
     await refreshStatus();
     // 导出文件名跟随源图（占位名返回 null，保持输入框现状）
     try {
@@ -118,6 +123,7 @@
         blur: blur > 1 ? blur : null,
       });
       viewer.setImage(url);
+      if (window.setOriginalView) window.setOriginalView();   // 换图必换模式：回原图
       // 亮度/对比度是相对量，应用后复位为 1；高斯核保持上一步值便于继续同核迭代
       $('brightness').value = 1; $('contrast').value = 1;
       ['brightness', 'contrast'].forEach(id => $(id).dispatchEvent(new Event('input')));
@@ -131,6 +137,7 @@
       busy.start('恢复原图…');
       const url = await API.resetImage();
       viewer.setImage(url);
+      if (window.setOriginalView) window.setOriginalView();   // 换图必换模式：回原图
       $('brightness').value = 1; $('contrast').value = 1; $('blur').value = 1;
       ['brightness', 'contrast', 'blur'].forEach(id => $(id).dispatchEvent(new Event('input')));
       await refreshStatus();
@@ -152,7 +159,7 @@
           requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
         } catch (e) {}
       } else if (s.has_image) {
-        busy.set('点左侧「生成图纸」以查看标准图纸');
+        busy.set('点左侧「预览图纸」以查看标准图纸');
       }
     }
   };
@@ -218,10 +225,10 @@
     ['colorMetric', 'maskBg', 'brandSel'].forEach(id => { const el = $(id); if (el) window.Dropdown.enhance(el); });
   }
 
-  /* ---- 生成图纸 ---- */
+  /* ---- 预览图纸 ---- */
   $('genBtn').addEventListener('click', async () => {
     try {
-      busy.start('生成图纸…');
+      busy.start('预览图纸…');
       const maxc = +$('maxColors').value;
       const ditherOn = $('dither').checked, icmOn = $('icmOn').checked;
       const res = await API.patternGenerate({
@@ -241,5 +248,63 @@
       requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
       if (window.onPatternGenerated) window.onPatternGenerated(res);
     } catch (err) { window.fail('生成失败: ' + err.message); }
+  });
+
+  /* ---- 导出（已并入图纸参数卡）：PNG缩放 + 输出路径 + 导出图纸 ---- */
+  window.bindEditable('expScale', 'expScaleOut', { fmt: v => v + '×', parse: t => parseFloat(t.replace('×', '')) });
+
+  function _setOutDir(p) {
+    $('outDir').value = p;
+    $('outDir').dataset.tip = '输出路径：' + p;   // 完整路径放悬浮提示
+    $('outDir').title = p;
+  }
+  async function _refreshOutDir() {
+    try { const r = await API.getOutputDir(); _setOutDir(r.output_dir); } catch (e) {}
+  }
+  _refreshOutDir();
+  $('chooseDirBtn').addEventListener('click', async () => {
+    try {
+      const api = (window.pywebview && window.pywebview.api) || null;
+      if (api && typeof api.choose_dir === 'function') {
+        busy.set('请选择输出目录…');
+        const p = await api.choose_dir();
+        if (!p) { busy.set('已取消选择'); return; }
+        const r = await API.setOutputDir(p);
+        _setOutDir(r.output_dir);
+        busy.set('输出路径: ' + r.output_dir);
+      } else {
+        // 无原生对话框（浏览器或 pywebview api 未就绪）：可编辑文本框
+        $('outDir').removeAttribute('readonly');
+        $('outDir').focus(); $('outDir').select();
+        busy.set('请直接键入输出路径，回车确认');
+      }
+    } catch (err) { window.fail('设置输出路径失败: ' + err.message); }
+  });
+  $('outDir').addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter' || $('outDir').readOnly) return;
+    try {
+      const r = await API.setOutputDir($('outDir').value);
+      _setOutDir(r.output_dir);
+      $('outDir').setAttribute('readonly', '');
+      busy.set('输出路径: ' + r.output_dir);
+    } catch (err) { window.fail('设置输出路径失败: ' + err.message); }
+  });
+
+  /* 导出图纸：只导 PNG，按图纸大小直接生图 */
+  $('exportBtn').addEventListener('click', async () => {
+    try {
+      busy.start('导出中…');
+      const res = await API.export({
+        filename: $('expName').value || 'pattern',
+        png_scale: +$('expScale').value,
+        mask_bg: $('maskBg') ? $('maskBg').value : 'none',
+        show_title: $('showTitle') ? $('showTitle').checked : false,
+      });
+      $('expResult').textContent = '已导出到 ' + res.output_dir + ': ' + res.files.map(f => f.split(/[\\/]/).pop()).join('、');
+      busy.done('导出完成');
+    } catch (err) {
+      $('expResult').textContent = '导出失败: ' + err.message;
+      busy.done('导出失败');
+    }
   });
 })();

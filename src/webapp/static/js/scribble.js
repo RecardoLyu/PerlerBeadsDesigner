@@ -34,6 +34,7 @@ class ScribbleLayer {
     const vp = this.viewer.viewport;
     vp.addEventListener('mousedown', (e) => {
       if (!this.enabled) return;
+      if (e.button !== 0) return;   // 只认左键起笔；中/右键放行给 viewer 平移（全局中键=拖动视野）
       e.stopPropagation(); e.preventDefault();
       this.drawing = true;
       const stroke = { brush: this.brush, size: this.brushSize, pts: [this._toImage(e)] };
