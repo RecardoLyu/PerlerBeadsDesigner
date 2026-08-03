@@ -69,3 +69,40 @@ jobs:
         files: "${{ matrix.asset_name }}-${{ github.ref_name }}.tar.gz"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Android APK（Flutter）：与桌面三平台同一 Release，供手机端在线更新下载
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.44.8'
+        channel: 'stable'
+        cache: true
+
+    - name: Build APK
+      working-directory: perler_app
+      run: |
+        flutter pub get
+        flutter build apk --debug
+
+    - name: Rename APK with tag
+      run: |
+        tag="${{ github.ref_name }}"
+        cp "perler_app/build/app/outputs/flutter-apk/app-debug.apk" "PerlerBeads-debug-${tag}.apk"
+
+    - name: Upload Release Asset (Android)
+      uses: softprops/action-gh-release@v2
+      with:
+        files: "PerlerBeads-debug-${{ github.ref_name }}.apk"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

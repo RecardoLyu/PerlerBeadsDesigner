@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/update_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/candy_theme.dart';
 import '../widgets.dart';
@@ -198,13 +199,71 @@ class _SegmentDefaults extends ConsumerWidget {
   }
 }
 
-/// 关于：版本号 + 使用帮助（吸收原「帮助」入口）。
-class _About extends StatelessWidget {
+/// 关于：版本号 + 使用帮助（吸收原「帮助」入口）+ 检查更新/在线更新。
+class _About extends StatefulWidget {
   const _About();
+
+  @override
+  State<_About> createState() => _AboutState();
+}
+
+class _AboutState extends State<_About> {
+  String _version = '…';
+  bool _checking = false;
+  double? _progress;          // null=未在下载
+  UpdateInfo? _info;
+  String _status = '';
+  bool _downloaded = false;
+  String? _apkPath;
+
+  @override
+  void initState() {
+    super.initState();
+    UpdateService.currentVersion()
+        .then((v) => mounted ? setState(() => _version = v) : null);
+  }
+
+  Future<void> _check() async {
+    setState(() { _checking = true; _status = '正在检查更新…'; _info = null; _downloaded = false; });
+    final info = await UpdateService.check();
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _info = info;
+      if (info == null) {
+        _status = '检查失败，请检查网络后重试';
+      } else if (info.hasUpdate) {
+        _status = info.apkUrl != null
+            ? '发现新版本 v${info.latest}（当前 v${info.current}）'
+            : '发现新版本 v${info.latest}，但未找到安装包';
+      } else {
+        _status = '已是最新版本（v${info.current}）';
+      }
+    });
+  }
+
+  Future<void> _downloadAndInstall() async {
+    final url = _info?.apkUrl;
+    if (url == null) return;
+    setState(() { _progress = 0; _status = '下载中…'; });
+    try {
+      final path = await UpdateService.downloadApk(url,
+          onProgress: (p) => mounted ? setState(() => _progress = p) : null);
+      if (!mounted) return;
+      setState(() { _progress = null; _downloaded = true; _apkPath = path; _status = '已下载，点击安装'; });
+      await UpdateService.installApk(path);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _progress = null; _status = '下载失败: $e'; });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = context.candy;
+    final info = _info;
+    final showUpdate = info != null && info.hasUpdate && info.apkUrl != null;
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Text('拼豆图纸生成器', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: c.foregroundStrong)),
@@ -212,7 +271,7 @@ class _About extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
           decoration: BoxDecoration(color: c.muted, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(999)),
-          child: Text('v2.1.0 移动版', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.mutedFg)),
+          child: Text('v$_version 移动版', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.mutedFg)),
         ),
       ]),
       const SizedBox(height: 12),
@@ -240,8 +299,64 @@ class _About extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 10),
-      Text('从加载图像、分割抠图到生成拼豆图纸、导出的完整操作说明与常见问题。',
-          style: TextStyle(fontSize: 11, height: 1.45, color: c.mutedFg)),
+      // 检查更新 / 下载安装
+      InkWell(
+        onTap: _checking || _progress != null
+            ? null
+            : (showUpdate && !_downloaded ? _downloadAndInstall : _downloaded && _apkPath != null
+                ? () => UpdateService.installApk(_apkPath!)
+                : _check),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: c.muted,
+            border: Border.all(color: c.border),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Icon(
+              _downloaded ? Icons.install_mobile_rounded
+                  : showUpdate ? Icons.download_rounded
+                  : Icons.system_update_alt_rounded,
+              size: 18, color: c.foregroundStrong),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                _checking ? '检查中…'
+                    : _progress != null ? '下载中 ${(_progress! * 100).toStringAsFixed(0)}%'
+                    : _downloaded ? '安装更新'
+                    : showUpdate ? '下载并更新到 v${info.latest}'
+                    : '检查更新',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foregroundStrong)),
+            ),
+            if (_checking || _progress != null)
+              SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, value: _progress,
+                      color: Theme.of(context).colorScheme.primary))
+            else
+              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: c.mutedFg),
+          ]),
+        ),
+      ),
+      if (_progress != null) ...[
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(value: _progress, minHeight: 6,
+              backgroundColor: c.muted, color: Theme.of(context).colorScheme.primary),
+        ),
+      ],
+      if (_status.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(_status, style: TextStyle(fontSize: 11, height: 1.4, color: c.mutedFg)),
+        if (showUpdate && info.notes.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(info.notes.length > 200 ? '${info.notes.substring(0, 200)}…' : info.notes,
+                style: TextStyle(fontSize: 10.5, height: 1.4, color: c.mutedFg)),
+          ),
+      ],
     ]);
   }
 }
