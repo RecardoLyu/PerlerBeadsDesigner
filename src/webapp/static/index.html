@@ -65,9 +65,16 @@
             <div class="slider-row"><label>亮度</label><input type="range" id="brightness" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整图像整体明暗。1 为不变，大于 1 变亮，小于 1 变暗。"><output id="brightnessOut">1.00</output></div>
             <div class="slider-row"><label>对比度</label><input type="range" id="contrast" min="0.4" max="1.8" step="0.02" value="1" data-tip="调整明暗反差。大于 1 增强对比，小于 1 降低对比。"><output id="contrastOut">1.00</output></div>
             <div class="slider-row"><label>高斯模糊</label><input type="range" id="blur" min="1" max="15" step="2" value="1" data-tip="对图像做高斯平滑，去除噪点与细碎纹理，让生成的图纸更干净。1 表示不模糊。"><output id="blurOut">1</output></div>
+            <div id="cropRow" style="margin-top:8px">
+              <button class="btn btn-ghost" id="cropBtn" style="width:100%" data-tip="在画布上拖拽框出要保留的区域，可反复拖动边框微调；点「应用裁剪」后，裁剪结果成为新的「原图」（恢复原图只会回到裁剪后，重新导入才会回到最原始的图）。">裁剪</button>
+              <div id="cropActions" style="display:none;gap:8px">
+                <button class="btn btn-ghost btn-sm" id="cropCancelBtn" style="flex:1" data-tip="放弃本次框选，退出裁剪模式，图像不变。">取消</button>
+                <button class="btn btn-primary btn-sm" id="cropApplyBtn" style="flex:1" data-tip="按当前框选裁剪图像，裁剪结果成为新的「原图」。">应用</button>
+              </div>
+            </div>
             <div style="display:flex;gap:8px;margin-top:10px">
               <button class="btn btn-ghost" id="applyBasic" style="flex:1" data-tip="把当前滑块调整叠加到当前图像上，可连续多次迭代调整。">应用调整</button>
-              <button class="btn btn-ghost" id="resetBtn" style="flex:1" data-tip="放弃所有调整，回到最初加载的原始图像。">恢复原图</button>
+              <button class="btn btn-ghost" id="resetBtn" style="flex:1" data-tip="放弃所有调整，回到最初加载的原始图像（若裁剪过，则回到最近一次裁剪后的图）。">恢复原图</button>
             </div>
           </div>
           <!-- 分割模块卡片由后续 preprocess 模块注入 -->
@@ -81,6 +88,15 @@
             <div class="num-row"><label>宽度(豆)</label><input type="number" id="wBeads" value="52" min="4" max="400"></div>
             <div class="num-row"><label>高度(豆)</label><input type="number" id="hBeads" value="52" min="4" max="400"></div>
             <div class="check-row"><input type="checkbox" id="keepRatio" checked><label for="keepRatio">保持图像比例</label></div>
+            <div class="num-row"><label>品牌</label>
+              <select class="sel" id="brandSel" data-tip="拼豆品牌颜色库。不同品牌色号与颜色不同，切换后需重新生成图纸。">
+                <option value="mard" selected>MARD 曼德</option>
+                <option value="perler">Perler</option>
+                <option value="hama">Hama</option>
+                <option value="artkal_s">Artkal S-5mm</option>
+                <option value="artkal_c">Artkal C-2.6mm</option>
+              </select>
+            </div>
             <div class="num-row"><label>颜色上限</label><input type="number" id="maxColors" value="0" min="0" max="221" data-tip="限制图纸使用的最多颜色数，0 表示不限制。颜色越少越省豆、越易拼。"></div>
             <div class="slider-row"><label>细节保留</label><input type="range" id="salience" min="0" max="2" step="0.1" value="1" data-tip="显著性细节保留强度：值越大越能保住图像中的小细节与边缘，避免被量化抹平。"><output id="salienceOut">1.0</output></div>
             <div class="num-row"><label>颜色度量</label>
@@ -170,6 +186,7 @@
 <script src="/js/scribble.js"></script>
 <script src="/js/app.js"></script>
 <script src="/js/segment.js"></script>
+<script src="/js/crop.js"></script>
 <script src="/js/pattern.js"></script>
 </body>
 </html>

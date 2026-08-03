@@ -33,6 +33,21 @@ class Palette {
     return Palette(data.map((d) => BeadColor(d['code'], d['name'], d['hex'])).toList());
   }
 
+  /// 拼豆品牌颜色库（key → assets/palette/<key>.json）。与桌面端 ColorManager.BRANDS 对齐。
+  static const Map<String, String> brandLabels = {
+    'mard': 'MARD 曼德',
+    'perler': 'Perler',
+    'hama': 'Hama',
+    'artkal_s': 'Artkal S-5mm',
+    'artkal_c': 'Artkal C-2.6mm',
+  };
+
+  static Future<Palette> loadBrand(String key) async {
+    final s = await rootBundle.loadString('assets/palette/$key.json');
+    final data = jsonDecode(s) as List;
+    return Palette(data.map((d) => BeadColor(d['code'], d['name'], d['hex'])).toList());
+  }
+
   // ---- 距离（对应 Color.distance_to）----
   double _dist(BeadColor c, int r, int g, int b, String metric) {
     switch (metric) {

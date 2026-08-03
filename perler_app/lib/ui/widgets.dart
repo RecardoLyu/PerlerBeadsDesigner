@@ -8,6 +8,7 @@ class CandyButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool primary;
   final bool expand;
+  final bool compact; // 稍小尺寸（取消/应用等次级操作）
   const CandyButton({
     super.key,
     required this.label,
@@ -15,19 +16,20 @@ class CandyButton extends StatelessWidget {
     this.onPressed,
     this.primary = true,
     this.expand = true,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.candy;
     final child = Container(
-      height: 44,
+      height: compact ? 36 : 44,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         gradient: primary ? candyPrimaryGradient(Theme.of(context).brightness) : null,
         color: primary ? null : c.surface,
         border: primary ? null : Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
         boxShadow: primary
             ? [BoxShadow(color: c.violetDeep.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 4))]
             : null,
@@ -37,13 +39,13 @@ class CandyButton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 16, color: primary ? Colors.white : Theme.of(context).colorScheme.primary),
+            Icon(icon, size: compact ? 14 : 16, color: primary ? Colors.white : Theme.of(context).colorScheme.primary),
             const SizedBox(width: 7),
           ],
           Text(
             label,
             style: TextStyle(
-              fontSize: 13.5,
+              fontSize: compact ? 12.5 : 13.5,
               fontWeight: FontWeight.w700,
               color: primary ? Colors.white : Theme.of(context).colorScheme.primary,
             ),

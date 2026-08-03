@@ -45,6 +45,20 @@ class AppState:
         self.output_dir: str = os.path.abspath("output")
         self.grid_width: int = 104  # 图纸宽（豆），分割下采样目标据此算；生成图纸时同步
 
+    # ---- 源图片文件名（图纸顶部标题用）----
+    @property
+    def source_name(self) -> Optional[str]:
+        """当前图像的文件名（去路径去扩展名）；占位名返回 None（不渲染图纸标题）。
+        裁剪/调整不清除（仍是同一张源图），重新加载才覆盖。"""
+        p = getattr(self.processor, 'image_path', None)
+        if not p:
+            return None
+        base = os.path.splitext(os.path.basename(p))[0].strip()
+        # 占位名不显示标题
+        if base.lower() in ('', 'image', 'untitled', '未命名', '图像', '未命名图纸'):
+            return None
+        return base
+
     # ---- image ----
     def has_image(self) -> bool:
         return self.processor.current_image is not None

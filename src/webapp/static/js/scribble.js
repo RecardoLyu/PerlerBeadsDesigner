@@ -36,7 +36,7 @@ class ScribbleLayer {
       if (!this.enabled) return;
       e.stopPropagation(); e.preventDefault();
       this.drawing = true;
-      const stroke = { brush: this.brush, pts: [this._toImage(e)] };
+      const stroke = { brush: this.brush, size: this.brushSize, pts: [this._toImage(e)] };
       this.strokes.push(stroke);
       this._redraw();
     }, true);
@@ -78,9 +78,10 @@ class ScribbleLayer {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     for (const s of this.strokes) {
       const col = s.brush === 'fg' ? this._fgCol() : this._bgCol();
+      const sSize = s.size != null ? s.size : this.brushSize;   // 每笔记录自身粗细，改滑杆不影响已画笔画
       ctx.strokeStyle = col;
       ctx.fillStyle = col;
-      ctx.lineWidth = Math.max(2, this.brushSize * v.scale);
+      ctx.lineWidth = Math.max(2, sSize * v.scale);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.shadowColor = dark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.25)';
       ctx.shadowBlur = 2;
@@ -118,9 +119,9 @@ class ScribbleLayer {
       const x = c.getContext('2d');
       x.fillStyle = '#000'; x.fillRect(0, 0, iw, ih);
       x.strokeStyle = '#fff'; x.fillStyle = '#fff'; x.lineCap = 'round'; x.lineJoin = 'round';
-      x.lineWidth = this.brushSize;
       for (const s of this.strokes) {
         if (s.brush !== brush) continue;
+        x.lineWidth = s.size != null ? s.size : this.brushSize;   // 每笔按自身粗细导出 mask
         x.beginPath();
         s.pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]));
         if (s.pts.length === 1) { x.arc(s.pts[0][0], s.pts[0][1], x.lineWidth / 2, 0, 7); x.fill(); }

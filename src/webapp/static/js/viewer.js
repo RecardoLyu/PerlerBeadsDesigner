@@ -45,7 +45,8 @@ class Viewer {
 
     const start = (e) => {
       if (!this.img.src) return;
-      if (this._interactionLock) return;   // 涂鸦/框选时让位
+      // 涂鸦/框选/裁剪时让位：左键交给交互层，但中键仍允许平移视图（放大时调整整体 ROI）
+      if (this._interactionLock && e.button !== 1) return;
       if (e.button === 1 || e.button === 0 || this._panMode) {
         this.panning = true; this.viewport.classList.add('panning');
         this._ps = { x: e.clientX, y: e.clientY };

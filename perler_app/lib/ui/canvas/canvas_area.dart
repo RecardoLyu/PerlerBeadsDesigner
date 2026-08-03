@@ -321,6 +321,13 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
   // 双指手势进行中：单指涂抹/框选已开始后又加了第二指时，取消单指手势避免误涂/误框
   bool _multiTouch = false;
 
+  // ---- 裁剪模式：可拖动的裁剪框（8 手柄 + 整体移动 + 新建）----
+  String? _cropDrag; // 'tl/tr/bl/br/l/r/t/b/move/new'；null=未在拖
+  Rect? _cropBox0; // 拖拽起始时的框（图像像素）
+  (double, double)? _cropStart; // 拖拽起点（图像像素）
+  static const double _cropHitPx = 26; // 手柄命中半径（显示像素，触屏放大）
+  static const double _cropMinPx = 8; // 最小裁剪边长（图像像素）
+
   /// 图像在 child 坐标系里的实际显示矩形（BoxFit.contain）。
   Rect _imageRect(Size box) {
     final iw = widget.working.width.toDouble();
@@ -347,6 +354,115 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
   Offset _clampToRect(Offset p, Rect r) =>
       Offset(p.dx.clamp(r.left, r.right), p.dy.clamp(r.top, r.bottom));
 
+  // ---- 裁剪框：图像像素 Rect ↔ 显示坐标 Rect 换算 ----
+  Rect _cropToDisplay(Rect imgPx, Rect imgRect) {
+    final iw = widget.working.width.toDouble(), ih = widget.working.height.toDouble();
+    final l = imgRect.left + imgPx.left / iw * imgRect.width;
+    final t = imgRect.top + imgPx.top / ih * imgRect.height;
+    final r = imgRect.left + imgPx.right / iw * imgRect.width;
+    final b = imgRect.top + imgPx.bottom / ih * imgRect.height;
+    return Rect.fromLTRB(l, t, r, b);
+  }
+
+  /// 命中检测（显示坐标）：返回 'tl/tr/bl/br/l/r/t/b/move/new'。
+  String _cropHit(Offset local, Rect box, Rect imgRect) {
+    final d = _cropToDisplay(box, imgRect);
+    double dx(Offset a, Offset b) => (a - b).distance;
+    final corners = {
+      'tl': d.topLeft, 'tr': d.topRight, 'bl': d.bottomLeft, 'br': d.bottomRight,
+    };
+    for (final e in corners.entries) {
+      if (dx(local, e.value) <= _cropHitPx) return e.key;
+    }
+    final edges = {
+      't': Offset(d.center.dx, d.top), 'b': Offset(d.center.dx, d.bottom),
+      'l': Offset(d.left, d.center.dy), 'r': Offset(d.right, d.center.dy),
+    };
+    for (final e in edges.entries) {
+      if (dx(local, e.value) <= _cropHitPx) return e.key;
+    }
+    // 框线附近吸附：点在某条边附近也算拖该边（触屏容错）
+    final inX = local.dx >= d.left - _cropHitPx && local.dx <= d.right + _cropHitPx;
+    final inY = local.dy >= d.top - _cropHitPx && local.dy <= d.bottom + _cropHitPx;
+    if (inX && (local.dy - d.top).abs() <= _cropHitPx) return 't';
+    if (inX && (local.dy - d.bottom).abs() <= _cropHitPx) return 'b';
+    if (inY && (local.dx - d.left).abs() <= _cropHitPx) return 'l';
+    if (inY && (local.dx - d.right).abs() <= _cropHitPx) return 'r';
+    return d.contains(local) ? 'move' : 'new';
+  }
+
+  void _cropBegin(Offset local, Rect imgRect) {
+    final cur = ref.read(cropRectProvider);
+    final p = _toImageClamped(local, imgRect);
+    if (cur == null) {
+      // 尚无框：首次拖拽新建框
+      _cropStart = p;
+      _cropDrag = 'new';
+      ref.read(cropRectProvider.notifier).state = Rect.fromPoints(Offset(p.$1, p.$2), Offset(p.$1, p.$2));
+      _cropBox0 = null;
+      return;
+    }
+    final kind = _cropHit(local, cur, imgRect);
+    // 已有框：点框外不再重新框选，只能拖手柄/拖框内调整（带吸附容错）
+    if (kind == 'new') return;
+    _cropStart = p;
+    _cropDrag = kind;
+    _cropBox0 = cur;
+  }
+
+  void _cropUpdate(Offset local, Rect imgRect) {
+    if (_cropDrag == null || _cropStart == null) return;
+    final p = _toImageClamped(local, imgRect);
+    final iw = widget.working.width.toDouble(), ih = widget.working.height.toDouble();
+    double cx(double v) => v.clamp(0.0, iw);
+    double cy(double v) => v.clamp(0.0, ih);
+    if (_cropDrag == 'new') {
+      final s = _cropStart!;
+      ref.read(cropRectProvider.notifier).state =
+          Rect.fromPoints(Offset(s.$1, s.$2), Offset(p.$1, p.$2));
+      return;
+    }
+    final b = _cropBox0!;
+    final dx = p.$1 - _cropStart!.$1, dy = p.$2 - _cropStart!.$2;
+    final k = _cropDrag!;
+    Rect nb;
+    if (k == 'move') {
+      final w = b.width, h = b.height;
+      final nl = (b.left + dx).clamp(0.0, iw - w);
+      final nt = (b.top + dy).clamp(0.0, ih - h);
+      nb = Rect.fromLTWH(nl, nt, w, h);
+    } else {
+      double l = b.left, t = b.top, r = b.right, bo = b.bottom;
+      if (k.contains('l')) l = cx(b.left + dx);
+      if (k.contains('r')) r = cx(b.right + dx);
+      if (k.contains('t')) t = cy(b.top + dy);
+      if (k.contains('b')) bo = cy(b.bottom + dy);
+      nb = Rect.fromLTRB(l, t, r, bo);
+    }
+    ref.read(cropRectProvider.notifier).state = nb;
+  }
+
+  void _cropEnd() {
+    final cur = ref.read(cropRectProvider);
+    if (cur != null) {
+      final n = _normalizeRect(cur);
+      // 过滤过小框
+      if (n.width < _cropMinPx || n.height < _cropMinPx) {
+        ref.read(cropRectProvider.notifier).state = null;
+      } else {
+        ref.read(cropRectProvider.notifier).state = n;
+      }
+    }
+    _cropDrag = null; _cropBox0 = null; _cropStart = null;
+  }
+
+  static Rect _normalizeRect(Rect r) => Rect.fromLTRB(
+        r.left < r.right ? r.left : r.right,
+        r.top < r.bottom ? r.top : r.bottom,
+        r.left < r.right ? r.right : r.left,
+        r.top < r.bottom ? r.bottom : r.top,
+      );
+
   /// 涂抹一笔（单指）。
   void _scribblePoint(Offset local, Size box, CanvasInteraction mode) {
     final imgRect = _imageRect(box);
@@ -365,11 +481,16 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
       // 双指：取消可能已开始/即将开始的单指手势，进入缩放平移
       _pts.clear();
       _selectDisplay.clear();
+      _cropDrag = null; _cropBox0 = null; _cropStart = null;
       _startMatrix = widget.tx.value.clone();
       _startFocal = d.focalPoint;
     } else {
-      // 单指：涂抹/框选起点
+      // 单指：涂抹/框选/裁剪起点
       final imgRect = _imageRect(box);
+      if (mode == CanvasInteraction.crop) {
+        _cropBegin(d.localFocalPoint, imgRect);
+        return;
+      }
       final p = _toImageClamped(d.localFocalPoint, imgRect);
       _pts.clear();
       _pts.add(p);
@@ -396,8 +517,12 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
       widget.tx.value = m;
       return;
     }
-    // 单指拖拽：涂抹/框选轨迹
+    // 单指拖拽：涂抹/框选/裁剪轨迹
     final imgRect = _imageRect(box);
+    if (mode == CanvasInteraction.crop) {
+      _cropUpdate(d.localFocalPoint, imgRect);
+      return;
+    }
     final p = _toImageClamped(d.localFocalPoint, imgRect);
     if (mode == CanvasInteraction.scribbleFg || mode == CanvasInteraction.scribbleBg) {
       _scribblePoint(d.localFocalPoint, box, mode);
@@ -410,6 +535,11 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
   }
 
   void _onScaleEnd(ScaleEndDetails d, CanvasInteraction mode) {
+    if (mode == CanvasInteraction.crop) {
+      _cropEnd();
+      setState(() {});
+      return;
+    }
     if (!_multiTouch &&
         (mode == CanvasInteraction.selectRect ||
             mode == CanvasInteraction.selectEllipse ||
@@ -457,8 +587,11 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
     final mode = ref.watch(interactionProvider);
     final viewMode = ref.watch(viewModeProvider);
     final selecting = mode != CanvasInteraction.pan;
+    final cropping = mode == CanvasInteraction.crop;
     final scribbling = mode == CanvasInteraction.scribbleFg ||
         mode == CanvasInteraction.scribbleBg;
+    // 裁剪框（图像像素），裁剪叠层据此重绘
+    final cropRect = ref.watch(cropRectProvider);
     // 涂抹叠层读状态层的持久化显示缓冲（多笔/前景背景全程保留，不只当前一笔）。
     // watch 顶层 segment + version，scribbleAt 更新缓冲后 version+1 触发重绘。
     final seg = ref.watch(segmentProvider);
@@ -494,7 +627,15 @@ class _CanvasContentState extends ConsumerState<_CanvasContent> {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: scribbling
+                      painter: cropping
+                          ? _CropPainter(
+                              box: cropRect == null
+                                  ? null
+                                  : _cropToDisplay(
+                                      _normalizeRect(cropRect), imgRect),
+                              imgRect: imgRect,
+                            )
+                          : scribbling
                           ? _ScribblePainter(
                               fg: seg.fgDisplay,
                               bg: seg.bgDisplay,
@@ -564,6 +705,58 @@ class _GesturePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GesturePainter old) => old.select.length != select.length;
+}
+
+/// 裁剪可视化：外部半透明遮罩（框内全透明清晰）+ 裁剪框 + 8 手柄。
+/// box 为显示坐标 Rect（null=尚未框选，整图压暗提示）。
+class _CropPainter extends CustomPainter {
+  final Rect? box; // 裁剪框（显示坐标）
+  final Rect imgRect; // 图像显示矩形（遮罩只罩图像区域）
+  const _CropPainter({required this.box, required this.imgRect});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 遮罩：整图半透明压暗，框内掏空（中心清晰、外部到图像边缘低透明）
+    final dim = Paint()..color = const Color(0xFF000000).withOpacity(0.42);
+    final maskPath = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(imgRect);
+    if (box != null) maskPath.addRect(box!);
+    canvas.drawPath(maskPath, dim);
+
+    if (box == null) return;
+    final b = box!;
+    // 框边：白描边 + 蓝主线（深浅背景都清晰）
+    final border = Paint()
+      ..color = const Color(0xFFFFFFFF).withOpacity(0.9)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+    canvas.drawRect(b, border);
+    final line = Paint()
+      ..color = const Color(0xFF3B82F6).withOpacity(0.95)
+      ..strokeWidth = 1.6
+      ..style = PaintingStyle.stroke;
+    canvas.drawRect(b, line);
+
+    // 8 手柄：四角 + 四边中心（白底蓝边圆点，触屏加大）
+    final handleFill = Paint()..color = const Color(0xFFFFFFFF);
+    final handleStroke = Paint()
+      ..color = const Color(0xFF3B82F6).withOpacity(0.95)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final pts = <Offset>[
+      b.topLeft, Offset(b.center.dx, b.top), b.topRight,
+      Offset(b.left, b.center.dy), Offset(b.right, b.center.dy),
+      b.bottomLeft, Offset(b.center.dx, b.bottom), b.bottomRight,
+    ];
+    for (final p in pts) {
+      canvas.drawCircle(p, 7, handleFill);
+      canvas.drawCircle(p, 7, handleStroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CropPainter old) => old.box != box || old.imgRect != imgRect;
 }
 
 /// 涂抹可视化：把状态层的 fg/bg 涂抹缓冲（计算域小图）按笔触尺寸画成半透明圆点。

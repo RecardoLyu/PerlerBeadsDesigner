@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/app_state.dart';
+import '../../algo/quantizer.dart';
 import '../sheet/function_sheet.dart';
 import '../widgets.dart';
 
@@ -130,6 +131,7 @@ class _PatternPanelState extends ConsumerState<PatternPanel> {
 
     final hasImage = ref.watch(imageProvider.select((s) => s.hasImage));
     final busy = ref.watch(patternProvider.select((s) => s.busy));
+    final brand = ref.watch(brandProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -164,6 +166,25 @@ class _PatternPanelState extends ConsumerState<PatternPanel> {
           _refreshHDisplay();
           _syncGrid();
         })),
+        // 品牌（左半）+ 颜色上限（右半）双栏：与桌面端布局一致
+        Row(children: [
+          const SizedBox(width: 58, child: Text('品牌', style: TextStyle(fontSize: 12.5))),
+          Expanded(child: DropdownButtonFormField<String>(
+            value: brand,
+            isExpanded: true,
+            items: Palette.brandLabels.entries
+                .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontSize: 13))))
+                .toList(),
+            onChanged: (v) {
+              if (v == null || v == brand) return;
+              ref.read(brandProvider.notifier).state = v;
+              ref.read(patternProvider.notifier).reset(); // 换色板后旧图纸失效
+              ref.read(statusMessageProvider.notifier).state =
+                  '品牌: ${Palette.brandLabels[v]}，请重新生成图纸';
+            },
+            decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
+          )),
+        ]),
         Row(children: [
           const SizedBox(width: 58, child: Text('颜色上限', style: TextStyle(fontSize: 12.5))),
           Expanded(child: TextField(

@@ -72,3 +72,13 @@ output/
 *.tmp
 *.log
 .DS_Store
+
+# 打包产物（不进 git；APK/exe 作为 Release 资产上传）
+*.apk
+PerlerBeads-*.apk
+build_cv/
+
+# Flutter 本地状态/构建缓存
+perler_app/.flutter
+perler_app/.flutter_tool_state
+perler_app/android/build/

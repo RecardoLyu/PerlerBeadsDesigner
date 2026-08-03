@@ -311,10 +311,26 @@ class ColorPalette:
 class ColorManager:
     """Main color management system"""
 
-    def __init__(self, colors_file: str = None, color_metric: str = "ciede2000"):
+    # 支持的拼豆品牌：key -> (显示名, palette 目录下的文件名)
+    # 数据来自 GitHub maxcleme/beadcolors（真实色号+RGB，转 {code,name,hex}）。
+    BRANDS = {
+        'mard':     ('MARD 曼德',      'mard.json'),
+        'perler':   ('Perler',         'perler.json'),
+        'hama':     ('Hama',           'hama.json'),
+        'artkal_s': ('Artkal S-5mm',   'artkal_s.json'),
+        'artkal_c': ('Artkal C-2.6mm', 'artkal_c.json'),
+    }
+
+    def __init__(self, colors_file: str = None, color_metric: str = "ciede2000",
+                 palette_dir: str = None):
         self.colors_file = colors_file
         self.palette = None
         self.color_metric = color_metric
+        # palette 目录（各品牌 JSON 所在），默认 src/assets/palette
+        self.palette_dir = palette_dir or (
+            os.path.join(os.path.dirname(colors_file), 'palette') if colors_file else None)
+        self.brand = 'mard'          # 当前品牌 key
+        self.brand_label = self.BRANDS['mard'][0]
         self._load_or_create_palette()
 
     def _load_or_create_palette(self):
@@ -394,6 +410,19 @@ class ColorManager:
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
         return self.load_palette(data, colors_file=filepath)
+
+    def load_brand(self, key: str):
+        """切换到指定品牌的颜色库。返回 (brand_label, 颜色数)。"""
+        if key not in self.BRANDS:
+            raise ValueError(f"未知品牌: {key}（支持: {', '.join(self.BRANDS)}）")
+        label, fname = self.BRANDS[key]
+        path = os.path.join(self.palette_dir, fname) if self.palette_dir else None
+        if not path or not os.path.exists(path):
+            raise ValueError(f"品牌颜色文件不存在: {path}")
+        count = self.load_palette_file(path)
+        self.brand = key
+        self.brand_label = label
+        return label, count
 
     def set_color_metric(self, metric: str):
         """Set the color distance metric"""

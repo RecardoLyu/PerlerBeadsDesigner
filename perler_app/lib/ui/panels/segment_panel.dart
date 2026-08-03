@@ -58,6 +58,7 @@ class _SegmentPanelState extends ConsumerState<SegmentPanel> {
             primary: false,
             onPressed: hasImage
                 ? () {
+                    cancelCanvasInteraction(ref); // 进框选前取消裁剪/其它交互
                     final m = switch (_shape) {
                       0 => CanvasInteraction.selectRect,
                       1 => CanvasInteraction.selectEllipse,
@@ -101,6 +102,7 @@ class _SegmentPanelState extends ConsumerState<SegmentPanel> {
             primary: false,
             onPressed: (hasImage && seg.hasGrabCutSession)
                 ? () {
+                    cancelCanvasInteraction(ref); // 进涂抹前取消裁剪/其它交互
                     final segN = ref.read(segmentProvider.notifier);
                     segN.setBrushRadius(_brushSize / 2);
                     // 进涂抹：清空上一轮痕迹 + 默认切到高亮叠加画布

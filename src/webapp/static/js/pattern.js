@@ -14,6 +14,7 @@
     <div class="panel-card glass">
       <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>导出</h3>
       <div class="num-row"><label>文件名</label><input type="text" id="expName" value="pattern" style="flex:1;padding:7px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13px"></div>
+      <div class="check-row"><input type="checkbox" id="showTitle"><label for="showTitle" data-tip="勾选后把左侧文件名画到图纸顶部居中标题；默认不勾，图纸不显示文件名">在图纸上显示文件名</label></div>
       <div class="slider-row"><label>PNG缩放</label><input type="range" id="expScale" min="0.5" max="3" step="0.25" value="1" data-tip="导出 PNG 的缩放倍数：小于 1 缩小，大于 1 放大，越大越清晰、文件越大。"><output id="expScaleOut">1×</output></div>
       <div class="num-row"><label>Mask背景</label>
         <select class="sel" id="maskBgExp" data-tip="导出图纸时被 Mask 掉的背景格怎么显示：淡化=向白减淡，纯白/纯黑=填纯色。背景不计入 BOM、不渲染色号。">
@@ -108,6 +109,11 @@
   }
   window.renderBom = renderBom;
 
+  /* 加载图像后同步导出文件名（占位名/无源名时保持现状） */
+  window.syncExportName = (sourceName) => {
+    if (sourceName && $('expName')) $('expName').value = sourceName;
+  };
+
   /* 图纸生成成功后刷新 BOM（app.js 会调用 onPatternGenerated） */
   window.onPatternGenerated = (res) => { if (res && res.bom) renderBom(res.bom); };
 
@@ -124,6 +130,7 @@
         export_png: png,
         export_pdf: pdf,
         mask_bg: $('maskBgExp') ? $('maskBgExp').value : $('maskBg').value,
+        show_title: $('showTitle') ? $('showTitle').checked : false,
       });
       $('expResult').textContent = '已导出到 ' + res.output_dir + ': ' + res.files.map(f => f.split(/[\\/]/).pop()).join('、');
       busy.done('导出完成');
