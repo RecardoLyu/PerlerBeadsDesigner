@@ -1,0 +1,517 @@
+[
+  {
+    "code": "80-15179",
+    "name": "Evergreen",
+    "hex": "#305545"
+  },
+  {
+    "code": "80-15181",
+    "name": "Light Grey",
+    "hex": "#b3bab8"
+  },
+  {
+    "code": "80-15182",
+    "name": "Lavender",
+    "hex": "#af9fce"
+  },
+  {
+    "code": "80-15199",
+    "name": "Shamrock",
+    "hex": "#008f53"
+  },
+  {
+    "code": "80-15200",
+    "name": "Cobalt",
+    "hex": "#0065b1"
+  },
+  {
+    "code": "80-15201",
+    "name": "Midnight",
+    "hex": "#2f3c55"
+  },
+  {
+    "code": "80-15202",
+    "name": "Robin's Egg",
+    "hex": "#a9cdd5"
+  },
+  {
+    "code": "80-15203",
+    "name": "Flamingo",
+    "hex": "#f2afb7"
+  },
+  {
+    "code": "80-15204",
+    "name": "Salmon",
+    "hex": "#e1747a"
+  },
+  {
+    "code": "80-15205",
+    "name": "Fawn",
+    "hex": "#c9a385"
+  },
+  {
+    "code": "80-15206",
+    "name": "Pewter",
+    "hex": "#94a19d"
+  },
+  {
+    "code": "80-15207",
+    "name": "Charcoal",
+    "hex": "#4f595a"
+  },
+  {
+    "code": "80-15208",
+    "name": "Toasted Marshmallow",
+    "hex": "#dedace"
+  },
+  {
+    "code": "80-15210",
+    "name": "Orchid",
+    "hex": "#b1628e"
+  },
+  {
+    "code": "80-15211",
+    "name": "Tomato",
+    "hex": "#d14337"
+  },
+  {
+    "code": "80-15212",
+    "name": "Spice",
+    "hex": "#d9593a"
+  },
+  {
+    "code": "80-15213",
+    "name": "Apricot",
+    "hex": "#f5a168"
+  },
+  {
+    "code": "80-15214",
+    "name": "Sherbet",
+    "hex": "#d8e47c"
+  },
+  {
+    "code": "80-15215",
+    "name": "Mist",
+    "hex": "#93b0bd"
+  },
+  {
+    "code": "80-15216",
+    "name": "Sky",
+    "hex": "#4ac0d8"
+  },
+  {
+    "code": "80-15217",
+    "name": "Lagoon",
+    "hex": "#00a4ac"
+  },
+  {
+    "code": "80-15218",
+    "name": "Teal",
+    "hex": "#047f8a"
+  },
+  {
+    "code": "80-15219",
+    "name": "Fern",
+    "hex": "#7f971a"
+  },
+  {
+    "code": "80-15220",
+    "name": "Olive",
+    "hex": "#696e31"
+  },
+  {
+    "code": "80-15961",
+    "name": "Cherry",
+    "hex": "#9d2b3a"
+  },
+  {
+    "code": "80-19001",
+    "name": "White",
+    "hex": "#eaefee"
+  },
+  {
+    "code": "80-19002",
+    "name": "Creme",
+    "hex": "#e1e2bb"
+  },
+  {
+    "code": "80-19003",
+    "name": "Yellow",
+    "hex": "#e7ce3e"
+  },
+  {
+    "code": "80-19004",
+    "name": "Orange",
+    "hex": "#eb7b31"
+  },
+  {
+    "code": "80-19005",
+    "name": "Red",
+    "hex": "#b0353c"
+  },
+  {
+    "code": "80-19006",
+    "name": "Bubblegum",
+    "hex": "#d8729a"
+  },
+  {
+    "code": "80-19007",
+    "name": "Purple",
+    "hex": "#684b86"
+  },
+  {
+    "code": "80-19008",
+    "name": "Dark Blue",
+    "hex": "#0e5092"
+  },
+  {
+    "code": "80-19009",
+    "name": "Light Blue",
+    "hex": "#278cc9"
+  },
+  {
+    "code": "80-19010",
+    "name": "Dark Green",
+    "hex": "#007b4e"
+  },
+  {
+    "code": "80-19011",
+    "name": "Light Green",
+    "hex": "#18c7b1"
+  },
+  {
+    "code": "80-19012",
+    "name": "Brown",
+    "hex": "#674c44"
+  },
+  {
+    "code": "80-19017",
+    "name": "Grey",
+    "hex": "#909497"
+  },
+  {
+    "code": "80-19018",
+    "name": "Black",
+    "hex": "#323234"
+  },
+  {
+    "code": "80-19020",
+    "name": "Rust",
+    "hex": "#995043"
+  },
+  {
+    "code": "80-19021",
+    "name": "Light Brown",
+    "hex": "#936848"
+  },
+  {
+    "code": "80-19033",
+    "name": "Peach",
+    "hex": "#e9bfb9"
+  },
+  {
+    "code": "80-19035",
+    "name": "Tan",
+    "hex": "#c5ac90"
+  },
+  {
+    "code": "80-19038",
+    "name": "Magenta",
+    "hex": "#e04284"
+  },
+  {
+    "code": "80-19052",
+    "name": "Pastel Blue",
+    "hex": "#4a9ccf"
+  },
+  {
+    "code": "80-19053",
+    "name": "Pastel Green",
+    "hex": "#6dcc94"
+  },
+  {
+    "code": "80-19054",
+    "name": "Pastel Lavender",
+    "hex": "#937fbf"
+  },
+  {
+    "code": "80-19056",
+    "name": "Pastel Yellow",
+    "hex": "#e9e290"
+  },
+  {
+    "code": "80-19057",
+    "name": "Cheddar",
+    "hex": "#fbb146"
+  },
+  {
+    "code": "80-19058",
+    "name": "Toothpaste",
+    "hex": "#96d1d4"
+  },
+  {
+    "code": "80-19059",
+    "name": "Hot Coral",
+    "hex": "#dd595b"
+  },
+  {
+    "code": "80-19060",
+    "name": "Plum",
+    "hex": "#a75d9d"
+  },
+  {
+    "code": "80-19061",
+    "name": "Kiwi Lime",
+    "hex": "#69b845"
+  },
+  {
+    "code": "80-19062",
+    "name": "Turquoise",
+    "hex": "#0098c5"
+  },
+  {
+    "code": "80-19063",
+    "name": "Blush",
+    "hex": "#f99297"
+  },
+  {
+    "code": "80-19070",
+    "name": "Periwinkle Blue",
+    "hex": "#6683b7"
+  },
+  {
+    "code": "80-19079",
+    "name": "Light Pink",
+    "hex": "#e1bcce"
+  },
+  {
+    "code": "80-19080",
+    "name": "Green",
+    "hex": "#4dab64"
+  },
+  {
+    "code": "80-19083",
+    "name": "Pink",
+    "hex": "#d45496"
+  },
+  {
+    "code": "80-19088",
+    "name": "Raspberry",
+    "hex": "#983864"
+  },
+  {
+    "code": "80-19090",
+    "name": "Butterscotch",
+    "hex": "#da9964"
+  },
+  {
+    "code": "80-19091",
+    "name": "Parrot Green",
+    "hex": "#009188"
+  },
+  {
+    "code": "80-19092",
+    "name": "Dark Grey",
+    "hex": "#585c61"
+  },
+  {
+    "code": "80-19093",
+    "name": "Blueberry Creme",
+    "hex": "#85a8e3"
+  },
+  {
+    "code": "80-19096",
+    "name": "Cranapple",
+    "hex": "#843947"
+  },
+  {
+    "code": "80-19097",
+    "name": "Prickly Pear",
+    "hex": "#bbc938"
+  },
+  {
+    "code": "80-19098",
+    "name": "Sand",
+    "hex": "#e5be9e"
+  },
+  {
+    "code": "80-15240",
+    "name": "Mint",
+    "hex": "#b3eed5"
+  },
+  {
+    "code": "80-15241",
+    "name": "Sour Apple",
+    "hex": "#a3de6f"
+  },
+  {
+    "code": "80-15242",
+    "name": "Cotton Candy",
+    "hex": "#f479b0"
+  },
+  {
+    "code": "80-15243",
+    "name": "Grape",
+    "hex": "#503b9c"
+  },
+  {
+    "code": "80-15244",
+    "name": "Rose",
+    "hex": "#d25d72"
+  },
+  {
+    "code": "80-15245",
+    "name": "Iris",
+    "hex": "#4e56a3"
+  },
+  {
+    "code": "80-15246",
+    "name": "Tangerine",
+    "hex": "#fd5918"
+  },
+  {
+    "code": "80-15247",
+    "name": "Forest",
+    "hex": "#005d57"
+  },
+  {
+    "code": "80-15248",
+    "name": "Eggplant",
+    "hex": "#6f3255"
+  },
+  {
+    "code": "80-15249",
+    "name": "Honey",
+    "hex": "#da8c2c"
+  },
+  {
+    "code": "80-15250",
+    "name": "Gingerbread",
+    "hex": "#7e5446"
+  },
+  {
+    "code": "80-15251",
+    "name": "Thistle",
+    "hex": "#8c8ca7"
+  },
+  {
+    "code": "80-15252",
+    "name": "Slate Blue",
+    "hex": "#5e6d7b"
+  },
+  {
+    "code": "80-15253",
+    "name": "Denim",
+    "hex": "#4c6388"
+  },
+  {
+    "code": "80-15254",
+    "name": "Sage",
+    "hex": "#9aa98e"
+  },
+  {
+    "code": "80-15255",
+    "name": "Orange Cream",
+    "hex": "#efb79b"
+  },
+  {
+    "code": "80-15256",
+    "name": "Fruit Punch",
+    "hex": "#ca3b65"
+  },
+  {
+    "code": "80-15257",
+    "name": "Fuchsia",
+    "hex": "#cb59b9"
+  },
+  {
+    "code": "80-15258",
+    "name": "Mulberry",
+    "hex": "#714875"
+  },
+  {
+    "code": "80-15259",
+    "name": "Slime",
+    "hex": "#c8c85c"
+  },
+  {
+    "code": "80-15260",
+    "name": "Stone",
+    "hex": "#988c8c"
+  },
+  {
+    "code": "80-15261",
+    "name": "Dark Spruce",
+    "hex": "#14313b"
+  },
+  {
+    "code": "80-15262",
+    "name": "Cocoa",
+    "hex": "#392928"
+  },
+  {
+    "code": "80-15265",
+    "name": "Twilight Plum",
+    "hex": "#c685b1"
+  },
+  {
+    "code": "80-15266",
+    "name": "Caribbean Sea",
+    "hex": "#6cc8ad"
+  },
+  {
+    "code": "80-15267",
+    "name": "Frosted Lilac",
+    "hex": "#cdb7c3"
+  },
+  {
+    "code": "80-15273",
+    "name": "Brick",
+    "hex": "#fc9574"
+  },
+  {
+    "code": "80-15274",
+    "name": "Rich Butter",
+    "hex": "#f6ca69"
+  },
+  {
+    "code": "80-15275",
+    "name": "Peacock",
+    "hex": "#0090ac"
+  },
+  {
+    "code": "80-15276",
+    "name": "Carnation Pink",
+    "hex": "#f8c7c9"
+  },
+  {
+    "code": "80-15089",
+    "name": "Neon Blue",
+    "hex": "#406ae1"
+  },
+  {
+    "code": "80-15268",
+    "name": "Sunflower",
+    "hex": "#deba0b"
+  },
+  {
+    "code": "80-15269",
+    "name": "Lemon",
+    "hex": "#f6d901"
+  },
+  {
+    "code": "80-15263",
+    "name": "Celery",
+    "hex": "#bed4a6"
+  },
+  {
+    "code": "80-15239",
+    "name": "Mocha",
+    "hex": "#c8b693"
+  },
+  {
+    "code": "80-15272",
+    "name": "Coral",
+    "hex": "#ff9a8b"
+  }
+]

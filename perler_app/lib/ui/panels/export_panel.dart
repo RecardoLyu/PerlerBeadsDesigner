@@ -15,9 +15,25 @@ class ExportPanel extends ConsumerStatefulWidget {
 }
 
 class _ExportPanelState extends ConsumerState<ExportPanel> {
-  String _name = 'pattern';
+  late final TextEditingController _nameCtrl;
   int _resIndex = 1; // 默认 2K
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: ref.read(exportNameProvider));
+    // 源图变化时跟随文件名（仅当输入框还是旧源名/默认值，不覆盖用户手改）
+    ref.listenManual<String>(exportNameProvider, (prev, next) {
+      if (_nameCtrl.text != next) _nameCtrl.text = next;
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
 
   /// 由 hex('#RRGGBB') 解析颜色；失败回退灰色。
   Color _parseHex(String hex) {
@@ -38,10 +54,11 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
     ref.read(statusMessageProvider.notifier).state = '正在导出图纸 PNG …';
     try {
       final widthPx = ExportService.resolutions[_resIndex].$2;
+      final name = _nameCtrl.text.trim();
       final saved = await ExportService.saveChart(
         chart,
         widthPx,
-        name: _name.trim().isEmpty ? 'pattern' : _name.trim(),
+        name: name.isEmpty ? 'pattern' : name,
       );
       ref.read(statusMessageProvider.notifier).state = '已导出：$saved';
     } catch (e) {
@@ -65,7 +82,25 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
         const PanelTitle(icon: Icons.file_download_outlined, title: '导出图纸', sub: '保存为 PNG 到相册「Pictures/拼豆图纸」'),
         Row(children: [
           const SizedBox(width: 58, child: Text('文件名', style: TextStyle(fontSize: 12.5))),
-          Expanded(child: TextFormField(initialValue: _name, onChanged: (s) => _name = s)),
+          Expanded(child: TextFormField(
+            controller: _nameCtrl,
+            onChanged: (s) => ref.read(exportNameProvider.notifier).state = s,
+          )),
+        ]),
+        Row(children: [
+          const SizedBox(width: 58),
+          Expanded(child: InkWell(
+            onTap: () => ref.read(showChartTitleProvider.notifier).state =
+                !ref.read(showChartTitleProvider),
+            child: Row(children: [
+              Checkbox(
+                value: ref.watch(showChartTitleProvider),
+                onChanged: (v) =>
+                    ref.read(showChartTitleProvider.notifier).state = v ?? false,
+              ),
+              const Expanded(child: Text('在图纸上显示文件名', style: TextStyle(fontSize: 12.5))),
+            ]),
+          )),
         ]),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
@@ -138,10 +173,12 @@ class _BomChip extends StatelessWidget {
       decoration: BoxDecoration(color: c.muted, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(999)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
-          width: 20, height: 20,
+          // 宽度随色号长度自适应，长码（如 80-15179）也能单行放下
+          constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          child: Text(code, style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: fg)),
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(999)),
+          child: Text(code, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: fg)),
         ),
         const SizedBox(width: 7),
         Text('×$count', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.foreground)),

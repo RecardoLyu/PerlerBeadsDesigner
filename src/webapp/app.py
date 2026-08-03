@@ -122,6 +122,12 @@ def current_image():
     return _png(_err(STATE.require_image))
 
 
+@app.get("/api/image/source_name")
+def image_source_name():
+    """当前源图文件名（去扩展名，占位名为 null）；导出页文件名输入框据此跟随源图。"""
+    return {"ok": True, "source_name": STATE.source_name}
+
+
 class LoadPathReq(BaseModel):
     path: str
 
@@ -435,6 +441,8 @@ class ChartReq(BaseModel):
     major_every: int = 5
     fade_masked: bool = True
     mask_bg: str = "none"            # none | white | black
+    show_title: bool = False         # 是否在图纸顶部渲染文件名标题（默认不渲染）
+    title: str = ""                  # 导出页文件名（勾 show_title 时优先用它做标题）
 
 
 @app.post("/api/pattern/chart")
@@ -444,10 +452,20 @@ def pattern_chart(req: ChartReq):
         raise HTTPException(400, detail="尚未生成图案")
     # 渲染遮罩跟随当次 pattern 的生命周期（gen.bead_mask，generate 时对称清写），
     # 不读游离的 STATE.bead_mask，避免取消勾选后旧遮罩仍残留渲染。
+    bom = gen.bom or {}
+    colors = bom.get('colors', {})
+    # 标题默认不渲染；勾选后优先用导出页文件名，空则回退源图文件名
+    title = None
+    if req.show_title:
+        title = req.title.strip() or STATE.source_name
     chart = _err(gen.render_standard_chart,
                  int(req.bead_pixel_size), int(req.major_every),
                  STATE.color_manager.palette, gen.bead_mask, bool(req.fade_masked),
-                 mask_bg=_mask_bg(req.mask_bg))
+                 mask_bg=_mask_bg(req.mask_bg),
+                 title=title,
+                 brand=STATE.color_manager.brand_label,
+                 color_count=len(colors),
+                 total_beads=int(bom.get('total_beads', 0)))
     return _png(chart)
 
 
@@ -462,6 +480,36 @@ def pattern_metric(req: MetricReq):
         raise HTTPException(400, detail=f"未知颜色度量: {req.metric}")
     STATE.color_manager.set_color_metric(req.metric)
     return {"ok": True, "metric": req.metric}
+
+
+class BrandReq(BaseModel):
+    brand: str                       # mard|perler|hama|artkal_s|artkal_c
+
+
+@app.get("/api/pattern/brands")
+def pattern_brands():
+    """列出支持的品牌（key + 显示名 + 当前品牌 + 当前色数）。"""
+    cm = STATE.color_manager
+    return {
+        "ok": True,
+        "current": cm.brand,
+        "count": len(cm.palette.colors),
+        "brands": [{"key": k, "label": v[0]} for k, v in cm.BRANDS.items()],
+    }
+
+
+@app.post("/api/pattern/brand")
+def pattern_brand(req: BrandReq):
+    """切换拼豆品牌颜色库。换色板后旧图纸失效（pattern 置 None）。"""
+    with STATE.lock:
+        try:
+            label, count = STATE.color_manager.load_brand(req.brand)
+        except ValueError as e:
+            raise HTTPException(400, detail=str(e))
+        STATE.generator.pattern = None   # 换色板后旧图纸失效
+        STATE.bead_mask = None
+        STATE.generator.bead_mask = None
+        return {"ok": True, "brand": req.brand, "label": label, "count": count}
 
 
 @app.get("/api/pattern/bom")
@@ -491,6 +539,7 @@ class ExportReq(BaseModel):
     export_png: bool = True
     export_pdf: bool = True
     mask_bg: str = "none"            # none | white | black
+    show_title: bool = False         # 是否在导出图纸顶部渲染文件名标题
 
 
 @app.post("/api/export")
@@ -504,8 +553,16 @@ def export(req: ExportReq):
     os.makedirs(outdir, exist_ok=True)
     STATE.output_dir = outdir
     exporter = PatternExporter(outdir)
+    bom = gen.bom or {}
+    colors = bom.get('colors', {})
+    # 标题默认不渲染；勾选后用导出文件名
+    title = (req.filename.strip() or STATE.source_name) if req.show_title else None
     chart = _err(gen.render_standard_chart, 30, 5, STATE.color_manager.palette,
-                 gen.bead_mask, True, mask_bg=_mask_bg(req.mask_bg))
+                 gen.bead_mask, True, mask_bg=_mask_bg(req.mask_bg),
+                 title=title,
+                 brand=STATE.color_manager.brand_label,
+                 color_count=len(colors),
+                 total_beads=int(bom.get('total_beads', 0)))
     base = os.path.join(outdir, req.filename)
     made = []
     if req.export_png:

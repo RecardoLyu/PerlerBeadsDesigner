@@ -95,8 +95,8 @@ enum CanvasViewMode { original, highlight, mask, applied, pattern }
 
 final viewModeProvider = StateProvider<CanvasViewMode>((_) => CanvasViewMode.original);
 
-/// 画布交互模式：浏览（缩放平移）/ 框选（GrabCut ROI）/ 涂抹（前景/背景修正）。
-enum CanvasInteraction { pan, selectRect, selectEllipse, selectFree, scribbleFg, scribbleBg }
+/// 画布交互模式：浏览（缩放平移）/ 框选（GrabCut ROI）/ 涂抹（前景/背景修正）/ 裁剪。
+enum CanvasInteraction { pan, selectRect, selectEllipse, selectFree, scribbleFg, scribbleBg, crop }
 
 final interactionProvider =
     StateProvider<CanvasInteraction>((_) => CanvasInteraction.pan);
@@ -104,6 +104,41 @@ final interactionProvider =
 /// 请求进入某种交互模式的信号（面板点「开始框选/涂抹」时 +1）。
 /// 画布在渲染前同步消费它并切 interaction，避免「点了第一次没生效、要框两次」。
 final interactionRequestProvider = StateProvider<CanvasInteraction>((_) => CanvasInteraction.pan);
+
+/// 当前编辑中的裁剪框（图像像素坐标 Rect；null=未框选）。裁剪模式下由画布维护，
+/// 面板「应用裁剪」读取它。图像像素坐标保证缩放/旋转时框不漂移。
+final cropRectProvider = StateProvider<Rect?>((_) => null);
+
+/// 拼豆品牌颜色库（与桌面端 ColorManager.BRANDS 对齐）。切换后图纸失效需重新生成。
+final brandProvider = StateProvider<String>((_) => 'mard');
+
+/// 源图片文件名（去扩展名），图纸顶部标题用。占位名（图像/未命名/image/空）→ null 不渲染。
+final sourceNameProvider = StateProvider<String?>((_) => null);
+
+/// 是否在图纸顶部渲染文件名标题（默认不渲染，由导出页复选框控制）。
+final showChartTitleProvider = StateProvider<bool>((_) => false);
+
+/// 导出页文件名输入框当前值（图纸标题来源；默认跟随源图）。
+final exportNameProvider = StateProvider<String>((_) => 'pattern');
+
+/// 由文件名推标题：去路径去扩展名，占位名返回 null。
+String? deriveSourceTitle(String filename) {
+  var base = filename.split(RegExp(r'[\\/]')).last;
+  final dot = base.lastIndexOf('.');
+  if (dot > 0) base = base.substring(0, dot);
+  base = base.trim();
+  const placeholders = {'', 'image', 'untitled', '未命名', '图像', '未命名图纸'};
+  return placeholders.contains(base.toLowerCase()) ? null : base;
+}
+
+/// 取消一切画布子交互（框选/涂抹/裁剪），回到浏览态。
+/// 进入任何新交互（点其他分割方法、点裁剪、切 Tab）前调用，防止上一个交互泄露。
+/// 参数用 WidgetRef（面板/Sheet 内的 ref）；WidgetRef 与 Ref 都暴露 .read。
+void cancelCanvasInteraction(WidgetRef ref) {
+  ref.read(cropRectProvider.notifier).state = null;
+  ref.read(interactionRequestProvider.notifier).state = CanvasInteraction.pan;
+  ref.read(interactionProvider.notifier).state = CanvasInteraction.pan;
+}
 
 /// GrabCut 框选形状（矩形/椭圆/自由曲线）。
 enum SelectShape { rect, ellipse, free }
@@ -280,6 +315,10 @@ class ImageNotifier extends StateNotifier<ImageState> {
       final wi = WorkingImage(width: w, height: h, rgbBytes: rgb, uiImage: uiImg);
       state = ImageState(source: wi, working: wi, busy: false);
       _ref.read(busyProvider.notifier).refresh();
+      _ref.read(sourceNameProvider.notifier).state = deriveSourceTitle(name);
+      // 导出文件名跟随源图（占位名回退 pattern）
+      _ref.read(exportNameProvider.notifier).state =
+          deriveSourceTitle(name) ?? 'pattern';
       _ref.read(segmentProvider.notifier).reset();
       _ref.read(patternProvider.notifier).reset();
       _status('已加载 $name（$w×$h）');
@@ -341,6 +380,47 @@ class ImageNotifier extends StateNotifier<ImageState> {
     _ref.read(segmentProvider.notifier).reset();
     _ref.read(patternProvider.notifier).reset();
     _status('已恢复原图');
+  }
+
+  /// 应用裁剪：把 working 裁成矩形区域，并把结果同时设为新的 source（新「原图」）。
+  /// 这样「恢复原图」只回到裁剪后状态，不会回到裁剪前；重新导入才会彻底重置。
+  /// 基于 working（含已应用的亮度/对比度调整），所见即所裁。
+  Future<void> applyCrop(Rect rect) async {
+    final cur = state.working;
+    if (cur == null) {
+      _status('请先加载图像');
+      return;
+    }
+    state = state.copyWith(busy: true);
+    _ref.read(busyProvider.notifier).refresh();
+    _status('正在裁剪…');
+    try {
+      final x = rect.left.round(), y = rect.top.round();
+      final cw = rect.width.round(), ch = rect.height.round();
+      if (cw < 2 || ch < 2) {
+        state = state.copyWith(busy: false);
+        _ref.read(busyProvider.notifier).refresh();
+        _status('裁剪区域太小');
+        return;
+      }
+      final cropped = BasicAdjust.cropRgb(cur.rgbBytes, cur.width, cur.height, x, y, cw, ch);
+      // cropRgb 内部已 clamp，实际尺寸可能略小于请求，需重算
+      final rw = cw.clamp(1, cur.width - x.clamp(0, cur.width));
+      final rh = ch.clamp(1, cur.height - y.clamp(0, cur.height));
+      final uiImg = await rgbToUiImage(cropped, rw, rh);
+      final wi = WorkingImage(width: rw, height: rh, rgbBytes: cropped, uiImage: uiImg);
+      // 关键：source 与 working 同时指向裁剪结果 → 裁剪成新原图
+      state = ImageState(source: wi, working: wi, busy: false);
+      _ref.read(busyProvider.notifier).refresh();
+      _ref.read(segmentProvider.notifier).reset();
+      _ref.read(patternProvider.notifier).reset();
+      _ref.read(cropRectProvider.notifier).state = null;
+      _status('已裁剪（$rw×$rh），成为新原图');
+    } catch (e) {
+      state = state.copyWith(busy: false);
+      _ref.read(busyProvider.notifier).refresh();
+      _status('裁剪失败：$e');
+    }
   }
 
   /// 清除图像（回到空态）。
@@ -1081,13 +1161,14 @@ class PatternNotifier extends StateNotifier<PatternState> {
   PatternNotifier(this._ref) : super(const PatternState());
   final Ref _ref;
 
-  Palette? _palette; // 缓存 MARD 221 调色板（异步加载一次）
+  final Map<String, Palette> _palettes = {}; // 按品牌缓存调色板（异步加载一次）
 
   void _status(String m) => _ref.read(statusMessageProvider.notifier).state = m;
 
-  /// 确保调色板就绪。
+  /// 确保当前品牌的调色板就绪。
   Future<Palette> _ensurePalette(String metric) async {
-    final p = _palette ??= await Palette.loadMard221();
+    final brand = _ref.read(brandProvider);
+    final p = _palettes[brand] ??= await Palette.loadBrand(brand);
     p.metric = metric;
     return p;
   }
@@ -1165,6 +1246,14 @@ class PatternNotifier extends StateNotifier<PatternState> {
         beadMask: beadMask,
         fadeMasked: maskBg == 'none',
         maskBg: maskBg,
+        title: _ref.read(showChartTitleProvider)
+            ? (_ref.read(exportNameProvider).trim().isNotEmpty
+                ? _ref.read(exportNameProvider).trim()
+                : _ref.read(sourceNameProvider))
+            : null,
+        brand: Palette.brandLabels[_ref.read(brandProvider)],
+        colorCount: bom.length,
+        totalBeads: totalBeads,
       );
 
       // 成功：dispose 旧图纸 + version+1，就绪后再切到图纸视图（仿分割自动切 mask）

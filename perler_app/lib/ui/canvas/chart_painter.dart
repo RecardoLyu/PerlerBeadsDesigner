@@ -29,6 +29,10 @@ class ChartPainter {
     int cellPx = 28,
     bool fadeMasked = true,
     String maskBg = 'none', // none=淡化 | white=纯白 | black=纯黑（对应桌面 MASK 背景）
+    String? title,          // 图纸顶部文件名（占位名传 null 不画）
+    String? brand,          // 品牌标签（左上角信息行）
+    int colorCount = 0,     // 用到的颜色数
+    int totalBeads = 0,     // 总豆数
   }) {
     final codeToColor = {for (final c in palette.colors) c.code: c};
     Color codeRgb(String code, int fallback) {
@@ -45,7 +49,10 @@ class ChartPainter {
 
     // --- 几何（照搬桌面 485-550 行） ---
     final leftMargin = cell * 2 + 6;   // 左侧刻度数字
-    final topMargin = cell + 10;       // 顶部刻度数字
+    // 顶部 header 区：文件名（居中、粗体）+ 左上角品牌信息。无标题也留一行放品牌信息。
+    final hasTitle = title != null && title.trim().isNotEmpty;
+    final headerH = hasTitle ? cell * 1.7 : cell * 0.9;
+    final topMargin = headerH + cell + 10;   // header + 顶部刻度数字
     final gridW = gw * cell;
     final gridH = gh * cell;
 
@@ -74,12 +81,11 @@ class ChartPainter {
       if (cw > maxCodeW) maxCodeW = cw;
       if (nw > maxCountW) maxCountW = nw;
     }
-    // chip 宽由 2:3 比例 + 圆角弧推算（桌面 531-533）
-    final needLeft = (maxCodeW + 2 * padX + radius) * 5 / 2;
-    final needRight = (maxCountW + 2 * padX + radius) * 5 / 3;
-    final chipW = needLeft > needRight ? needLeft : needRight;
-    final leftW = chipW * 2 / 5;
-    final rightW = chipW - leftW;
+    // 左色块装 code、右块装 count，各自独立按最长文本定宽，
+    // 保证任意长度色号（如 Perler 80-15179）单行不溢出。
+    final leftW = maxCodeW + 2 * padX + radius;
+    final rightW = maxCountW + 2 * padX + radius;
+    final chipW = leftW + rightW;
     final gap = cell / 2;
     final barRowH = chipH + (cell / 3 > 6 ? cell / 3 : 6);
     final titleH = barRowH;
@@ -115,6 +121,28 @@ class ChartPainter {
         textDirection: ui.TextDirection.ltr,
       )..layout();
       tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+    }
+
+    // --- header：文件名（顶部正中，粗体）+ 左上角品牌信息 ---
+    if (hasTitle) {
+      drawText(title!, Offset(totalW / 2, headerH / 2),
+          (cell * 1.2).clamp(12.0, 1e9), const Color(0xFF141414),
+          weight: FontWeight.w700);
+    }
+    if (brand != null && brand.isNotEmpty) {
+      // 品牌信息紧凑单行：品牌 · N色 · 共M豆（常规体，颜色与刻度一致）
+      final info = '$brand · $colorCount 色 · 共 $totalBeads 豆';
+      final infoSize = (cell * 0.6).clamp(9.0, 1e9);
+      final iy = hasTitle
+          ? headerH - infoSize / 2 - (cell / 8 > 2 ? cell / 8 : 2)
+          : headerH / 2;
+      final tp = TextPainter(
+        text: TextSpan(
+            text: info,
+            style: TextStyle(fontSize: infoSize, color: const Color(0xFF282828))),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(leftMargin, iy - tp.height / 2));
     }
 
     // --- 豆格 + 每豆 code ---

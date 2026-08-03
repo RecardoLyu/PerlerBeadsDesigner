@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.recardo.perler.perler_app"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker 等插件要求 compileSdk >= 36（release 构建的 AAR 元数据校验）；
+    // 这里显式提到 36。targetSdk 保持 flutter 默认，避免引入新运行时行为。
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -23,6 +25,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // 注：opencv_dart 的 OpenCV 离线缓存通过系统环境变量 DARTCV_CACHE_DIR 提供
+        // （Gradle 的 cmake arguments 不支持按 ABI 传不同 OpenCV_DIR，故不用 arguments）。
     }
 
     buildTypes {

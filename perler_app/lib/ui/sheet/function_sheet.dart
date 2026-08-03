@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/candy_theme.dart';
+import '../../state/app_state.dart';
 import '../panels/adjust_panel.dart';
 import '../panels/segment_panel.dart';
 import '../panels/pattern_panel.dart';
@@ -32,6 +33,8 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
 
   void _onTabTap(SheetTab t) {
     final same = _tab == t;
+    // 切到不同面板：取消进行中的画布子交互（框选/涂抹/裁剪），防止泄露。
+    if (!same) cancelCanvasInteraction(ref);
     setState(() => _tab = t);
     // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开。
     // 注意：用 easeOutCubic 而非 easeOutBack —— easeOutBack 过冲会让 _ctrl.size

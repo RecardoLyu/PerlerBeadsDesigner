@@ -52,6 +52,23 @@ class BasicAdjust {
     return out;
   }
 
+  /// 裁剪 RGB 图到矩形 (x,y,cw,ch)。纯 Dart 逐行切片拷贝。自动 clamp 到图内。
+  static Uint8List cropRgb(Uint8List rgb, int w, int h, int x, int y, int cw, int ch) {
+    // 边界 clamp
+    var x0 = x.clamp(0, w), y0 = y.clamp(0, h);
+    var x1 = (x + cw).clamp(0, w), y1 = (y + ch).clamp(0, h);
+    if (x0 > x1) { final t = x0; x0 = x1; x1 = t; }
+    if (y0 > y1) { final t = y0; y0 = y1; y1 = t; }
+    final nw = (x1 - x0).clamp(1, w), nh = (y1 - y0).clamp(1, h);
+    final out = Uint8List(nw * nh * 3);
+    for (var r = 0; r < nh; r++) {
+      final srcRow = ((y0 + r) * w + x0) * 3;
+      final dstRow = r * nw * 3;
+      out.setRange(dstRow, dstRow + nw * 3, rgb, srcRow);
+    }
+    return out;
+  }
+
   /// 双线性缩小 RGB 图到 (nw,nh)。纯 Dart，用于把大图缩到 CV 可承受的尺寸。
   static Uint8List resizeRgb(Uint8List rgb, int w, int h, int nw, int nh) {
     final out = Uint8List(nw * nh * 3);

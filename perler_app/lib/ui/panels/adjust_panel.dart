@@ -14,6 +14,31 @@ class AdjustPanel extends ConsumerStatefulWidget {
 
 class _AdjustPanelState extends ConsumerState<AdjustPanel> {
   double _brightness = 1.0, _contrast = 1.0, _blur = 1.0;
+  // 裁剪态派生自 interactionProvider（切 Tab/进其它交互会自动取消裁剪 → 按钮自动还原）
+
+  void _enterCrop() {
+    cancelCanvasInteraction(ref); // 进裁剪前先取消框选/涂抹等子交互
+    ref.read(interactionRequestProvider.notifier).state = CanvasInteraction.crop;
+    ref.read(interactionProvider.notifier).state = CanvasInteraction.crop;
+    ref.read(statusMessageProvider.notifier).state = '在图上框选要保留的区域，可拖动边框微调';
+    // 收起 sheet 露出画布便于框选
+    ref.read(sheetCollapseRequestProvider.notifier).state++;
+  }
+
+  void _cancelCrop() {
+    cancelCanvasInteraction(ref);
+    ref.read(statusMessageProvider.notifier).state = '已取消裁剪';
+  }
+
+  Future<void> _applyCrop() async {
+    final rect = ref.read(cropRectProvider);
+    if (rect == null || rect.width < 2 || rect.height < 2) {
+      ref.read(statusMessageProvider.notifier).state = '请先在图上框选要保留的区域';
+      return;
+    }
+    await ref.read(imageProvider.notifier).applyCrop(rect);
+    cancelCanvasInteraction(ref);
+  }
 
   Future<void> _load() async {
     // 让用户选来源：相册 / 文件
@@ -81,6 +106,8 @@ class _AdjustPanelState extends ConsumerState<AdjustPanel> {
   Widget build(BuildContext context) {
     final hasImage = ref.watch(imageProvider.select((s) => s.hasImage));
     final busy = ref.watch(imageProvider.select((s) => s.busy));
+    // 裁剪态跟随全局交互：切 Tab/进其它交互取消裁剪后按钮自动还原「裁剪」
+    final cropping = ref.watch(interactionProvider) == CanvasInteraction.crop;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -95,6 +122,35 @@ class _AdjustPanelState extends ConsumerState<AdjustPanel> {
         SliderRow(label: '亮度', value: _brightness, min: 0.4, max: 1.8, onChanged: (v) => setState(() => _brightness = v)),
         SliderRow(label: '对比度', value: _contrast, min: 0.4, max: 1.8, onChanged: (v) => setState(() => _contrast = v)),
         SliderRow(label: '高斯模糊', value: _blur, min: 1, max: 15, decimals: 0, onChanged: (v) => setState(() => _blur = v)),
+        const SizedBox(height: 10),
+        // 裁剪：默认单个「裁剪」按钮；进入裁剪模式后换成「取消/应用」两个较小按钮
+        if (!cropping)
+          CandyButton(
+            label: '裁剪',
+            icon: Icons.crop_rounded,
+            primary: false,
+            onPressed: (hasImage && !busy) ? _enterCrop : null,
+          )
+        else
+          Row(children: [
+            Expanded(
+              child: CandyButton(
+                label: '取消',
+                primary: false,
+                compact: true,
+                onPressed: _cancelCrop,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: CandyButton(
+                label: '应用',
+                primary: true,
+                compact: true,
+                onPressed: busy ? null : _applyCrop,
+              ),
+            ),
+          ]),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(

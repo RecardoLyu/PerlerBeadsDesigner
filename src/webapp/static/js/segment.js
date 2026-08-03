@@ -27,18 +27,17 @@
             <option value="freehand" data-tip="按住左键自由勾勒前景轮廓，松手闭合">自由曲线 ✎</option>
           </select>
         </div>
-        <button class="btn btn-ghost" id="rectModeBtn" style="width:100%" data-tip="开启后在图像上按住拖拽圈出前景大致范围，松开鼠标即完成框选；再点一次退出框选。">开始框选</button>
       </div>
       <div id="markRow" style="margin-top:8px;display:none">
         <div class="slider-row"><label>笔触粗细</label><input type="range" id="brushSize" min="4" max="40" step="2" value="12" data-tip="涂抹笔刷的直径（像素），用于精修分割边界。"><output id="brushSizeOut">12</output></div>
         <div class="chip-row">
-          <span class="chip on" data-brush="fg" data-tip="把误分成背景的区域涂回前景">前景(红)</span>
-          <span class="chip" data-brush="bg" data-tip="把误分成前景的区域涂回背景">背景(绿)</span>
+          <span class="chip on" data-brush="fg" data-tip="把误分成背景的区域涂回前景"><i class="brush-dot fg"></i>前景</span>
+          <span class="chip" data-brush="bg" data-tip="把误分成前景的区域涂回背景"><i class="brush-dot bg"></i>背景</span>
           <span class="chip" id="clearStroke" data-tip="清除所有未提交的涂抹">清除涂抹</span>
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-primary" id="segActionBtn" style="flex:1" data-tip="初始分割：根据框选形状做首次 GrabCut 分割">初始分割</button>
+        <button class="btn btn-primary" id="segActionBtn" style="flex:1" data-tip="点一下进入框选，在图上拖出前景范围后按钮变为「进行分割」，再点执行首次分割">开始框选</button>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-ghost" id="applySegBtn" style="flex:1" data-tip="保留原图与 Mask，生成图纸仅用前景、背景不计入 BOM">应用分割结果</button>
@@ -104,12 +103,28 @@
       onPick(chip.dataset[attr]);
     });
   }
-  window.bindEditable('brushSize', 'brushSizeOut', { fmt: v => v, onChange: v => scribble.brushSize = v });
+  window.bindEditable('brushSize', 'brushSizeOut', { fmt: v => v, onChange: v => { scribble.brushSize = v; updateBrushDots(v); } });
   window.bindEditable('fgRatio', 'fgRatioOut', { fmt: v => (+v).toFixed(2) });
   window.bindEditable('nSeg', 'nSegOut', { fmt: v => v });
   window.bindEditable('morphK', 'morphKOut', { fmt: v => v });
 
+  /* 涂抹前景/背景圆点：真实大小预览（对齐移动端 10~26px 固定映射） */
+  function updateBrushDots(v) {
+    const d = Math.max(10, Math.min(26, 8 + (v / 40) * 18));
+    document.querySelectorAll('#markRow .brush-dot').forEach(el => {
+      el.style.width = d + 'px'; el.style.height = d + 'px';
+    });
+  }
+  updateBrushDots(+$('brushSize').value);
+
   function setInteractionLock(on) { viewer._interactionLock = on; }
+
+  /* 合并按钮的框选态文案管理（rect 步骤下 segActionBtn 复用为 框选/分割 一体按钮） */
+  function setActionLabel(t) { const b = $('segActionBtn'); if (b) b.textContent = t; }
+  function _hasShape() {
+    const s = curShape();
+    return s === 'freehand' ? shapePts.length >= 3 : !!rectBox;
+  }
 
   /* ---- 统一收尾：退出一切框选/涂抹交互，防止泄露为可涂鸦 ---- */
   function exitInteraction() {
@@ -119,7 +134,7 @@
     scribble.clear();
     setInteractionLock(false);
     scribble._redraw();   // 清掉 onOverlay 残留的圈选框
-    const b = $('rectModeBtn'); if (b) b.textContent = '开始框选';
+    setActionLabel('开始框选');
   }
   window.exitScribbleInteraction = exitInteraction;
 
@@ -131,8 +146,8 @@
       b.textContent = '迭代分割';
       b.dataset.tip = '迭代分割：根据涂抹的红(前景)/绿(背景)标记迭代精修分割';
     } else {
-      b.textContent = '初始分割';
-      b.dataset.tip = '初始分割：根据框选形状做首次 GrabCut 分割';
+      b.textContent = '开始框选';
+      b.dataset.tip = '点一下进入框选，在图上拖出前景范围后按钮变为「进行分割」，再点执行首次分割';
     }
   }
   singleSelect('segCards', 'step', (step) => {
@@ -140,9 +155,9 @@
     $('markRow').style.display = step === 'mark' ? '' : 'none';
     syncActionBtn(step);
     if (step === 'mark') {
-      // 进入涂抹：清掉框选态
+      // 进入涂抹：清掉框选态 + 退裁剪（交互防护）
+      window.exitCropInteraction?.();
       rectMode = false; rectDrawing = false; shapeStart = null; shapePts = [];
-      const b = $('rectModeBtn'); if (b) b.textContent = '开始框选';
       scribble.enable(true);
       setInteractionLock(true);
     } else {
@@ -179,18 +194,11 @@
   let shapePts = [];       // 自由曲线轨迹（图像坐标）
   const curShape = () => ($('igcShape') ? $('igcShape').value : 'rect');
 
-  $('rectModeBtn').addEventListener('click', () => {
-    rectMode = !rectMode;
-    rectBox = null; rectDrawing = false; shapeStart = null; shapePts = [];
-    scribble._redraw();
-    setInteractionLock(rectMode);
-    $('rectModeBtn').textContent = rectMode ? '在图上拖拽框选…（再点退出）' : '开始框选';
-    busy.set(rectMode ? '拖拽框出前景区域' : '已退出框选');
-  });
   // 切换形状时清掉已画，避免残留
   if ($('igcShape')) $('igcShape').addEventListener('change', () => {
     rectBox = null; rectDrawing = false; shapeStart = null; shapePts = [];
     scribble._redraw();
+    setActionLabel(rectMode ? '在图上拖拽框选…（再点取消）' : '开始框选');
   });
 
   const vp = viewer.viewport;
@@ -215,7 +223,8 @@
     if (!rectMode || !rectDrawing) return;
     rectDrawing = false;   // 松手即结束框选，固定形状
     scribble._redraw();
-    busy.set('区域已选，点「第一次分割」');
+    setActionLabel('进行分割');
+    busy.set('区域已选，点「进行分割」执行首次分割');
   });
 
   // 形状叠画：挂到涂鸦层，每次重绘后绘制，不会被 _clearCanvas 清掉
@@ -286,13 +295,16 @@
     [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'chart'));
   };
 
-  /* ---- 单一动作按钮：按当前步骤分发 初始分割(框选形状) / 迭代分割(涂抹) ---- */
+  /* ---- 一体动作按钮：
+     rect 步骤 = 框选/分割 一体（开始框选 → 框完「进行分割」→ 执行）；
+     mark 步骤 = 迭代分割（涂抹）。 ---- */
   $('segActionBtn').addEventListener('click', async () => {
     const step = document.querySelector('#segCards .chip[data-step].on')?.dataset.step || 'rect';
     if (step === 'mark') {
       /* 迭代分割（涂抹） */
+      window.exitCropInteraction?.();   // 进入新交互先退裁剪
       const { fgd, bgd } = await scribble.exportMasks();
-      if (!fgd && !bgd) { busy.set('请先涂抹前景(红)或背景(绿)'); return; }
+      if (!fgd && !bgd) { busy.set('请先涂抹前景或背景'); return; }
       try {
         busy.start('迭代分割中…');
         const url = await API.grabcutRefine(fgd, bgd);
@@ -303,19 +315,39 @@
       } catch (err) { window.fail('失败: ' + err.message); }
       return;
     }
-    /* 初始分割（按形状分支：矩形→rect 路由；椭圆/自由曲线→生成 init_mask 上传） */
+    /* rect 步骤：框选/分割 一体按钮 */
     const shape = curShape();
+    // 态1：还没进入框选也没框出形状 → 进入框选态
+    if (!rectMode && !_hasShape()) {
+      window.exitCropInteraction?.();   // 进入框选前先退裁剪
+      rectMode = true;
+      rectBox = null; rectDrawing = false; shapeStart = null; shapePts = [];
+      setInteractionLock(true);
+      setActionLabel('在图上拖拽框选…（再点取消）');
+      busy.set('拖拽框出前景区域');
+      return;
+    }
+    // 态2：框选中但还没框出有效形状 → 取消框选
+    if (rectMode && !_hasShape()) {
+      rectMode = false; rectDrawing = false; shapeStart = null; shapePts = [];
+      rectBox = null;
+      setInteractionLock(false);
+      scribble._redraw();
+      setActionLabel('开始框选');
+      busy.set('已取消框选');
+      return;
+    }
+    // 态3：已有有效形状 → 执行初始分割
     try {
       busy.start('初始分割中…');
       if (shape === 'rect') {
-        if (!rectBox) { busy.set('请先用「开始框选」拖出矩形'); return; }
         const x1 = Math.min(rectBox.x1, rectBox.x2), y1 = Math.min(rectBox.y1, rectBox.y2);
         const w = Math.abs(rectBox.x2 - rectBox.x1), h = Math.abs(rectBox.y2 - rectBox.y1);
-        if (w < 5 || h < 5) { busy.set('矩形太小，请重新框选'); return; }
+        if (w < 5 || h < 5) { busy.idle('矩形太小，请重新框选'); return; }
         await API.grabcutInitRect(Math.round(x1), Math.round(y1), Math.round(w), Math.round(h));
       } else {
         const blob = await scribble.exportShapeMask(shape, rectBox, shapePts);
-        if (!blob) { busy.set(shape === 'ellipse' ? '请先拖出椭圆' : '请先用自由曲线勾勒前景'); return; }
+        if (!blob) { busy.idle(shape === 'ellipse' ? '请先拖出椭圆' : '请先用自由曲线勾勒前景'); return; }
         await API.grabcutInitMask(blob);
       }
       exitInteraction();
@@ -335,13 +367,15 @@
   $('segMethod').dispatchEvent(new Event('change'));
   $('autoSegBtn').addEventListener('click', async () => {
     const m = $('segMethod').value;
+    window.exitCropInteraction?.();   // 进入新交互先退裁剪
     try {
       busy.start('自动分割中…');
       const req = { method: m, fg_ratio: +$('fgRatio').value, n_segments: +$('nSeg').value };
-      const url = await API.segmentAuto(req);
-      viewer.setImage(url);
-      busy.done('自动分割完成');
+      await API.segmentAuto(req);   // 触发后端分割；返回值是 mask blob，不直接显示
+      // 自动分割后显示 原图+高亮（非 mask），与初始分割对齐
       setMaskView();
+      viewer.setImage(API.overlayUrl() + '?t=' + Date.now());
+      busy.done('自动分割完成');
     } catch (err) { window.fail('失败: ' + err.message); }
   });
   $('autoApplyBtn').addEventListener('click', async () => {

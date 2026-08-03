@@ -33,6 +33,13 @@ FONT_CANDIDATES = (
     "C:/Windows/Fonts/simsun.ttc",
 )
 
+# 粗体候选（图纸顶部文件名标题用，雅黑粗体优先）
+FONT_CANDIDATES_BOLD = (
+    "C:/Windows/Fonts/msyhbd.ttc",
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/SimHei.ttf",
+)
+
 
 @dataclass
 class PatternConfig:
@@ -407,7 +414,9 @@ class PatternGenerator:
     def render_standard_chart(self, bead_pixel_size: int = CHART_BEAD_PX, major_every: int = 5,
                               palette=None, bead_mask=None, fade_masked: bool = True,
                               supersample: int = CHART_SUPERSAMPLE,
-                              mask_bg=None) -> np.ndarray:
+                              mask_bg=None,
+                              title=None, brand=None, color_count=0,
+                              total_beads=0) -> np.ndarray:
         """
         Render a standard perler-bead chart (the exported/printed form).
 
@@ -482,9 +491,31 @@ class PatternGenerator:
             _font_cache[size] = font
             return font
 
+        # 粗体（文件名标题用）：优先微软雅黑粗体，缺失则回退常规字体
+        def _load_bold_font(size):
+            key = ('bold', size)
+            if key in _font_cache:
+                return _font_cache[key]
+            font = None
+            for path in FONT_CANDIDATES_BOLD:
+                if os.path.exists(path):
+                    try:
+                        font = ImageFont.truetype(path, size)
+                        break
+                    except Exception:
+                        pass
+            if font is None:
+                font = _load_font(size)
+            _font_cache[key] = font
+            return font
+
         # --- geometry ---
         left_margin = cell * 2 + 6   # room for 2-3 digit tick numbers on the left
-        top_margin = cell + 10       # room for tick numbers on the top
+        # 顶部 header 区：文件名（居中、雅黑粗体）+ 左上角品牌信息。无标题也留一行
+        # 放品牌信息，保证两端布局一致。
+        has_title = bool(title and str(title).strip())
+        header_h = int(cell * 1.7) if has_title else int(cell * 0.9)
+        top_margin = header_h + cell + 10   # header + room for tick numbers on the top
         grid_w = w * cell
         grid_h = h * cell
 
@@ -518,21 +549,18 @@ class PatternGenerator:
                 return bbox[2] - bbox[0]
 
         # --- uniform chip geometry (every chip identical size) ---
-        # Left color block + code occupies the left 2/5, the count the right
-        # 3/5. chip_w is solved from the 2:3 ratio so each half fits its longest
-        # text with padding AND clears the rounded-corner arcs.
+        # Left color block holds the code, the right holds the count. Each half is
+        # sized directly from its longest text so any code length (incl. long
+        # Perler codes like "80-15179") fits on a single line without overflow.
         pad_x = max(8, cell // 3)
         chip_h = max(sw + 2, bar_font_size + 10)
         radius = max(8, chip_h // 2)   # pill-like corners (fixes the bevel look)
         max_code_w = max((text_width(c, bar_font) for c, _ in usage), default=0)
         max_count_w = max((text_width(str(n), bar_font) for _, n in usage), default=0)
-        # left (2/5) must hold code + 2*pad + left corner arc;
-        # right (3/5) must hold count + 2*pad + right corner arc.
-        need_left = (max_code_w + 2 * pad_x + radius) * 5 // 2
-        need_right = (max_count_w + 2 * pad_x + radius) * 5 // 3
-        chip_w = int(max(need_left, need_right))
-        left_w = chip_w * 2 // 5
-        right_w = chip_w - left_w
+        # Each half independently guarantees its own longest text + padding + corner arc.
+        left_w = max_code_w + 2 * pad_x + radius
+        right_w = max_count_w + 2 * pad_x + radius
+        chip_w = int(left_w + right_w)
         gap = bar_pad_x
         bar_row_h = chip_h + max(6, cell // 3)   # row pitch tracks the chip height
         title_h = bar_row_h                       # room for the "BOM" label row
@@ -551,6 +579,31 @@ class PatternGenerator:
 
         canvas = Image.new("RGB", (total_w, total_h), (255, 255, 255))
         draw = ImageDraw.Draw(canvas)
+
+        # --- header：文件名（顶部正中，雅黑粗体）+ 左上角品牌信息 ---
+        if has_title:
+            title_font = _load_bold_font(max(12, int(cell * 1.2)))
+            if title_font is not None:
+                try:
+                    tb = draw.textbbox((0, 0), str(title), font=title_font)
+                    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                    draw.text(((total_w - tw) / 2 - tb[0],
+                               (header_h - th) / 2 - tb[1]),
+                              str(title), fill=(20, 20, 20), font=title_font)
+                except Exception:
+                    pass
+        # 品牌信息紧凑单行：品牌 · N色 · 共M豆（常规体，颜色与刻度一致）
+        if brand:
+            info_font = _load_font(max(9, int(cell * 0.6)))
+            info = f"{brand} · {color_count} 色 · 共 {total_beads} 豆"
+            if info_font is not None:
+                try:
+                    iy = (header_h - int(cell * 0.6)) // 2 if not has_title \
+                        else header_h - int(cell * 0.6) - max(2, cell // 8)
+                    draw.text((left_margin, iy), info,
+                              fill=(40, 40, 40), font=info_font)
+                except Exception:
+                    pass
 
         # --- bead cells ---
         for y in range(h):

@@ -118,6 +118,9 @@ class ImageProcessor:
         
         cropped = self.current_image[y1:y2, x1:x2].copy()
         self.current_image = cropped
+        # 裁剪即「新原图」：把 original_image 一并替换，使「恢复原图」回到裁剪后状态
+        # （而非裁剪前）。重新加载/导入图像才会重置 original_image。
+        self.original_image = cropped.copy()
         return self.current_image.copy()
     
     def convert_to_grayscale(self) -> np.ndarray:
