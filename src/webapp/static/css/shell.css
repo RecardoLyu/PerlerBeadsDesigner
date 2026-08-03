@@ -14,6 +14,7 @@
 .icon-btn:hover{transform:translateY(-2px)}
 .icon-btn:active{transform:scale(.94)}
 .icon-btn svg{width:19px;height:19px}
+.icon-btn.on{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
 .icon-btn:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
 
 /* 中部左右分栏 */
@@ -181,6 +182,26 @@ select.sel:focus{outline:2px solid var(--color-ring)}
 .modal-mask{position:fixed;inset:0;z-index:90;background:rgba(20,5,12,.45);backdrop-filter:blur(6px);
   display:none;place-items:center;animation:toastIn .25s var(--ease)}
 .modal-mask.show{display:grid}
+
+/* ===== 设置抽屉（右侧浮窗 + 遮罩压暗主页面） ===== */
+.drawer-mask{position:fixed;inset:0;z-index:95;background:rgba(20,5,12,.5);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity .3s var(--ease)}
+.drawer-mask.show{opacity:1;pointer-events:auto}
+.settings-drawer{position:fixed;top:0;right:0;bottom:0;z-index:96;width:min(400px,92vw);
+  display:flex;flex-direction:column;padding:var(--space-3);gap:var(--space-2);
+  border-radius:24px 0 0 24px;border-right:none;
+  transform:translateX(105%);transition:transform .35s var(--ease);
+  box-shadow:-18px 0 50px rgba(20,5,12,.35)}
+.settings-drawer.show{transform:translateX(0)}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding-bottom:10px;border-bottom:1px solid var(--color-border)}
+.drawer-title{display:flex;align-items:center;gap:12px;color:var(--color-foreground-strong)}
+.drawer-title>svg{width:26px;height:26px;color:var(--color-primary);flex-shrink:0}
+.drawer-title h2{font-family:var(--font-head);font-size:19px;line-height:1.1}
+.drawer-title p{font-size:12px;color:var(--color-muted-fg);margin-top:2px}
+.drawer-body{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-2);padding-right:2px}
+.drawer-body::-webkit-scrollbar{width:6px}
+.drawer-body::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:999px}
 .help-modal{width:min(760px,88vw);max-height:82vh;display:flex;flex-direction:column;padding:var(--space-3);overflow:hidden}
 .help-modal header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .help-modal h2{font-family:var(--font-head);font-size:18px;color:var(--color-foreground-strong)}

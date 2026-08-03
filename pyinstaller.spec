@@ -59,6 +59,13 @@ a = Analysis(
         'src.webapp.app',
         'src.webapp.state',
         'src.webapp.codecs',
+        'src.webapp.updater',
+        # HTTP client for online update (PyInstaller misses these submodules)
+        'requests',
+        'urllib3',
+        'charset_normalizer',
+        'idna',
+        'certifi',
     ],
     # The dependency scan walks the whole import graph; some packages it finds
     # in this dev environment are heavy and unused by the app, and a few (Qt

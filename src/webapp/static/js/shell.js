@@ -2,23 +2,34 @@
 (function () {
   const html = document.documentElement;
 
-  /* ---- 主题 ---- */
+  /* ---- 主题（跟随系统 / 浅色 / 深色） ---- */
   const themeBtn = document.getElementById('themeBtn');
   const sun = document.getElementById('sunIcon'), moon = document.getElementById('moonIcon');
-  const savedTheme = localStorage.getItem('pbd-theme');
-  if (savedTheme) html.setAttribute('data-theme', savedTheme);
-  function syncThemeIcon() {
-    const dark = html.getAttribute('data-theme') === 'dark';
-    sun.style.display = dark ? 'none' : 'block';
-    moon.style.display = dark ? 'block' : 'none';
+  const _sysDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  let _themeMode = localStorage.getItem('pbd-theme') || 'system';   // system | light | dark（旧值 light/dark 兼容）
+  if (!['system', 'light', 'dark'].includes(_themeMode)) _themeMode = 'system';
+  function applyTheme() {
+    const resolved = _themeMode === 'system' ? (_sysDark && _sysDark.matches ? 'dark' : 'light') : _themeMode;
+    html.setAttribute('data-theme', resolved);
+    sun.style.display = resolved === 'dark' ? 'none' : 'block';
+    moon.style.display = resolved === 'dark' ? 'block' : 'none';
   }
+  // 供设置页三选调用
+  window.setThemeMode = (mode) => {
+    _themeMode = ['system', 'light', 'dark'].includes(mode) ? mode : 'system';
+    localStorage.setItem('pbd-theme', _themeMode);
+    applyTheme();
+  };
+  window.getThemeMode = () => _themeMode;
+  // 主题按钮：三态循环 跟随系统→浅色→深色
   themeBtn.addEventListener('click', () => {
-    const dark = html.getAttribute('data-theme') === 'dark';
-    html.setAttribute('data-theme', dark ? 'light' : 'dark');
-    localStorage.setItem('pbd-theme', dark ? 'light' : 'dark');
-    syncThemeIcon();
+    const order = ['system', 'light', 'dark'];
+    window.setThemeMode(order[(order.indexOf(_themeMode) + 1) % order.length]);
   });
-  syncThemeIcon();
+  if (_sysDark && _sysDark.addEventListener) {
+    _sysDark.addEventListener('change', () => { if (_themeMode === 'system') applyTheme(); });
+  }
+  applyTheme();
 
   /* ---- 状态栏 ---- */
   const busyEl = document.getElementById('busy');
@@ -90,7 +101,30 @@
   }
   pills.forEach(p => p.addEventListener('click', () => switchView(p.dataset.view)));
   moveThumb(pills[0]);
-  window.addEventListener('resize', () => moveThumb(nav.querySelector('.active')));
+  window.addEventListener('resize', () => { const a = nav.querySelector('.active'); if (a) moveThumb(a); });
+
+  /* ---- 设置抽屉（右侧浮窗，全局功能不占画布） ---- */
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsDrawer = document.getElementById('view-settings');
+  const settingsMask = document.getElementById('settingsMask');
+  const settingsClose = document.getElementById('settingsClose');
+  function openSettings() {
+    settingsDrawer.classList.add('show');
+    settingsMask.classList.add('show');
+    settingsBtn.classList.add('on');
+  }
+  function closeSettings() {
+    settingsDrawer.classList.remove('show');
+    settingsMask.classList.remove('show');
+    settingsBtn.classList.remove('on');
+  }
+  if (settingsBtn) settingsBtn.addEventListener('click', () => {
+    settingsDrawer.classList.contains('show') ? closeSettings() : openSettings();
+  });
+  if (settingsClose) settingsClose.addEventListener('click', closeSettings);
+  if (settingsMask) settingsMask.addEventListener('click', closeSettings);
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
+  window.closeSettings = closeSettings;
 
   /* ---- 侧栏收起 ---- */
   const sidebar = document.getElementById('sidebar');

@@ -204,6 +204,7 @@
   const vp = viewer.viewport;
   vp.addEventListener('mousedown', (e) => {
     if (!rectMode) return;
+    if (e.button !== 0) return;   // 只认左键框选；中/右键放行给 viewer 平移（全局中键=拖动视野）
     e.stopPropagation(); e.preventDefault();
     const p = scribble._toImage(e);
     const shape = curShape();
@@ -476,7 +477,11 @@
   }
   function setOriginalView() {
     [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'original'));
+    // 换图必换画布：切回原图时同时把当前图（裁剪/调整后的工作图）画回画布，
+    // 否则导出/预览图纸后画布仍停在图纸，裁剪框会画在图纸上。
+    viewer.setImage(API.currentImageUrl() + '?t=' + Date.now());
   }
+  window.setOriginalView = setOriginalView;   // 供 crop.js/app.js 在「换图」时同步回原图模式
 
   /* ---- 自绘玻璃下拉增强（逐选项悬停出 tooltip） ---- */
   if (window.Dropdown) {

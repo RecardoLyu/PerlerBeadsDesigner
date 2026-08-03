@@ -6,6 +6,7 @@ existing tkinter-free core modules. One AppState instance per running app.
 """
 import os
 import sys
+import json
 import threading
 from typing import Optional
 
@@ -44,6 +45,52 @@ class AppState:
         self.mask_redo: list = []                     # mask 历史（重做），cap 3
         self.output_dir: str = os.path.abspath("output")
         self.grid_width: int = 104  # 图纸宽（豆），分割下采样目标据此算；生成图纸时同步
+
+    # ---- 用户偏好（默认参数），持久化到安装目录 settings.json ----
+    # 默认值以手机端 AppSettings 为基准，统一三处（HTML/state.py/Flutter）不一致。
+    DEFAULT_SETTINGS: dict = {
+        # 图纸默认参数
+        "width": 104, "keepRatio": True, "maxColors": 0, "salience": 1.0,
+        "metric": "ciede2000", "dither": False, "ditherStrength": 1.0,
+        "icm": False, "icmSmooth": 0.5, "brand": "mard", "maskBg": "none",
+        # 分割默认参数
+        "segMethod": "watershed", "brushSize": 12,
+        # 外观
+        "theme": "system",
+    }
+
+    @staticmethod
+    def _install_dir() -> str:
+        """安装目录：打包后是 exe 同级目录，源码运行是项目根。"""
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+
+    def _settings_path(self) -> str:
+        return os.path.join(self._install_dir(), 'settings.json')
+
+    def load_settings(self) -> dict:
+        """读 settings.json（缺字段回落到内置默认）；文件不存在/损坏返回默认。"""
+        s = dict(self.DEFAULT_SETTINGS)
+        try:
+            with open(self._settings_path(), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                s.update({k: v for k, v in data.items() if k in s})
+        except (OSError, ValueError):
+            pass
+        return s
+
+    def save_settings(self, new: dict):
+        """把（白名单过滤后的）设置写回 settings.json。"""
+        cur = self.load_settings()
+        cur.update({k: v for k, v in (new or {}).items() if k in self.DEFAULT_SETTINGS})
+        try:
+            with open(self._settings_path(), 'w', encoding='utf-8') as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
 
     # ---- 源图片文件名（图纸顶部标题用）----
     @property

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from .state import STATE, _resource_path
 from .codecs import ndarray_to_png, png_to_ndarray
+from src import __version__
 from src.core.pattern_generator import PatternConfig
 from src.utils import segmentation as segmod
 
@@ -99,6 +100,64 @@ def help_doc():
             return PlainTextResponse(f.read())
     except OSError:
         return PlainTextResponse('# 帮助文档缺失\n\n未找到 HELP.md。')
+
+
+# --------------------------------------------------------------------------
+# Version / Settings / Update
+# --------------------------------------------------------------------------
+@app.get("/api/version")
+def version():
+    return {"ok": True, "version": __version__}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return {"ok": True, "settings": STATE.load_settings()}
+
+
+class SettingsReq(BaseModel):
+    settings: dict
+
+
+@app.post("/api/settings")
+def save_settings(req: SettingsReq):
+    STATE.save_settings(req.settings)
+    return {"ok": True, "settings": STATE.load_settings()}
+
+
+@app.get("/api/update/check")
+def update_check():
+    from . import updater
+    try:
+        return {"ok": True, **updater.check_update()}
+    except Exception as e:
+        raise HTTPException(400, detail=f"检查更新失败: {e}")
+
+
+@app.post("/api/update/download")
+def update_download():
+    from . import updater
+    try:
+        updater.start_download()
+        return {"ok": True}
+    except RuntimeError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@app.get("/api/update/progress")
+def update_progress():
+    from . import updater
+    return {"ok": True, **updater.get_progress()}
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    from . import updater
+    try:
+        updater.apply_and_restart()
+        return {"ok": True}
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(400, detail=f"更新失败: {e}")
 
 
 # --------------------------------------------------------------------------
@@ -535,9 +594,6 @@ class ExportReq(BaseModel):
     filename: str = "pattern"
     output_dir: str | None = None
     png_scale: float = 1.0
-    paper: str = "A4"                # A4 | Letter
-    export_png: bool = True
-    export_pdf: bool = True
     mask_bg: str = "none"            # none | white | black
     show_title: bool = False         # 是否在导出图纸顶部渲染文件名标题
 
@@ -564,16 +620,9 @@ def export(req: ExportReq):
                  color_count=len(colors),
                  total_beads=int(bom.get('total_beads', 0)))
     base = os.path.join(outdir, req.filename)
-    made = []
-    if req.export_png:
-        made.append(exporter.export_png_standard(chart, req.filename,
-                                                 float(req.png_scale)))
-    if req.export_pdf:
-        try:
-            made.append(exporter.export_pdf(chart, gen.bom, req.filename,
-                                            req.paper))
-        except Exception as e:
-            raise HTTPException(400, detail=f"PDF 导出失败: {e}")
+    # 桌面端只导 PNG，按图纸尺寸直接生图（不再走 PDF/纸张排版）
+    made = [exporter.export_png_standard(chart, req.filename,
+                                         float(req.png_scale))]
     return {"ok": True, "files": made, "output_dir": outdir}
 
 
