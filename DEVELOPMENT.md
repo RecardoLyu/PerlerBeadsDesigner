@@ -13,6 +13,41 @@ Utility Layer (Utils)
 External Services (Web, Files)
 ```
 
+### 项目结构
+
+```
+PerlerBeadsDesigner/
+├── src/                          # 桌面端源代码
+│   ├── __init__.py               # __version__ 版本号单一来源
+│   ├── webapp/                   # 桌面应用（FastAPI 后端 + pywebview 窗口）
+│   │   ├── main.py               # 应用入口（启动本地服务并开窗）
+│   │   ├── app.py                # FastAPI 路由（HTTP API，含 settings/update）
+│   │   ├── state.py              # 应用状态 + 默认参数持久化（settings.json）
+│   │   ├── updater.py            # 在线更新（检查/下载/重启）
+│   │   ├── codecs.py             # 图像编解码
+│   │   └── static/               # 前端（HTML/CSS/JS）
+│   ├── core/                     # 核心功能
+│   │   ├── image_processor.py    # 图像处理
+│   │   ├── color_manager.py      # 颜色管理与量化
+│   │   └── pattern_generator.py  # 图案生成
+│   ├── utils/                    # 实用工具
+│   │   ├── segmentation.py       # 前景分割（GrabCut/分水岭/Otsu/SLIC）
+│   │   └── export.py             # 导出（PNG；PDF 仅底层保留，UI 不暴露）
+│   └── assets/                   # 资源（5 品牌颜色库在 palette/ 子目录）
+├── perler_app/                   # 安卓移动版（Flutter）
+│   ├── lib/
+│   │   ├── services/             # update_service（在线更新）、export_service 等
+│   │   ├── state/                # AppState / AppSettings
+│   │   └── ui/                   # 界面（含 settings 设置页）
+│   └── android/                  # Android 工程（权限/FileProvider）
+├── tests/                        # pytest（含 view_state / settings_update）
+├── resources/icons/              # 应用图标
+├── run.py                        # PyInstaller 引导入口
+├── requirements.txt              # Python 依赖
+├── pyinstaller.spec              # PyInstaller 配置（onedir）
+└── .github/workflows/build.yml   # CI：桌面三平台 + Android APK 打包上传 Release
+```
+
 ### 核心模块
 
 #### 1. 图像处理 (`src/core/image_processor.py`)
@@ -82,7 +117,7 @@ exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern')
 - FastAPI 后端，提供图像处理/图案生成/导出接口
 - 通过 pywebview 内嵌 Web 视图呈现桌面窗口
 
-**关键文件**: `main.py`（入口）, `app.py`, `state.py`, `codecs.py`
+**关键文件**: `main.py`（入口）, `app.py`, `state.py`, `codecs.py`, `updater.py`（在线更新）
 
 ## 开发流程
 
