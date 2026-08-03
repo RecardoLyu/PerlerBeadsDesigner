@@ -1,412 +1,97 @@
 # 拼豆图纸设计器 (Perler Beads Designer)
 
-一个强大的 Python 应用程序，用于将图像转换为拼豆图纸设计。支持前景分割、颜色量化、多种导出格式。
+把任意图像转换成可拼的拼豆图纸。支持前景分割抠图、5 品牌真实颜色库、图纸/BOM 生成与导出。
+
+**双端**：桌面端（Windows / macOS / Linux）+ 安卓移动版（Flutter）。
 
 ## 功能特性
 
-### 核心功能
-- **图像加载和处理**
-  - 加载 JPG、PNG、BMP 等常见格式图像
-  - 调整图像大小（缩放）
-  - 亮度和对比度调整
-  - 灰度转换
+- **图像加载与预处理**
+  - 加载 JPG、PNG、BMP 等常见格式
+  - 缩放、亮度 / 对比度、高斯模糊
+  - 框选裁剪（裁剪结果可作为新「原图」继续处理）
 
-- **前景分割与裁剪**
-  - GrabCut 算法前景分割（基于矩形 ROI）
-  - 自适应阈值处理
-  - 简单阈值处理
-  - 颜色范围选择
-  - 形态学操作（开运算、闭运算）
-  - 鼠标矩形选区裁剪
+- **前景分割与抠图**
+  - 多种算法：GrabCut 矩形、分水岭、Otsu、SLIC
+  - 前景 / 背景涂抹细化、形态学操作（开 / 闭运算）
+  - 仅用 Mask 前景生成图纸，背景不计入
 
-- **图案生成**
-  - 自动将图像转换为拼豆图案
-  - 可自定义拼豆数量（宽度×高度）
-  - 颜色数量限制选项
-  - 支持来自 Pixel Beads 官网的真实颜色库
-  - 自动颜色匹配和量化
+- **图纸生成**
+  - 自定义图纸宽度 / 高度（豆数），保持图像比例
+  - 颜色数量上限、细节保留强度
+  - **5 品牌颜色库**：MARD 曼德(221) / Perler / Hama / Artkal S-5mm / Artkal C-2.6mm
+  - 多种色差算法（CIEDE2000 默认 / CIE76 / Lab / 欧氏 / 加权）
+  - 抖动、高阶优化(ICM) 减少噪点与色偏
+  - 图纸标题、物料清单 BOM（色号 / 名称 / 数量 / 百分比）
 
-- **渲染选项**
-  - 网格渲染（默认，便于计数）
-  - 带颜色代码（如 A1、B2 等）和网格线的渲染
-  - 自定义拼豆显示尺寸
+- **导出 PNG**
+  - 网格版图纸（带色号），按图纸尺寸导出
+  - 自定义缩放倍数
 
-- **导出功能**
-  - **一键导出**：复选框勾选所需格式后统一导出
-  - **PNG 格式**
-    - 网格版
-    - 带编码标签+网格版（如 A1、B2）
-    - 自定义缩放倍数
-  - **PDF 格式**
-    - 完整的可打印图纸
-    - 包含物料清单 (BOM)
-    - A4 或 Letter 纸张大小
-  - **物料清单 (BOM)**
-    - 随 PNG / PDF 图纸一并展示
-    - 包含颜色代码、名称、数量和百分比
+- **设置中心**
+  - 主题：跟随系统 / 浅色 / 深色
+  - 图纸 / 分割默认参数持久化，重开自动带出
 
-## 系统要求
+- **在线更新**
+  - 设置页一键检查新版本
+  - 桌面端：下载后提示重启，自动覆盖安装并重启
+  - 安卓端：下载 APK 后调系统安装器安装
 
-- Python 3.8 或更高版本
-- Windows 10+ / macOS 10.14+ / Linux (Ubuntu 18.04+)
-- 4GB RAM
-- 500MB 硬盘空间
+## 下载与安装（普通用户）
 
-## 安装
+无需安装 Python，直接从 [Releases](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases) 下载对应平台：
 
-### 方法 1：从源代码安装（开发模式）
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| Windows | `PerlerBeadsDesigner-windows-vX.Y.Z.zip` | 解压后双击 `PerlerBeadsDesigner.exe` 运行 |
+| macOS | `PerlerBeadsDesigner-macos-vX.Y.Z.tar.gz` | 解压运行 |
+| Linux | `PerlerBeadsDesigner-linux-vX.Y.Z.tar.gz` | 解压运行 |
+| 安卓 | `PerlerBeads-debug-vX.Y.Z.apk` | 直接安装（debug 版） |
 
-#### 前置条件
-- 安装 Python 3.8+
-- 安装 pip 包管理器
-
-#### 步骤
-
-1. **克隆仓库**
-   ```bash
-   git clone https://github.com/yourusername/PerlerBeadsDesigner.git
-   cd PerlerBeadsDesigner
-   ```
-
-2. **创建虚拟环境（推荐）**
-   ```bash
-   # Windows
-   python -m venv venv
-   venv\\Scripts\\activate
-   
-   # macOS / Linux
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-3. **安装依赖**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **运行应用**
-   ```bash
-   python -m src.webapp.main
-   ```
-   启动后会在桌面窗口（pywebview）中打开应用；首次启动会先拉起本地 FastAPI 服务。
-
-### 方法 2：直接运行可执行文件
-
-从 [Releases](https://github.com/yourusername/PerlerBeadsDesigner/releases) 页面下载最新的 `.exe` 文件，双击即可运行。
+> 想从源码运行 / 二次开发，见下方「开发文档」。
 
 ## 使用指南
 
-### 基本工作流程
+主流程五步：
 
-1. **加载图像**
-   - 点击 "图像加载和处理" 标签页
-   - 点击 "加载图像" 按钮
-   - 选择要处理的图像文件
+1. **加载图像**：点「加载图像」，或直接把图片拖进画布。
+2. **预处理（可选）**：调亮度 / 对比度 / 高斯模糊，或框选裁剪。
+3. **前景分割（可选）**：框选 + 分割，涂抹细化，只保留想要的前景。
+4. **生成图纸**：切到「图纸生成」，设宽度 / 颜色上限 / 品牌等，点「预览图纸」查看效果与 BOM。
+5. **导出**：填文件名、选输出路径，点「导出图纸」得到 PNG。
 
-2. **预处理（可选）**
-   - 调整图像大小
-   - 微调亮度和对比度
-   - 重置为原图（使用 "重置为原图" 按钮）
+更详细的操作说明与技巧，见应用内「设置 → 关于 → 查看使用指南」。
 
-3. **前景分割（可选）**
-   - 切换到 "前景分割" 标签页
-   - 选择分割方法
-   - 调整参数并应用
-   - 使用形态学操作改进分割结果
+## 参数说明
 
-4. **生成图案**
-   - 切换到 "图案生成" 标签页
-   - 设置拼豆宽度和高度
-   - 可选：限制颜色数量
-   - 点击 "生成图案"
-
-5. **渲染和查看**
-   - 默认显示网格版本（预览自动填满窗口）
-   - 点击 "带编码渲染" 查看带颜色代码和网格线的版本
-   - 在 "物料清单 (BOM)" 区域查看所需织珠数量
-
-6. **导出**
-   - 切换到 "导出" 标签页
-   - 可选：更改输出目录
-   - 勾选需要导出的格式（PNG / PDF / BOM 等，PDF 默认勾选）
-   - 点击 "一键导出" 同时导出所有已勾选文件
-
-### 参数说明
-
-#### 图像处理参数
-- **宽度 / 高度**: 调整图像尺寸（单位：像素）
-- **亮度**: 1.0 = 正常，> 1.0 更亮，< 1.0 更暗
-- **对比度**: 1.0 = 正常，> 1.0 更高，< 1.0 更低
-
-#### 分割参数
-- **阈值**: 0-255，值越大越容易被分割为白色
-- **核大小**: 形态学操作的核尺寸，奇数效果更好
-
-#### 图案参数
-- **拼豆宽度 / 高度**: 最终图案的尺寸（单位：拼豆数）
-- **颜色数量限制**: 0 = 无限制，使用尽可能多的颜色；> 0 = 限制为指定数量
-
-#### 导出参数
-- **缩放倍数**: PNG 导出的缩放倍数（1-10）
-- **拼豆像素大小**: 每个拼豆在屏幕上显示的像素大小（5-100）
-- **纸张大小**: PDF 导出的纸张大小（A4 或 Letter）
-
-## 项目结构
-
-```
-PerlerBeadsDesigner/
-├── src/                          # 源代码
-│   ├── __init__.py
-│   ├── webapp/                   # 桌面应用（FastAPI 后端 + pywebview 窗口）
-│   │   ├── __init__.py
-│   │   ├── main.py               # 应用入口（启动本地服务并开窗）
-│   │   ├── app.py                # FastAPI 路由（HTTP API）
-│   │   ├── state.py              # 应用状态
-│   │   ├── codecs.py             # 图像编解码
-│   │   └── static/               # 前端（HTML/CSS/JS）
-│   ├── core/                     # 核心功能
-│   │   ├── __init__.py
-│   │   ├── image_processor.py    # 图像处理
-│   │   ├── color_manager.py      # 颜色管理与量化
-│   │   └── pattern_generator.py  # 图案生成
-│   ├── utils/                    # 实用工具
-│   │   ├── __init__.py
-│   │   ├── segmentation.py       # 前景分割（GrabCut/分水岭/Otsu/SLIC）
-│   │   └── export.py             # 导出功能（PNG/PDF/BOM）
-│   └── assets/                   # 资源文件
-│       └── colors_221.json       # MARD 221 色拼豆颜色库
-├── tests/                        # 单元测试
-├── resources/                    # 资源文件
-│   └── icons/                    # 应用图标
-├── run.py                        # PyInstaller 引导入口
-├── requirements.txt              # Python 依赖
-├── setup.py                      # 安装脚本
-├── pyinstaller.spec              # PyInstaller 配置
-├── .gitignore                    # Git 忽略文件
-├── README.md                     # 本文件
-└── LICENSE                       # 许可证
-
-```
-
-## 颜色库
-
-程序使用 MARD 221 色拼豆颜色库进行颜色匹配。支持多种颜色距离算法：
-
-- **加权距离**（默认）：基于亮度的加权欧氏距离（R:G:B = 3:6:1），符合人眼感知特性
-- **欧氏距离**：标准 RGB 欧氏距离
-- **Lab 色空间**：在 CIE LAB 色空间中的欧氏距离
-- **CIE76**：CIE LAB 色空间的 ΔE 距离
-
-## 开发和打包
-
-### 开发环境设置
-
-1. **克隆仓库**
-   ```bash
-   git clone https://github.com/yourusername/PerlerBeadsDesigner.git
-   cd PerlerBeadsDesigner
-   ```
-
-2. **创建虚拟环境**
-   ```bash
-   python -m venv venv
-   ```
-
-3. **激活虚拟环境**
-   ```bash
-   # Windows
-   venv\\Scripts\\activate
-   # macOS / Linux
-   source venv/bin/activate
-   ```
-
-4. **安装开发依赖**
-   ```bash
-   pip install -r requirements.txt
-   pip install pyinstaller
-   ```
-
-5. **在 VS Code 中调试**
-   - 打开项目文件夹
-   - 安装 Python 扩展
-   - 创建 `.vscode/launch.json`:
-     ```json
-     {
-         "version": "0.2.0",
-         "configurations": [
-             {
-                 "name": "Python: Main",
-                 "type": "python",
-                 "request": "launch",
-                 "program": "${workspaceFolder}/run.py",
-                 "console": "integratedTerminal",
-                 "justMyCode": true
-             }
-         ]
-     }
-     ```
-   - 按 F5 开始调试
-
-### 打包为可执行文件
-
-#### 使用 PyInstaller
-
-1. **安装 PyInstaller**
-   ```bash
-   pip install pyinstaller
-   ```
-
-2. **生成可执行文件**
-   ```bash
-   pyinstaller pyinstaller.spec
-   ```
-
-3. **输出位置**
-   - 可执行文件位于 `dist/PerlerBeadsDesigner/` 目录
-   - Windows 用户可直接双击 `PerlerBeadsDesigner.exe` 运行
-
-4. **创建安装程序**
-   ```bash
-   pip install pyinstaller nsis
-   # 使用 NSIS 创建 Windows 安装程序
-   ```
-
-#### 单文件可执行文件
-
-如需生成单个 `.exe` 文件，修改 `pyinstaller.spec`：
-```python
-exe = EXE(
-    ...,
-    name='PerlerBeadsDesigner',
-    onefile=True,  # 添加此行
-    ...
-)
-```
-
-然后重新运行 `pyinstaller pyinstaller.spec`。
-
-## Git 版本管理
-
-### 初始化与提交
-
-1. **初始化仓库**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit: Perler Beads Designer v1.0.0"
-   ```
-
-2. **添加远程仓库**
-   ```bash
-   git remote add origin https://github.com/yourusername/PerlerBeadsDesigner.git
-   ```
-
-3. **推送到 GitHub**
-   ```bash
-   git branch -M main
-   git push -u origin main
-   ```
-
-### 工作流程
-
-```bash
-# 创建特性分支
-git checkout -b feature/new-feature
-
-# 做出更改
-# ...
-
-# 提交更改
-git add .
-git commit -m "description of changes"
-
-# 推送分支
-git push origin feature/new-feature
-
-# 创建 Pull Request 并合并到 main
-```
-
-### 发布新版本
-
-```bash
-# 创建版本标签
-git tag -a v1.1.0 -m "Release version 1.1.0"
-
-# 推送标签
-git push origin v1.1.0
-
-# 在 GitHub Releases 中创建新版本，上传 .exe 文件
-```
+- **宽度 / 高度(豆)**：图纸尺寸（单位：拼豆数）
+- **颜色上限**：0 = 不限制；> 0 = 最多用 N 种颜色（越少越省豆、越易拼）
+- **细节保留**：值越大越能保住图像小细节与边缘
+- **颜色度量**：拟合豆色的色差算法，CIEDE2000 最接近人眼感知（默认）
+- **抖动**：相邻豆交错模拟过渡色
+- **高阶优化(ICM)**：迭代微调减少局部色偏与孤岛噪点
+- **PNG 缩放**：导出图的缩放倍数（越大越清晰、文件越大）
 
 ## 故障排除
 
-### 问题：无法加载图像
-- **解决方案**: 确保图像格式支持（JPG、PNG、BMP），文件未损坏
+- **无法加载图像**：确认格式为 JPG / PNG / BMP，且文件未损坏。
+- **分割效果不理想**：换分割方法、调整参数，或先做亮度 / 对比度预处理。
+- **图纸颜色偏差大**：换色差算法（推荐 CIEDE2000）、提高颜色上限、开抖动。
+- **导出失败**：确认输出目录有写入权限、磁盘空间充足。
 
-### 问题：前景分割效果不理想
-- 尝试调整阈值值
-- 使用不同的分割方法
-- 预处理图像（调整亮度/对比度）
+## 颜色库
 
-### 问题：颜色加载失败
-- 检查网络连接
-- 程序会自动使用默认颜色库
+内置 5 个品牌的真实拼豆颜色库，BOM 色号与品牌严格对应：
 
-### 问题：导出 PDF 出错
-- 确保输出目录有写入权限
-- 检查磁盘空间
-
-### 问题：PyInstaller 打包失败
-- 清除旧的构建目录：`rm -rf build/ dist/`
-- 重新生成：`pyinstaller pyinstaller.spec`
-
-## API 文档
-
-### 关键类
-
-#### ColorManager
-```python
-from src.core.color_manager import ColorManager
-
-manager = ColorManager()
-palette = manager.get_palette()
-closest_color = palette.get_closest_color((255, 0, 0))
-```
-
-#### ImageProcessor
-```python
-from src.core.image_processor import ImageProcessor
-
-processor = ImageProcessor()
-image = processor.load_image('image.jpg')
-processor.resize_image(800, 600)
-```
-
-#### PatternGenerator
-```python
-from src.core.pattern_generator import PatternGenerator, PatternConfig
-
-generator = PatternGenerator()
-config = PatternConfig(width_beads=50, height_beads=50)
-pattern, bom = generator.generate_pattern(image, palette, config)
-```
-
-#### PatternExporter
-```python
-from src.utils.export import PatternExporter
-
-exporter = PatternExporter('./output')
-exporter.export_png(pattern, 'pattern', scale=2)
-exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern', 'A4')
-```
+- MARD 曼德（221 色，中文名）
+- Perler（103 色）
+- Hama（92 色）
+- Artkal S-5mm（199 色）
+- Artkal C-2.6mm（174 色）
 
 ## 许可证
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
+本项目采用 MIT 许可证，详见 [LICENSE](LICENSE)。
 
 ## 联系方式
 
@@ -416,9 +101,16 @@ exporter.export_pdf_pattern(pattern, color_map, bom, 'pattern', 'A4')
 ## 致谢
 
 - 感谢 [Pixel Beads](https://www.pixel-beads.com) 提供真实的拼豆颜色库
-- 使用 OpenCV、FastAPI、pywebview、numpy 等开源库
+- 使用 OpenCV、FastAPI、pywebview、Flutter 等开源项目
+
+## 开发文档
+
+面向开发者（架构、源码运行、打包、贡献）：
+
+- [DEVELOPMENT.md](DEVELOPMENT.md) — 项目架构、项目结构、核心模块、调试
+- [DEPLOYMENT.md](DEPLOYMENT.md) — 打包为可执行文件、发布版本
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 分支工作流与贡献指南
 
 ---
 
-**最后更新**: 2026 年
-**版本**: 2.0.2
+**版本**: 2.3.0 · **最后更新**: 2026 年 8 月
