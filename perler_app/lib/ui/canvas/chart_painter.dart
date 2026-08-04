@@ -14,8 +14,11 @@ class ChartPainter {
   static const double _maskFade = 0.70; // 对应桌面 MASK_FADE
   static const int _majorEvery = 5;
 
-  /// 画一颗豆子（对应桌面 _draw_bead）。real=真实拼豆（同心圆环 + 中央孔洞，
-  /// 还原材料穿孔）；square=经典实心方格。
+  /// 拼豆底板色：浅米白，中央孔洞透出的是底板而不是纯黑阴影（对应桌面 PEGBOARD）。
+  static const Color _pegboard = Color(0xFFF5F3EE);
+
+  /// 画一颗豆子（对应桌面 _draw_bead）。real=真实拼豆（同心圆环 + 中央孔洞透出
+  /// 底板色）；square=经典实心方格。
   static void _drawBead(Canvas canvas, double x1, double y1, double cell,
       Color rgb, String style) {
     if (style != 'real') {
@@ -28,15 +31,13 @@ class ChartPainter {
         (rgb.green * f).round(), (rgb.blue * f).round());
     // 1) 外圈描边（压暗一档）做立体边缘
     canvas.drawCircle(Offset(cx, cy), r, Paint()..color = scale(0.72));
-    // 2) 豆体圆环：向内一圈填豆色（外缘到孔洞之间的环带）
+    // 2) 豆体圆盘：向内一圈填豆色
     canvas.drawCircle(Offset(cx, cy), r * 0.82, Paint()..color = rgb);
-    // 3) 中央孔洞：拼豆材料的穿孔，压暗作内阴影
-    final hr = r * 0.42;
-    canvas.drawCircle(Offset(cx, cy), hr, Paint()..color = scale(0.50));
-    // 4) 孔洞内壁一圈更浅的过渡，让孔洞有纵深感（cell 够大才画）
-    if (cell >= 8) {
-      canvas.drawCircle(Offset(cx, cy), hr * 0.62, Paint()..color = scale(0.34));
-    }
+    // 3) 中央孔洞外缘：压暗的豆色细环，模拟穿孔内壁阴影（孔径 ≈ 0.26 cell）
+    final hr = cell * 0.13;
+    canvas.drawCircle(Offset(cx, cy), hr, Paint()..color = scale(0.55));
+    // 4) 孔洞本身：透出拼豆底板色（浅米白），不是黑色阴影
+    canvas.drawCircle(Offset(cx, cy), hr * 0.72, Paint()..color = _pegboard);
   }
 
   /// 渲染完整图纸为 ui.Image。

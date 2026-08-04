@@ -41,18 +41,22 @@ FONT_CANDIDATES_BOLD = (
 )
 
 
+# 拼豆底（ pegboard ）色：浅米白，中央孔洞透出的是底板而不是纯黑阴影
+PEGBOARD = (245, 243, 238)
+
+
 def _bead_edge(rgb):
     """真实豆子的外圈描边色：豆色压暗一档，形成立体边缘。"""
     return tuple(max(0, int(c * 0.72)) for c in rgb)
 
 
-def _bead_hole(rgb):
-    """真实拼豆中央孔洞色：豆色大幅压暗，模拟穿孔内的阴影。"""
-    return tuple(max(0, int(c * 0.50)) for c in rgb)
+def _bead_hole_rim(rgb):
+    """中央孔洞外缘的描边色：豆色压暗，模拟穿孔内壁的阴影，让孔洞有纵深感。"""
+    return tuple(max(0, int(c * 0.55)) for c in rgb)
 
 
 def _draw_bead(draw, x1, y1, cell, rgb, style):
-    """画一颗豆子。style='real' 画真实拼豆（同心圆环 + 中央孔洞，还原材料穿孔）；
+    """画一颗豆子。style='real' 画真实拼豆（同心圆环 + 中央孔洞透出底板色）；
     'square' 画经典实心方格。"""
     if style != 'real':
         draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
@@ -61,17 +65,15 @@ def _draw_bead(draw, x1, y1, cell, rgb, style):
     r = cell * 0.46                       # 外径 ≈ 0.92 cell
     # 1) 外圈描边（压暗一档）做立体边缘
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=_bead_edge(rgb))
-    # 2) 豆体圆环：向内一圈填豆色（外缘到孔洞之间的环带）
+    # 2) 豆体圆盘：向内一圈填豆色
     ri = r * 0.82
     draw.ellipse([cx - ri, cy - ri, cx + ri, cy + ri], fill=rgb)
-    # 3) 中央孔洞：拼豆材料的穿孔，压暗作内阴影
-    hr = r * 0.42
-    draw.ellipse([cx - hr, cy - hr, cx + hr, cy + hr], fill=_bead_hole(rgb))
-    # 4) 孔洞内壁一圈更浅的过渡，让孔洞有纵深感（cell 够大才画）
-    if cell >= 8:
-        hr2 = hr * 0.62
-        draw.ellipse([cx - hr2, cy - hr2, cx + hr2, cy + hr2],
-                     fill=tuple(max(0, int(c * 0.34)) for c in rgb))
+    # 3) 中央孔洞外缘：压暗的豆色细环，模拟穿孔内壁阴影（孔径 ≈ 0.26 cell）
+    hr = cell * 0.13
+    draw.ellipse([cx - hr, cy - hr, cx + hr, cy + hr], fill=_bead_hole_rim(rgb))
+    # 4) 孔洞本身：透出拼豆底板色（浅米白），不是黑色阴影
+    hr2 = hr * 0.72
+    draw.ellipse([cx - hr2, cy - hr2, cx + hr2, cy + hr2], fill=PEGBOARD)
 
 
 @dataclass
