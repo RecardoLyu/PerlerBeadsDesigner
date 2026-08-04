@@ -8,7 +8,7 @@
 
 全平台本地计算 · 无需联网 · 隐私不出机
 
-[![Version](https://img.shields.io/badge/version-2.4.0-E11D48)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
+[![Version](https://img.shields.io/badge/version-2.4.1-E11D48)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
 [![License](https://img.shields.io/badge/license-MIT-7C3AED)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Android-FB7185)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
 
@@ -28,14 +28,10 @@
 
 ## 效果一览
 
-从一张照片到一张可直接对照拼的真实豆子图纸，附带完整物料清单（BOM）。**真实豆子风格**用同心圆环 + 中央孔洞还原实物拼豆的穿孔质感，色号与数量统一放在图纸主体之外的 BOM 区，干净易读。
+从一张照片到一张可直接对照拼的真实豆子图纸 —— **所见即所得，图纸就是拼好的样子**。附带完整物料清单（BOM）。**真实豆子风格**用同心圆环 + 中央孔洞（透出底板色）还原实物拼豆插在底板上的穿孔质感，色号与数量统一放在图纸主体之外的 BOM 区，干净易读。
 
 <div align="center">
-<img src=".github/assets/compare.png" width="880" alt="原图 → 真实豆子图纸">
-</div>
-
-<div align="center">
-<img src=".github/assets/bead_closeup.png" width="640" alt="真实豆子局部特写">
+<img src=".github/assets/compare.png" width="880" alt="原图 → 拼成的真实效果">
 </div>
 
 ---
@@ -56,11 +52,16 @@
 
 不靠运气，靠一套针对「把照片变成拼豆」这件事打磨的转换管线 —— 在不泄露实现细节的前提下，它为你做了这几件事：
 
-- **智能抠图**：多种前景分割策略 + 涂抹细化，把主体干净地从背景里取出来，背景不计入用料。
+<div align="center">
+<img src=".github/assets/features.png" width="880" alt="为什么转得更准、更好拼">
+</div>
+
+- **智能抠图分割**：多种前景分割策略 + 涂抹细化，把主体干净地从背景里取出来，背景不计入用料。
 - **贴近人眼的配色**：多种感知色差度量（默认 CIEDE2000），让选出的豆色更接近你眼睛看到的样子，而不是机械的数字距离。
-- **真实色库**：内置 **5 大拼豆品牌**的真实色号库，图纸上的每个色号都能买到对应的豆子。
+- **五品牌真实色库**：内置 **5 大拼豆品牌**的真实色号库，图纸上的每个色号都能买到对应的豆子。
 - **省豆又干净**：颜色上限控制 + 抖动过渡 + 高阶优化，把任意照片收敛成**省豆、易拼、少噪点**的图纸。
 - **细节保留**：显著性细节保留强度可调，小脸、小边缘不被量化抹平。
+- **高清导出打印**：带网格编号与 BOM 物料清单的高清图纸，打印出来就能对照拼。
 
 最终效果：**照片进，图纸出** —— 颜色准、噪点少、用料清单清晰，照着 BOM 就能拼。
 
@@ -179,5 +180,5 @@
 ---
 
 <div align="center">
-<sub><b>版本</b> 2.4.0 · <b>最后更新</b> 2026 年 8 月</sub>
+<sub><b>版本</b> 2.4.1 · <b>最后更新</b> 2026 年 8 月</sub>
 </div>
