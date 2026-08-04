@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme/candy_theme.dart';
 import 'theme/skin.dart';
@@ -8,6 +9,9 @@ import 'ui/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 在线更新：原生 DownloadManager 后台下载（退出页面/App 不中断、断点续传）。
+  // 必须在 runApp 前初始化；callback 在 UpdateService 里注册。
+  await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
   // 启动前先恢复主题模式与皮肤，override 注入初始值，防闪一下默认粉再跳变
   final initialThemeMode = await SkinNotifier.restoreThemeMode();
   final initialSkin = await SkinNotifier.restore();

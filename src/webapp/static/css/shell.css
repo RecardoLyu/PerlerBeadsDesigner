@@ -31,6 +31,12 @@
 .side-cards::-webkit-scrollbar{width:6px}
 .side-cards::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:999px}
 
+/* 图像转换内子切换（图像调整 / 图纸生成，迁移自原顶部入口） */
+.subnav{display:flex;background:var(--color-muted);border:1px solid var(--color-border);border-radius:14px;padding:4px;gap:4px;flex:none}
+.subnav-pill{flex:1;padding:7px 10px;border:none;border-radius:10px;background:transparent;font-family:var(--font-body);font-weight:700;font-size:13px;color:var(--color-muted-fg);cursor:pointer;transition:all .25s var(--ease)}
+.subnav-pill.active{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:var(--color-on-primary);box-shadow:0 3px 10px rgba(var(--shadow-violet-rgb),.35)}
+.sidebar.collapsed .subnav{opacity:0;pointer-events:none}
+
 /* 面板卡片 */
 .panel-card{padding:var(--space-2) var(--space-3);overflow:visible;box-sizing:border-box;min-width:0}
 .panel-card h3{font-size:14px;font-weight:700;color:var(--color-foreground-strong);display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -229,3 +235,21 @@ select.sel:focus{outline:2px solid var(--color-ring)}
 .help-body blockquote{margin:10px 0;padding:6px 14px;border-left:3px solid var(--color-primary);background:var(--color-surface);border-radius:0 10px 10px 0;color:var(--color-muted-fg)}
 .help-body pre{background:var(--color-muted);border:1px solid var(--color-border);border-radius:10px;padding:10px 14px;overflow:auto;font-size:12.5px;line-height:1.6;margin:10px 0}
 .help-body pre code{background:none;padding:0;color:var(--color-foreground)}
+
+/* ===== 图纸画板 ===== */
+#boardCanvas{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;z-index:5}
+.viewport.board-mode img{opacity:0}                 /* 画板态隐藏占位 img，仅保留 transform 容器语义 */
+.viewport.board-mode .empty{display:none !important}
+.board-tool.on{background:linear-gradient(135deg,var(--color-primary),var(--color-accent));color:#fff;border-color:transparent}
+.board-tool:disabled{opacity:.35;cursor:default}
+.board-tool{position:relative}
+/* 豆色圆环+编号选择器 */
+.board-palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:6px;max-height:280px;overflow-y:auto;padding-right:2px}
+.board-palette::-webkit-scrollbar{width:6px}
+.board-palette::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:999px}
+.bead-dot{position:relative;width:38px;height:44px;border:1.5px solid var(--color-border);border-radius:10px;background:var(--color-surface);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:3px 0;transition:transform .12s,border-color .12s,box-shadow .12s}
+.bead-dot:hover{transform:translateY(-1px)}
+.bead-dot.sel{border-color:var(--color-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--color-primary) 30%,transparent)}
+.bead-ring{width:22px;height:22px;border-radius:50%;position:relative;background:var(--bc);box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--bc) 72%,#000)}
+.bead-ring::after{content:'';position:absolute;inset:38%;border-radius:50%;background:#f5f3ee;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--bc) 55%,#000)}
+.bead-code{font-size:8.5px;font-weight:800;color:var(--color-muted-fg);line-height:1;white-space:nowrap;max-width:34px;overflow:hidden;text-overflow:ellipsis}

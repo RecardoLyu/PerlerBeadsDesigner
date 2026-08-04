@@ -663,6 +663,239 @@ def export(req: ExportReq):
 
 
 # --------------------------------------------------------------------------
+# 图纸画板 board：网格状态 + 增量笔画历史（撤销/重做）+ 底图 + 导出
+# 前端 canvas 实时绘制（与 _draw_bead 同比例），后端持权威网格与导出渲染。
+# --------------------------------------------------------------------------
+class BoardNewReq(BaseModel):
+    size: int = 52                   # 52 | 104
+    brand: str = "mard"
+
+
+@app.post("/api/board/new")
+def board_new(req: BoardNewReq):
+    if req.size not in (52, 104):
+        raise HTTPException(400, detail="仅支持 52 或 104 网格")
+    if req.brand not in STATE.color_manager.BRANDS:
+        raise HTTPException(400, detail="未知品牌: " + req.brand)
+    STATE.board_new(req.size, req.brand)
+    return {"ok": True, "size": req.size, "brand": req.brand}
+
+
+@app.get("/api/board/state")
+def board_state():
+    """画板元数据 + 全量网格 + 色板 + BOM（前端初次进入/撤销重做后镜像）。"""
+    if not STATE.board_active or STATE.board_grid is None:
+        return {"ok": True, "active": False}
+    g = STATE.board_grid
+    h, w = g.shape
+    grid = [[(g[y, x] if g[y, x] else None) for x in range(w)] for y in range(h)]
+    palette = STATE._board_palette()
+    STATE.board_to_generator()      # 刷新 BOM
+    bom = STATE.generator.bom or {}
+    return {
+        "ok": True, "active": True, "size": w, "brand": STATE.board_brand,
+        "grid": grid,
+        "base": STATE.board_base is not None,
+        "base_opacity": STATE.board_base_opacity,
+        "base_visible": STATE.board_base_visible,
+        "can_undo": bool(STATE.board_undo), "can_redo": bool(STATE.board_redo),
+        "palette": [{"code": c.code, "name": c.name, "hex": c.hex}
+                    for c in palette.colors],
+        "bom": bom,
+    }
+
+
+class BoardStrokeReq(BaseModel):
+    cells: list[list[int]]           # [[x,y],...] 一笔批量设格
+    code: str | None = None          # 色号；null=擦除
+
+
+@app.post("/api/board/stroke")
+def board_stroke(req: BoardStrokeReq):
+    """批量设格（一次笔画/框选）。后端算 old/new 增量入撤销栈。"""
+    with STATE.lock:
+        if STATE.board_grid is None:
+            raise HTTPException(400, detail="尚未新建画板")
+        code = req.code or None
+        if code and STATE._board_palette().get_color(code) is None:
+            raise HTTPException(400, detail="未知色号: " + code)
+        g = STATE.board_grid
+        h, w = g.shape
+        changed = []
+        for c in req.cells:
+            x, y = int(c[0]), int(c[1])
+            if 0 <= x < w and 0 <= y < h:
+                old = g[y, x] or None
+                if old != code:
+                    changed.append((x, y, old, code))
+        if changed:
+            STATE.board_apply_op({'kind': 'stroke', 'cells': changed})
+        return {"ok": True, "changed": len(changed),
+                "can_undo": bool(STATE.board_undo), "can_redo": bool(STATE.board_redo)}
+
+
+class BoardFillReq(BaseModel):
+    x: int
+    y: int
+    code: str | None = None
+
+
+@app.post("/api/board/fill")
+def board_fill(req: BoardFillReq):
+    """油漆桶 flood fill：从 (x,y) 起把同色连通域填为 code（null=成片擦除）。"""
+    from collections import deque
+    with STATE.lock:
+        if STATE.board_grid is None:
+            raise HTTPException(400, detail="尚未新建画板")
+        g = STATE.board_grid
+        h, w = g.shape
+        sx, sy = int(req.x), int(req.y)
+        if not (0 <= sx < w and 0 <= sy < h):
+            raise HTTPException(400, detail="起点越界")
+        code = req.code or None
+        target = g[sy, sx] or None
+        if target == code:
+            return {"ok": True, "changed": 0}
+        seen = np.zeros((h, w), dtype=bool)
+        q = deque([(sx, sy)])
+        seen[sy, sx] = True
+        changed = []
+        while q:
+            x, y = q.popleft()
+            old = g[y, x] or None
+            changed.append((x, y, old, code))
+            for nx, ny in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
+                if 0 <= nx < w and 0 <= ny < h and not seen[ny, nx] \
+                        and (g[ny, nx] or None) == target:
+                    seen[ny, nx] = True
+                    q.append((nx, ny))
+        STATE.board_apply_op({'kind': 'fill', 'cells': changed})
+        return {"ok": True, "changed": len(changed)}
+
+
+@app.post("/api/board/undo")
+def board_undo():
+    if not STATE.board_undo_op():
+        raise HTTPException(400, detail="无可撤销步骤")
+    return board_state()
+
+
+@app.post("/api/board/redo")
+def board_redo():
+    if not STATE.board_redo_op():
+        raise HTTPException(400, detail="无可重做步骤")
+    return board_state()
+
+
+@app.post("/api/board/clear")
+def board_clear():
+    with STATE.lock:
+        if STATE.board_grid is None:
+            raise HTTPException(400, detail="尚未新建画板")
+        g = STATE.board_grid
+        h, w = g.shape
+        changed = [(x, y, (g[y, x] or None), None)
+                   for y in range(h) for x in range(w) if g[y, x]]
+        if changed:
+            STATE.board_apply_op({'kind': 'clear', 'cells': changed})
+    return board_state()
+
+
+# ---- 底图 ----
+@app.post("/api/board/base/load")
+async def board_base_load(file: UploadFile = File(...)):
+    """导入底图原图（未裁剪）。暂存供正方形框选，回显原图 PNG。"""
+    arr = _err(png_to_ndarray, await file.read())
+    STATE.board_base_src = arr.copy()
+    return _png(arr)
+
+
+class BoardBaseCropReq(BaseModel):
+    crop: list[int]                  # [x1,y1,x2,y2] 源图坐标，强制取正方形
+
+
+@app.post("/api/board/base/crop")
+def board_base_crop(req: BoardBaseCropReq):
+    """按前端框选（强制正方形）裁剪底图并存为叠加层。"""
+    src = STATE.board_base_src
+    if src is None:
+        raise HTTPException(400, detail="请先导入底图")
+    sh, sw = src.shape[:2]
+    x1, y1, x2, y2 = [int(v) for v in req.crop]
+    side = min(x2 - x1, y2 - y1)
+    x1 = max(0, min(x1, sw - 1)); y1 = max(0, min(y1, sh - 1))
+    side = max(1, min(side, sw - x1, sh - y1))
+    STATE.board_base = src[y1:y1+side, x1:x1+side].copy()
+    STATE.board_base_visible = True
+    return {"ok": True, "side": int(side)}
+
+
+@app.get("/api/board/base/image")
+def board_base_image():
+    if STATE.board_base is None:
+        raise HTTPException(404, detail="无底图")
+    return _png(STATE.board_base)
+
+
+class BoardBaseOptsReq(BaseModel):
+    visible: bool | None = None
+    opacity: float | None = None
+
+
+@app.post("/api/board/base/options")
+def board_base_options(req: BoardBaseOptsReq):
+    if req.visible is not None:
+        STATE.board_base_visible = bool(req.visible)
+    if req.opacity is not None:
+        STATE.board_base_opacity = float(min(1.0, max(0.0, req.opacity)))
+    return {"ok": True, "visible": STATE.board_base_visible,
+            "opacity": STATE.board_base_opacity}
+
+
+@app.post("/api/board/base/clear")
+def board_base_clear():
+    STATE.board_base = None
+    STATE.board_base_src = None
+    return {"ok": True}
+
+
+# ---- 导出 ----
+class BoardExportReq(BaseModel):
+    filename: str = "board"
+    output_dir: str | None = None
+    png_scale: float = 1.0
+    show_title: bool = False
+    bead_style: str = "real"         # real=真实风 | square=图纸风
+
+
+@app.post("/api/board/export")
+def board_export(req: BoardExportReq):
+    if STATE.board_grid is None:
+        raise HTTPException(400, detail="尚未新建画板")
+    from src.utils.export import PatternExporter
+    STATE.board_to_generator()
+    gen = STATE.generator
+    palette = STATE._board_palette()
+    bom = gen.bom or {}
+    colors = bom.get('colors', {})
+    outdir = os.path.abspath(req.output_dir or STATE.output_dir)
+    os.makedirs(outdir, exist_ok=True)
+    STATE.output_dir = outdir
+    exporter = PatternExporter(outdir)
+    title = req.filename.strip() if req.show_title else None
+    chart = _err(gen.render_standard_chart, 30, 5, palette,
+                 gen.bead_mask, True, mask_bg=None,
+                 title=title,
+                 brand=STATE.color_manager.BRANDS[STATE.board_brand][0],
+                 color_count=len(colors),
+                 total_beads=int(bom.get('total_beads', 0)),
+                 bead_style=req.bead_style)
+    made = [exporter.export_png_standard(chart, req.filename,
+                                         float(req.png_scale))]
+    return {"ok": True, "files": made, "output_dir": outdir, "bom": bom}
+
+
+# --------------------------------------------------------------------------
 # Static frontend (served last so /api wins)
 # --------------------------------------------------------------------------
 # frozen (PyInstaller) 下 __file__ 解析不可靠，统一走 state._resource_path

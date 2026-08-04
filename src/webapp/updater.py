@@ -25,6 +25,20 @@ GITHUB_REPO = "RecardoLyu/PerlerBeadsDesigner"
 _API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 _TIMEOUT = 20
 
+# 大陆访问 GitHub 慢的镜像加速源（前缀代理 browser_download_url）。
+# 逐个回退尝试：先直连，失败后依次试镜像。均为公共服务，失效时可调整顺序/替换。
+_MIRRORS = [
+    "",  # 直连
+    "https://mirror.ghproxy.com/",
+    "https://gh-proxy.com/",
+    "https://ghfast.top/",
+]
+
+
+def _candidate_urls(url: str):
+    """按回退顺序生成候选下载地址：直连 + 各镜像前缀代理。"""
+    return [(m + url) for m in _MIRRORS]
+
 # 模块级下载状态（单用户桌面应用）
 _state = {
     "status": "idle",      # idle | downloading | extracting | ready | error
@@ -100,19 +114,7 @@ def _download_worker(url: str):
     try:
         workdir = tempfile.mkdtemp(prefix="pbd_update_")
         zip_path = os.path.join(workdir, "update.zip")
-        with requests.get(url, stream=True, timeout=_TIMEOUT) as r:
-            r.raise_for_status()
-            total = int(r.headers.get("Content-Length") or 0)
-            got = 0
-            with open(zip_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1 << 16):
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    got += len(chunk)
-                    if total:
-                        with _lock:
-                            _state["percent"] = min(99, int(got * 100 / total))
+        _download_with_fallback(url, zip_path)
         with _lock:
             _state.update(status="extracting", percent=99)
         # 解压：zip 根通常是 PerlerBeadsDesigner/ 目录（exe + _internal/）
@@ -127,6 +129,44 @@ def _download_worker(url: str):
     except Exception as e:  # noqa: BLE001 - 任何失败都回报给前端
         with _lock:
             _state.update(status="error", error=str(e))
+
+
+def _download_with_fallback(url: str, zip_path: str):
+    """下载到 zip_path：按「直连+镜像」顺序回退，单源内用 Range 断点续传。
+
+    每个候选源失败（超时/连接错/HTTP 错）后保留已下字节，换下一个源从断点续传；
+    同一源内网络中断也最多重试 3 次并续传。全部源失败则抛出最后一个异常。
+    """
+    last_err = None
+    for cand in _candidate_urls(url):
+        for _attempt in range(3):
+            got = os.path.getsize(zip_path) if os.path.exists(zip_path) else 0
+            try:
+                headers = {"Range": f"bytes={got}-"} if got else {}
+                with requests.get(cand, stream=True, timeout=_TIMEOUT,
+                                  headers=headers) as r:
+                    # 服务器忽略 Range 返回 200 → 从头下（覆盖写）；206 → 续传（追加写）
+                    if r.status_code not in (200, 206):
+                        raise RuntimeError(f"HTTP {r.status_code}")
+                    mode = "ab" if (got and r.status_code == 206) else "wb"
+                    if mode == "wb":
+                        got = 0
+                    total = int(r.headers.get("Content-Length") or 0) + got
+                    with open(zip_path, mode) as f:
+                        for chunk in r.iter_content(chunk_size=1 << 16):
+                            if not chunk:
+                                continue
+                            f.write(chunk)
+                            got += len(chunk)
+                            if total:
+                                with _lock:
+                                    _state["percent"] = min(99, int(got * 100 / total))
+                return  # 本源下载完成
+            except Exception as e:  # noqa: BLE001 - 换 attempt/换源续传
+                last_err = e
+                continue
+        # 本源多次失败，换下一个镜像源（保留已下字节）
+    raise last_err or RuntimeError("所有下载源均失败")
 
 
 def _locate_app_dir(root: str):

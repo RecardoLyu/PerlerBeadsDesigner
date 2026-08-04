@@ -8,7 +8,7 @@
 
 全平台本地计算 · 无需联网 · 隐私不出机
 
-[![Version](https://img.shields.io/badge/version-2.4.1-E11D48)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
+[![Version](https://img.shields.io/badge/version-2.5.0-E11D48)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
 [![License](https://img.shields.io/badge/license-MIT-7C3AED)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Android-FB7185)](https://github.com/RecardoLyu/PerlerBeadsDesigner/releases)
 
@@ -90,6 +90,16 @@
 
 - **导出 PNG**
   - 按图纸尺寸导出高清图，自定义缩放倍数
+
+- **图纸画板（v2.5 新增）**
+  - 标准拼豆板规格：**52×52 / 104×104** 可选（新建时选，默认 52）
+  - **自由手绘拼豆图纸**：画笔涂抹、油漆桶填充、橡皮擦、自由框选，撤销 / 重做各保留 5 步
+  - **品牌豆色「圆环 + 编号」选色**：颜色直接对接 5 大品牌真实豆库，画上的就是能买到的真实豆色
+  - 笔触粗细以拼豆板像素为基准，滑块分级调节
+  - **导入参考底图**：外部图像切成正方形铺满画板，默认高透明度叠加显示在上层绘制之下，不干扰作画，可开关 / 调透明度
+  - **导出 PNG + 色号 BOM**：可选真实风 / 图纸风，直接统计各豆色用量生成物料清单
+  - 交互：桌面端左键绘制 / 中键平移 / 滚轮缩放；移动端单指绘制、双指捏合缩放与平移
+  - 双端（Windows / macOS / Linux / Android）一致体验
 
 - **自定义主题**
   - 导入任意图片作半透明背景，自动提取主体颜色适配整套主题色
@@ -180,5 +190,5 @@
 ---
 
 <div align="center">
-<sub><b>版本</b> 2.4.1 · <b>最后更新</b> 2026 年 8 月</sub>
+<sub><b>版本</b> 2.5.0 · <b>最后更新</b> 2026 年 8 月</sub>
 </div>

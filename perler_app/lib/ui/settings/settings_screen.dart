@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/update_service.dart';
 import '../../state/app_state.dart';
@@ -402,28 +404,101 @@ class _About extends StatefulWidget {
 class _AboutState extends State<_About> {
   String _version = '…';
   bool _checking = false;
-  double? _progress;          // null=未在下载
+  double? _progress;          // null=未在下载；0..1=下载中
   UpdateInfo? _info;
   String _status = '';
   bool _downloaded = false;
   String? _apkPath;
+  bool _failed = false;       // 下载失败（可断点续传）
+  StreamSubscription<DownloadTaskStatus>? _sub;
+  Timer? _pollTimer;          // 下载中周期性拉系统任务进度刷新 UI
 
   @override
   void initState() {
     super.initState();
     UpdateService.currentVersion()
         .then((v) => mounted ? setState(() => _version = v) : null);
+    // 绑定后台下载回调（幂等），并恢复持久化的任务状态：
+    // 退出设置页/重启 App 后，下载仍在系统 DownloadManager 里跑，
+    // 这里重进时把「下载中 / 已下载待安装」状态还原回来。
+    UpdateService.bindCallback();
+    _sub = UpdateService.progressStream.listen(_onTaskStatus);
+    _restore();
+  }
+
+  /// 启动/停止进度轮询：下载进行中每 800ms 拉一次系统任务进度。
+  void _syncPolling() {
+    final need = _progress != null;
+    if (need && _pollTimer == null) {
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 800), (_) async {
+        final snap = await UpdateService.restoreTask();
+        if (!mounted) return;
+        if (snap != null && snap.isRunning) {
+          setState(() => _progress = snap.progress / 100);
+        }
+      });
+    } else if (!need) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    }
+  }
+
+  Future<void> _restore() async {
+    final snap = await UpdateService.restoreTask();
+    if (!mounted || snap == null) return;
+    setState(() {
+      if (snap.isComplete) {
+        _downloaded = true;
+        _apkPath = snap.apkPath;
+        _progress = null;
+        _failed = false;
+        _status = 'v${snap.version} 已下载完成，点击安装';
+      } else if (snap.isRunning) {
+        _progress = snap.progress / 100;
+        _failed = false;
+        _status = '正在后台下载 v${snap.version}（退出本页不会中断）';
+      } else if (snap.isFailed) {
+        _progress = null;
+        _failed = true;
+        _status = '下载中断，点击「继续下载」从断点续传';
+      }
+    });
+    _syncPolling();
+  }
+
+  void _onTaskStatus(DownloadTaskStatus status) async {
+    if (!mounted) return;
+    if (status == DownloadTaskStatus.complete) {
+      final path = await UpdateService.downloadedApkPath();
+      if (!mounted) return;
+      setState(() {
+        _progress = null;
+        _failed = false;
+        _downloaded = path != null;
+        _apkPath = path;
+        _status = path != null ? '下载完成，点击安装' : '下载完成但文件缺失，请重试';
+      });
+      _syncPolling();
+    } else if (status == DownloadTaskStatus.failed ||
+        status == DownloadTaskStatus.canceled) {
+      setState(() {
+        _progress = null;
+        _failed = true;
+        _status = '下载中断，点击「继续下载」从断点续传';
+      });
+      _syncPolling();
+    }
   }
 
   Future<void> _check() async {
-    setState(() { _checking = true; _status = '正在检查更新…'; _info = null; _downloaded = false; });
+    setState(() { _checking = true; _status = '正在检查更新…'; _info = null; _downloaded = false; _failed = false; });
     final info = await UpdateService.check();
     if (!mounted) return;
     setState(() {
       _checking = false;
       _info = info;
       if (info == null) {
-        _status = '检查失败，请检查网络后重试';
+        _status = '检查失败：GitHub 与各镜像均无法访问，请检查网络后重试';
       } else if (info.hasUpdate) {
         _status = info.apkUrl != null
             ? '发现新版本 v${info.latest}（当前 v${info.current}）'
@@ -434,20 +509,39 @@ class _AboutState extends State<_About> {
     });
   }
 
-  Future<void> _downloadAndInstall() async {
-    final url = _info?.apkUrl;
-    if (url == null) return;
-    setState(() { _progress = 0; _status = '下载中…'; });
-    try {
-      final path = await UpdateService.downloadApk(url,
-          onProgress: (p) => mounted ? setState(() => _progress = p) : null);
-      if (!mounted) return;
-      setState(() { _progress = null; _downloaded = true; _apkPath = path; _status = '已下载，点击安装'; });
-      await UpdateService.installApk(path);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() { _progress = null; _status = '下载失败: $e'; });
+  /// 开始后台下载（原生 DownloadManager）。退出本页/锁屏/退到后台都继续。
+  Future<void> _download() async {
+    final info = _info;
+    if (info?.apkUrl == null) return;
+    setState(() { _progress = 0; _failed = false; _status = '启动后台下载…'; });
+    _syncPolling();
+    final ok = await UpdateService.startDownload(info!);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _status = '正在后台下载 v${info.latest}（可退出本页，通知栏看进度）');
+    } else {
+      setState(() { _progress = null; _status = '下载启动失败：GitHub 与各镜像均无法连接'; });
     }
+    _syncPolling();
+  }
+
+  /// 断点续传。
+  Future<void> _resume() async {
+    setState(() { _progress = 0; _failed = false; _status = '从断点继续下载…'; });
+    _syncPolling();
+    final ok = await UpdateService.resumeDownload();
+    if (!mounted) return;
+    if (!ok) {
+      setState(() { _progress = null; _status = '续传失败，请重新下载'; });
+    }
+    _syncPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _sub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -455,6 +549,27 @@ class _AboutState extends State<_About> {
     final c = context.candy;
     final info = _info;
     final showUpdate = info != null && info.hasUpdate && info.apkUrl != null;
+    final downloading = _progress != null;
+
+    // 主按钮的文案与动作
+    final String label;
+    final IconData icon;
+    final VoidCallback? action;
+    if (_checking) {
+      label = '检查中…'; icon = Icons.system_update_alt_rounded; action = null;
+    } else if (downloading) {
+      label = '后台下载中…'; icon = Icons.downloading_rounded; action = null;
+    } else if (_failed) {
+      label = '继续下载（断点续传）'; icon = Icons.refresh_rounded; action = _resume;
+    } else if (_downloaded && _apkPath != null) {
+      label = '安装更新'; icon = Icons.install_mobile_rounded;
+      action = () => UpdateService.installApk(_apkPath!);
+    } else if (showUpdate) {
+      label = '下载并更新到 v${info.latest}'; icon = Icons.download_rounded;
+      action = _download;
+    } else {
+      label = '检查更新'; icon = Icons.system_update_alt_rounded; action = _check;
+    }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
@@ -491,13 +606,9 @@ class _AboutState extends State<_About> {
         ),
       ),
       const SizedBox(height: 10),
-      // 检查更新 / 下载安装
+      // 检查更新 / 后台下载 / 断点续传 / 安装
       InkWell(
-        onTap: _checking || _progress != null
-            ? null
-            : (showUpdate && !_downloaded ? _downloadAndInstall : _downloaded && _apkPath != null
-                ? () => UpdateService.installApk(_apkPath!)
-                : _check),
+        onTap: action,
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -507,31 +618,23 @@ class _AboutState extends State<_About> {
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(children: [
-            Icon(
-              _downloaded ? Icons.install_mobile_rounded
-                  : showUpdate ? Icons.download_rounded
-                  : Icons.system_update_alt_rounded,
-              size: 18, color: c.foregroundStrong),
+            Icon(icon, size: 18, color: c.foregroundStrong),
             const SizedBox(width: 9),
             Expanded(
-              child: Text(
-                _checking ? '检查中…'
-                    : _progress != null ? '下载中 ${(_progress! * 100).toStringAsFixed(0)}%'
-                    : _downloaded ? '安装更新'
-                    : showUpdate ? '下载并更新到 v${info.latest}'
-                    : '检查更新',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foregroundStrong)),
+              child: Text(label,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foregroundStrong)),
             ),
-            if (_checking || _progress != null)
+            if (_checking || downloading)
               SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, value: _progress,
+                  child: CircularProgressIndicator(strokeWidth: 2,
+                      value: downloading ? _progress : null,
                       color: Theme.of(context).colorScheme.primary))
             else
               Icon(Icons.arrow_forward_ios_rounded, size: 14, color: c.mutedFg),
           ]),
         ),
       ),
-      if (_progress != null) ...[
+      if (downloading) ...[
         const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(99),

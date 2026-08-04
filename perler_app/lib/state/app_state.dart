@@ -125,7 +125,7 @@ final showChartTitleProvider = StateProvider<bool>((_) => false);
 /// 导出页文件名输入框当前值（图纸标题来源；默认跟随源图）。
 final exportNameProvider = StateProvider<String>((_) => 'pattern');
 
-/// 图纸豆子风格：'real'=真实豆子(同心圆环+中央孔洞) | 'square'=经典方格（默认 real）。
+/// 图纸豆子风格：'real'=真实风(同心圆环+中央孔洞) | 'square'=图纸风（默认 real）。
 final beadStyleProvider = StateProvider<String>((_) => 'real');
 
 /// 由文件名推标题：去路径去扩展名，占位名返回 null。
@@ -1323,3 +1323,310 @@ class PatternNotifier extends StateNotifier<PatternState> {
 
 final patternProvider =
     StateNotifierProvider<PatternNotifier, PatternState>((ref) => PatternNotifier(ref));
+
+// ======================= 图纸画板（board） =======================
+// 与桌面端同源：网格持权威色号（撤/重/BOM/导出复用 PatternRender + ChartPainter），
+// 画布端实时 CustomPainter 绘制真实风豆子（比例同 ChartPainter._drawBead）。
+
+/// 画板工具。
+enum BoardTool { pen, eraser, fill, rect }
+
+/// 画板状态：网格（size×size 色号，null=空）+ 底图 + 撤/重栈（增量笔画，各 cap 5）。
+class BoardState {
+  final int size;                 // 52 | 104
+  final String brand;
+  final List<String?> grid;       // size*size，色号或 null
+  final Palette? palette;
+  final BoardTool tool;
+  final String? color;            // 当前色号
+  final int brush;                // 笔触粗细（格 1-3）
+  final String style;             // real 真实风 | square 图纸风
+  // 底图（裁剪好的正方形，叠加显示）
+  final ui.Image? baseImage;
+  final int baseSide;             // 底图边长（px）
+  final bool baseVisible;
+  final double baseOpacity;
+  // 撤/重栈：每条 = 一次笔画改动的格子 [(index, oldCode, newCode)]
+  final List<List<(int, String?, String?)>> undo;
+  final List<List<(int, String?, String?)>> redo;
+  final int version;              // 每次网格/底图变化 +1（画布据此重绘）
+
+  const BoardState({
+    this.size = 52,
+    this.brand = 'mard',
+    this.grid = const [],
+    this.palette,
+    this.tool = BoardTool.pen,
+    this.color,
+    this.brush = 1,
+    this.style = 'real',
+    this.baseImage,
+    this.baseSide = 0,
+    this.baseVisible = true,
+    this.baseOpacity = 0.35,
+    this.undo = const [],
+    this.redo = const [],
+    this.version = 0,
+  });
+
+  bool get hasBoard => grid.isNotEmpty;
+  bool get canUndo => undo.isNotEmpty;
+  bool get canRedo => redo.isNotEmpty;
+
+  BoardState copyWith({
+    int? size, String? brand, List<String?>? grid, Palette? palette,
+    BoardTool? tool, String? color, int? brush, String? style,
+    ui.Image? baseImage, int? baseSide, bool? baseVisible, double? baseOpacity,
+    List<List<(int, String?, String?)>>? undo,
+    List<List<(int, String?, String?)>>? redo,
+    int? version, bool clearBase = false,
+  }) =>
+      BoardState(
+        size: size ?? this.size,
+        brand: brand ?? this.brand,
+        grid: grid ?? this.grid,
+        palette: palette ?? this.palette,
+        tool: tool ?? this.tool,
+        color: color ?? this.color,
+        brush: brush ?? this.brush,
+        style: style ?? this.style,
+        baseImage: clearBase ? null : (baseImage ?? this.baseImage),
+        baseSide: clearBase ? 0 : (baseSide ?? this.baseSide),
+        baseVisible: baseVisible ?? this.baseVisible,
+        baseOpacity: baseOpacity ?? this.baseOpacity,
+        undo: undo ?? this.undo,
+        redo: redo ?? this.redo,
+        version: version ?? this.version,
+      );
+}
+
+class BoardNotifier extends StateNotifier<BoardState> {
+  BoardNotifier(this._ref) : super(const BoardState());
+  final Ref _ref;
+  final Map<String, Palette> _palettes = {};
+
+  void _status(String m) => _ref.read(statusMessageProvider.notifier).state = m;
+
+  Future<Palette> _paletteFor(String brand) async =>
+      _palettes[brand] ??= await Palette.loadBrand(brand);
+
+  /// 新建/重置画板（切规格或品牌时调用；色号体系不同须清空）。
+  Future<void> newBoard(int size, String brand) async {
+    final palette = await _paletteFor(brand);
+    state.baseImage?.dispose();
+    state = BoardState(
+      size: size,
+      brand: brand,
+      grid: List<String?>.filled(size * size, null),
+      palette: palette,
+      color: palette.colors.isNotEmpty ? palette.colors.first.code : null,
+      version: state.version + 1,
+    );
+    _status('画板已就绪：$size×$size · ${Palette.brandLabels[brand]}');
+  }
+
+  /// 确保画板已建（进入画板时若未建则按当前规格/品牌建）。
+  Future<void> ensure() async {
+    if (!state.hasBoard) await newBoard(state.size, state.brand);
+  }
+
+  void setTool(BoardTool t) => state = state.copyWith(tool: t);
+  void setColor(String code) => state = state.copyWith(
+      color: code,
+      tool: state.tool == BoardTool.eraser ? BoardTool.pen : state.tool);
+  void setBrush(int b) => state = state.copyWith(brush: b.clamp(1, 3));
+  void setStyle(String s) =>
+      state = state.copyWith(style: s, version: state.version + 1);
+  void setBaseVisible(bool v) =>
+      state = state.copyWith(baseVisible: v, version: state.version + 1);
+  void setBaseOpacity(double o) => state =
+      state.copyWith(baseOpacity: o.clamp(0.0, 1.0), version: state.version + 1);
+
+  /// 设置底图（已裁剪的正方形 ui.Image + 边长）。
+  void setBase(ui.Image img, int side) {
+    state.baseImage?.dispose();
+    state = state.copyWith(
+        baseImage: img,
+        baseSide: side,
+        baseVisible: true,
+        version: state.version + 1);
+  }
+
+  void clearBase() {
+    state.baseImage?.dispose();
+    state = state.copyWith(clearBase: true, version: state.version + 1);
+  }
+
+  /// 应用一组格子改动为新的一笔（入撤销栈，清重做栈，cap 5）。
+  void _apply(List<(int, String?, String?)> cells) {
+    if (cells.isEmpty) return;
+    final g = List<String?>.from(state.grid);
+    for (final (i, _, n) in cells) {
+      g[i] = n;
+    }
+    final undo = [...state.undo, cells];
+    state = state.copyWith(
+        grid: g,
+        undo: undo.length > 5 ? undo.sublist(undo.length - 5) : undo,
+        redo: const [],
+        version: state.version + 1);
+  }
+
+  /// 画笔/橡皮：一次笔画批量写入（[cells] 为去重后的目标格 index 集合）。
+  void stroke(Set<int> cells, String? code) {
+    final g = state.grid;
+    final changed = <(int, String?, String?)>[];
+    for (final i in cells) {
+      if (i < 0 || i >= g.length) continue;
+      if (g[i] != code) changed.add((i, g[i], code));
+    }
+    _apply(changed);
+  }
+
+  /// 笔触覆盖：以 (x,y) 为中心 brush 见方的格 index 集合。
+  Set<int> stampCells(int x, int y) {
+    final s = state.size, b = state.brush, half = b ~/ 2;
+    final out = <int>{};
+    for (var dy = 0; dy < b; dy++) {
+      for (var dx = 0; dx < b; dx++) {
+        final cx = x - half + dx, cy = y - half + dy;
+        if (cx >= 0 && cy >= 0 && cx < s && cy < s) out.add(cy * s + cx);
+      }
+    }
+    return out;
+  }
+
+  /// 油漆桶 flood fill：从 (x,y) 起把同色连通域填为 code（null=成片擦除）。
+  void fill(int x, int y, String? code) {
+    final s = state.size, g = state.grid;
+    if (x < 0 || y < 0 || x >= s || y >= s) return;
+    final target = g[y * s + x];
+    if (target == code) return;
+    final seen = List<bool>.filled(s * s, false);
+    final q = <int>[y * s + x];
+    seen[y * s + x] = true;
+    final changed = <(int, String?, String?)>[];
+    while (q.isNotEmpty) {
+      final i = q.removeAt(0);
+      changed.add((i, g[i], code));
+      final cx = i % s, cy = i ~/ s;
+      for (final n in [
+        if (cx > 0) i - 1,
+        if (cx < s - 1) i + 1,
+        if (cy > 0) i - s,
+        if (cy < s - 1) i + s,
+      ]) {
+        if (!seen[n] && g[n] == target) {
+          seen[n] = true;
+          q.add(n);
+        }
+      }
+    }
+    _apply(changed);
+  }
+
+  /// 框选填充：把 [x1,y1]-[x2,y2] 矩形填为当前色。
+  void rectFill(int x1, int y1, int x2, int y2, String? code) {
+    final s = state.size, g = state.grid;
+    final changed = <(int, String?, String?)>[];
+    for (var y = y1; y <= y2; y++) {
+      for (var x = x1; x <= x2; x++) {
+        if (x < 0 || y < 0 || x >= s || y >= s) continue;
+        final i = y * s + x;
+        if (g[i] != code) changed.add((i, g[i], code));
+      }
+    }
+    _apply(changed);
+  }
+
+  void undoOp() {
+    if (state.undo.isEmpty) return;
+    final cells = state.undo.last;
+    final g = List<String?>.from(state.grid);
+    for (final (i, o, _) in cells) {
+      g[i] = o;
+    }
+    final undo = state.undo.sublist(0, state.undo.length - 1);
+    final redo = [...state.redo, cells];
+    state = state.copyWith(
+        grid: g,
+        undo: undo,
+        redo: redo.length > 5 ? redo.sublist(redo.length - 5) : redo,
+        version: state.version + 1);
+  }
+
+  void redoOp() {
+    if (state.redo.isEmpty) return;
+    final cells = state.redo.last;
+    final g = List<String?>.from(state.grid);
+    for (final (i, _, n) in cells) {
+      g[i] = n;
+    }
+    final redo = state.redo.sublist(0, state.redo.length - 1);
+    final undo = [...state.undo, cells];
+    state = state.copyWith(
+        grid: g,
+        redo: redo,
+        undo: undo.length > 5 ? undo.sublist(undo.length - 5) : undo,
+        version: state.version + 1);
+  }
+
+  /// 清空画板（可撤销）。
+  void clearBoard() {
+    final g = state.grid;
+    final changed = <(int, String?, String?)>[];
+    for (var i = 0; i < g.length; i++) {
+      if (g[i] != null) changed.add((i, g[i], null));
+    }
+    _apply(changed);
+  }
+
+  /// BOM：只统计有豆格（空板格不计入），复用 PatternRender.buildBom 的 mask 路径。
+  List<BomEntry> bom() {
+    final palette = state.palette;
+    if (palette == null || !state.hasBoard) return const [];
+    final g = state.grid;
+    final codes = g.map((c) => c ?? '__empty__').toList();
+    final mask = g.map((c) => c != null).toList();
+    return PatternRender.buildBom(palette, const {}, g.length,
+        beadMask: mask, codes: codes);
+  }
+
+  int get totalBeads => state.grid.where((c) => c != null).length;
+
+  /// 渲染当前画板为完整图纸 ui.Image（导出用）。风格/标题随参数。
+  Future<ui.Image> renderChart({String? title, String? style}) async {
+    final palette = state.palette!;
+    final s = state.size, g = state.grid;
+    final quantRgb = Uint8List(s * s * 3);
+    final codeToColor = {for (final c in palette.colors) c.code: c};
+    for (var i = 0; i < s * s; i++) {
+      final col = g[i] == null ? null : codeToColor[g[i]];
+      quantRgb[i * 3] = col?.r ?? 245;
+      quantRgb[i * 3 + 1] = col?.g ?? 243;
+      quantRgb[i * 3 + 2] = col?.b ?? 238;
+    }
+    final codes = g.map((c) => c ?? '__empty__').toList();
+    final mask = g.map((c) => c != null).toList();
+    final bomList = bom();
+    return ChartPainter.render(
+      quantRgb: quantRgb,
+      gw: s,
+      gh: s,
+      codes: codes,
+      palette: palette,
+      bom: bomList,
+      beadMask: mask,
+      fadeMasked: false,
+      maskBg: 'none',
+      title: title,
+      brand: Palette.brandLabels[state.brand],
+      colorCount: bomList.length,
+      totalBeads: totalBeads,
+      beadStyle: style ?? state.style,
+    );
+  }
+}
+
+final boardProvider =
+    StateNotifierProvider<BoardNotifier, BoardState>((ref) => BoardNotifier(ref));

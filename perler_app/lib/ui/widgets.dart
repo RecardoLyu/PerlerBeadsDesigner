@@ -59,8 +59,7 @@ class CandyButton extends StatelessWidget {
 }
 
 /// 单选 chip 组
-class CandyChips extends StatelessWidget {
-  final List<String> options;
+class CandyChips extends StatelessWidget {  final List<String> options;
   final int selected;
   final ValueChanged<int> onChanged;
   const CandyChips({super.key, required this.options, required this.selected, required this.onChanged});
@@ -96,6 +95,55 @@ class CandyChips extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+/// 分段选择控件（两项/多项横向分段，用于整合面板内的子切换）
+class CandySegment extends StatelessWidget {
+  final List<String> options;
+  final int selected;
+  final ValueChanged<int> onChanged;
+  const CandySegment({super.key, required this.options, required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.candy;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: c.muted,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: List.generate(options.length, (i) {
+          final on = i == selected;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: on ? candyPrimaryGradient(context) : null,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  options[i],
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: on ? Colors.white : c.mutedFg,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 }

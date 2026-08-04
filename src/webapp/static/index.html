@@ -33,8 +33,8 @@
     </div>
     <nav class="nav" id="nav">
       <div class="nav-thumb" id="navThumb"></div>
-      <button class="nav-pill active" data-view="图像处理">图像处理</button>
-      <button class="nav-pill" data-view="图纸生成">图纸生成</button>
+      <button class="nav-pill active" data-view="图像转换">图像转换</button>
+      <button class="nav-pill" data-view="图纸画板">图纸画板</button>
     </nav>
     <div class="top-right">
       <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
@@ -54,6 +54,11 @@
       <button class="collapse-btn" id="collapseBtn" title="收起面板" aria-label="收起面板">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 6l-6 6 6 6"/></svg>
       </button>
+      <!-- 图像转换内的子切换：图像调整 / 图纸生成（迁移自原顶部入口，作用不变） -->
+      <div class="subnav" id="subnav">
+        <button class="subnav-pill active" id="subPreprocess" data-sub="preprocess">图像调整</button>
+        <button class="subnav-pill" id="subPattern" data-sub="pattern">图纸生成</button>
+      </div>
       <div class="side-cards">
 
         <!-- ===== 视图：图像处理 ===== -->
@@ -121,9 +126,9 @@
               </select>
             </div>
             <div class="num-row"><label>豆子风格</label>
-              <select class="sel" id="beadStyle" data-tip="图纸豆子的绘制风格：真实豆子=同心圆环+中央孔洞，还原拼豆材料穿孔质感（默认，豆内不印色号，色号/数量在下方 BOM）；经典方格=实心方格+每格印色号。">
-                <option value="real" selected data-tip="同心圆环+中央孔洞的真实拼豆质感，色号在下方 BOM 区（默认）">真实豆子</option>
-                <option value="square" data-tip="实心方格，每格印色号">经典方格</option>
+              <select class="sel" id="beadStyle" data-tip="图纸豆子的绘制风格：真实风=同心圆环+中央孔洞，还原拼豆材料穿孔质感（默认，豆内不印色号，色号/数量在下方 BOM）；图纸风=实心方格+每格印色号。">
+                <option value="real" selected data-tip="同心圆环+中央孔洞的真实拼豆质感，色号在下方 BOM 区（默认）">真实风</option>
+                <option value="square" data-tip="实心方格，每格印色号">图纸风</option>
               </select>
             </div>
             <button class="btn btn-primary" id="genBtn" style="width:100%;margin-top:8px">预览图纸</button>
@@ -144,13 +149,18 @@
           <div id="patternCards"></div>
         </div>
 
+        <!-- ===== 视图：图纸画板（工具栏由 board 模块注入） ===== -->
+        <div id="view-board" style="display:none;flex-direction:column;gap:var(--space-2)">
+          <div id="boardCards"></div>
+        </div>
+
       </div>
     </aside>
 
     <!-- 右侧主预览区 -->
     <main class="maincard glass anim" style="animation-delay:.16s">
       <div class="canvas-head">
-        <h2 id="canvasTitle">图像处理 · 预览画布</h2>
+        <h2 id="canvasTitle">图像转换 · 预览画布</h2>
         <div class="view-toggle" id="viewToggle">
           <button class="on" data-mode="original">原图</button>
           <button data-mode="highlight">原图+高亮</button>
@@ -225,6 +235,7 @@
 <script src="/js/segment.js"></script>
 <script src="/js/crop.js"></script>
 <script src="/js/pattern.js"></script>
+<script src="/js/board.js"></script>
 <script src="/js/settings.js"></script>
 </body>
 </html>

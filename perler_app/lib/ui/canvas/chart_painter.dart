@@ -59,7 +59,7 @@ class ChartPainter {
     String? brand,          // 品牌标签（左上角信息行）
     int colorCount = 0,     // 用到的颜色数
     int totalBeads = 0,     // 总豆数
-    String beadStyle = 'real', // real=真实豆子(同心圆环+中央孔洞) | square=经典方格
+    String beadStyle = 'real', // real=真实风(同心圆环+中央孔洞) | square=图纸风
   }) {
     final codeToColor = {for (final c in palette.colors) c.code: c};
     Color codeRgb(String code, int fallback) {
@@ -152,7 +152,7 @@ class ChartPainter {
 
     // --- header：文件名（顶部正中，粗体）+ 左上角品牌信息 ---
     if (hasTitle) {
-      drawText(title!, Offset(totalW / 2, headerH / 2),
+      drawText(title, Offset(totalW / 2, headerH / 2),
           (cell * 1.2).clamp(12.0, 1e9), const Color(0xFF141414),
           weight: FontWeight.w700);
     }

@@ -89,16 +89,41 @@ jobs:
         channel: 'stable'
         cache: true
 
+    - name: Decode release keystore
+      # 从 Secrets 还原正式 keystore（base64）→ app/perler-release.keystore。
+      # tr 剥离任何残留空白/换行（secret 可能带尾换行导致 base64 -d 报 invalid input）。
+      working-directory: perler_app/android/app
+      run: |
+        echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > perler-release.keystore
+        SIZE=$(stat -c%s perler-release.keystore)
+        echo "keystore decoded: $SIZE bytes"
+        # 解码产物必须是非空的合法 keystore（PKCS12/JKS 头）；太小即解码失败，立即报错
+        if [ "$SIZE" -lt 1000 ]; then
+          echo "::error::keystore 解码失败（仅 $SIZE 字节），请检查 ANDROID_KEYSTORE_BASE64 secret"
+          exit 1
+        fi
+
+    - name: Create key.properties
+      # 生成 key.properties 供 build.gradle.kts 读取正式签名（与本地一致 → 在线更新可覆盖安装）
+      working-directory: perler_app/android
+      run: |
+        {
+          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+          echo "storeFile=perler-release.keystore"
+        } > key.properties
+
     - name: Build APK
       working-directory: perler_app
       run: |
         flutter pub get
-        flutter build apk --debug
+        flutter build apk --release
 
     - name: Rename APK with tag
       run: |
         tag="${{ github.ref_name }}"
-        cp "perler_app/build/app/outputs/flutter-apk/app-debug.apk" "PerlerBeadsDesigner-android-${tag}.apk"
+        cp "perler_app/build/app/outputs/flutter-apk/app-release.apk" "PerlerBeadsDesigner-android-${tag}.apk"
 
     - name: Upload Release Asset (Android)
       uses: softprops/action-gh-release@v2

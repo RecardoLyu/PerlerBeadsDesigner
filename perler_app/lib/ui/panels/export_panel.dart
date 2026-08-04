@@ -119,7 +119,7 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
           const SizedBox(width: 58, child: Text('豆子风格', style: TextStyle(fontSize: 12.5))),
           Expanded(
             child: CandyChips(
-              options: const ['真实豆子', '经典方格'],
+              options: const ['真实风', '图纸风'],
               selected: ref.watch(beadStyleProvider) == 'real' ? 0 : 1,
               onChanged: (i) {
                 ref.read(beadStyleProvider.notifier).state =

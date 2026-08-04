@@ -5,6 +5,7 @@ import '../../theme/candy_theme.dart';
 import '../../state/app_state.dart';
 import '../../state/skin_state.dart';
 import 'canvas/canvas_area.dart';
+import 'board/board_canvas.dart';
 import 'sheet/function_sheet.dart';
 import 'settings/settings_screen.dart';
 
@@ -17,6 +18,7 @@ class HomeScreen extends ConsumerWidget {
     final c = context.candy;
     ref.watch(themeModeProvider); // 主题切换时重建顶栏图标
     final skinOn = ref.watch(skinProvider).enabled; // 换肤时隐藏硬编码色 blob
+    final tab = ref.watch(sheetTabProvider); // 当前底部 Tab：board 时主预览区切画板画布
 
     return Scaffold(
       body: Container(
@@ -43,7 +45,8 @@ class HomeScreen extends ConsumerWidget {
                     onToggleTheme: () => ref.read(themeModeProvider.notifier).toggle(),
                   ),
                   const _StatusLine(),
-                  const Expanded(child: CanvasArea()),
+                  // 主预览区：图像转换=图像画布，图纸画板=画板画布
+                  Expanded(child: tab == SheetTab.board ? const BoardCanvas() : const CanvasArea()),
                 ],
               ),
 

@@ -3,17 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/candy_theme.dart';
 import '../../state/app_state.dart';
-import '../panels/adjust_panel.dart';
-import '../panels/segment_panel.dart';
-import '../panels/pattern_panel.dart';
-import '../panels/export_panel.dart';
+import '../panels/image_adjust_panel.dart';
+import '../panels/pattern_gen_panel.dart';
+import '../panels/board_panel.dart';
 
-/// 底部功能 Tab 定义（视图切换已并入画布顶部切换条，不再单列 Tab）
-enum SheetTab { adjust, segment, pattern, export }
+/// 底部功能 Tab：图像调整 / 图纸生成 / 图纸画板（整合自原 调整+分割 / 图纸+导出）
+enum SheetTab { adjust, pattern, board }
 
 /// Sheet 开合请求：递增计数即请求「收起到 collapsed」。
 /// 各面板操作完成后（如应用调整）触发，让用户立刻看到画布效果。
 final sheetCollapseRequestProvider = StateProvider<int>((_) => 0);
+
+/// 当前底部 Tab（提升到 provider，主预览区据此切换 图像画布 / 图纸画板画布）。
+final sheetTabProvider = StateProvider<SheetTab>((_) => SheetTab.adjust);
 
 class FunctionSheet extends ConsumerStatefulWidget {
   const FunctionSheet({super.key});
@@ -36,6 +38,12 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
     // 切到不同面板：取消进行中的画布子交互（框选/涂抹/裁剪），防止泄露。
     if (!same) cancelCanvasInteraction(ref);
     setState(() => _tab = t);
+    // 同步到 provider，主预览区据此切换 图像画布 / 图纸画板画布
+    ref.read(sheetTabProvider.notifier).state = t;
+    // 进入画板时确保已建板
+    if (t == SheetTab.board) {
+      Future.microtask(() => ref.read(boardProvider.notifier).ensure());
+    }
     // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开。
     // 注意：用 easeOutCubic 而非 easeOutBack —— easeOutBack 过冲会让 _ctrl.size
     // 瞬时越出 [min,max] 区间，DraggableScrollableSheet 尺寸异常 → 巨大/负高度
@@ -142,13 +150,11 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
   Widget _panelFor(SheetTab t) {
     switch (t) {
       case SheetTab.adjust:
-        return const AdjustPanel();
-      case SheetTab.segment:
-        return const SegmentPanel();
+        return const ImageAdjustPanel();   // 调整 + 分割
       case SheetTab.pattern:
-        return const PatternPanel();
-      case SheetTab.export:
-        return const ExportPanel();
+        return const PatternGenPanel();    // 图纸 + 导出
+      case SheetTab.board:
+        return const BoardPanel();         // 图纸画板
     }
   }
 }
@@ -177,10 +183,9 @@ class _TabBar extends StatelessWidget {
   const _TabBar({required this.current, required this.onTap});
 
   static const _items = [
-    (SheetTab.adjust, Icons.tune_rounded, '调整'),
-    (SheetTab.segment, Icons.content_cut_rounded, '分割'),
-    (SheetTab.pattern, Icons.grid_on_rounded, '图纸'),
-    (SheetTab.export, Icons.file_download_outlined, '导出'),
+    (SheetTab.adjust, Icons.tune_rounded, '图像调整'),
+    (SheetTab.pattern, Icons.grid_on_rounded, '图纸生成'),
+    (SheetTab.board, Icons.brush_rounded, '图纸画板'),
   ];
 
   @override

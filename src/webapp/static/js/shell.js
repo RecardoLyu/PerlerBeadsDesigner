@@ -87,23 +87,61 @@
     if (window.toast) window.toast(msg, 'err');
   };
 
-  /* ---- 主导航（图像处理 / 图纸生成） ---- */
+  /* ---- 主导航（图像转换 / 图纸画板）+ 左栏子切换（图像调整 / 图纸生成） ----
+     主入口决定左栏整体内容：图像转换=参数面板（含两套子卡），图纸画板=画板工具栏。
+     子切换仅在图像转换内切换「图像调整 / 图纸生成」两套参数卡（迁移自原顶部入口）。 */
   const nav = document.getElementById('nav');
   const thumb = document.getElementById('navThumb');
   const pills = [...nav.querySelectorAll('.nav-pill')];
   const canvasTitle = document.getElementById('canvasTitle');
-  const views = { '图像处理': document.getElementById('view-preprocess'), '图纸生成': document.getElementById('view-pattern') };
+  const subnav = document.getElementById('subnav');
+  const subPills = subnav ? [...subnav.querySelectorAll('.subnav-pill')] : [];
+  const viewPreprocess = document.getElementById('view-preprocess');
+  const viewPattern = document.getElementById('view-pattern');
+  const viewBoard = document.getElementById('view-board');   // 画板工具栏（模块四注入）
+
   function moveThumb(el) { thumb.style.left = el.offsetLeft + 'px'; thumb.style.width = el.offsetWidth + 'px'; }
+
+  /* 当前主入口：'图像转换' | '图纸画板' */
+  let _mainView = '图像转换';
+  /* 图像转换内当前子视图：'preprocess'(图像调整) | 'pattern'(图纸生成) */
+  let _subView = 'preprocess';
+
+  /* 子切换：切换图像调整/图纸生成两套参数卡（作用与原顶部入口一致） */
+  function switchSub(sub) {
+    _subView = sub;
+    subPills.forEach(x => x.classList.toggle('active', x.dataset.sub === sub));
+    if (viewPreprocess) viewPreprocess.style.display = (sub === 'preprocess') ? '' : 'none';
+    if (viewPattern) viewPattern.style.display = (sub === 'pattern') ? '' : 'none';
+    // 通知业务层（沿用原名，图纸生成时渲染已有图纸）
+    if (window.onViewSwitch) window.onViewSwitch(sub === 'pattern' ? '图纸生成' : '图像调整');
+  }
+  subPills.forEach(p => p.addEventListener('click', () => switchSub(p.dataset.sub)));
+
+  /* 主入口切换 */
   function switchView(name) {
+    _mainView = name;
     pills.forEach(x => x.classList.toggle('active', x.dataset.view === name));
     moveThumb(nav.querySelector('.active'));
     canvasTitle.textContent = name + ' · 预览画布';
-    for (const [k, el] of Object.entries(views)) if (el) el.style.display = (k === name) ? '' : 'none';
-    if (window.onViewSwitch) window.onViewSwitch(name);
+    const isBoard = (name === '图纸画板');
+    // 左栏：画板显示画板工具栏 + 隐藏子切换；图像转换显示子切换 + 当前子卡
+    if (subnav) subnav.style.display = isBoard ? 'none' : '';
+    if (viewBoard) viewBoard.style.display = isBoard ? '' : 'none';
+    if (isBoard) {
+      if (viewPreprocess) viewPreprocess.style.display = 'none';
+      if (viewPattern) viewPattern.style.display = 'none';
+      if (window.onEnterBoard) window.onEnterBoard();
+    } else {
+      switchSub(_subView);   // 恢复子卡显隐并通知业务层
+    }
   }
   pills.forEach(p => p.addEventListener('click', () => switchView(p.dataset.view)));
   moveThumb(pills[0]);
   window.addEventListener('resize', () => { const a = nav.querySelector('.active'); if (a) moveThumb(a); });
+  /* 供外部切主入口/子视图 */
+  window.switchMainView = switchView;
+  window.switchSubView = switchSub;
 
   /* ---- 设置抽屉（右侧浮窗，全局功能不占画布） ---- */
   const settingsBtn = document.getElementById('settingsBtn');

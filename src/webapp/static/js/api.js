@@ -77,5 +77,19 @@ const API = (() => {
     uploadSkin: async (file) => (await _upload('/api/skin/upload', { file })).json(),
     removeSkin: () => _json('/api/skin/remove', {}),
     skinImageUrl: () => '/api/skin/image?t=' + Date.now(),
+    // ---- 图纸画板 board ----
+    boardNew: (size, brand) => _json('/api/board/new', { size, brand }),
+    boardState: () => _get('/api/board/state'),
+    boardStroke: (cells, code) => _json('/api/board/stroke', { cells, code }),
+    boardFill: (x, y, code) => _json('/api/board/fill', { x, y, code }),
+    boardUndo: () => _json('/api/board/undo', {}),
+    boardRedo: () => _json('/api/board/redo', {}),
+    boardClear: () => _json('/api/board/clear', {}),
+    boardBaseLoad: (file) => _upload('/api/board/base/load', { file }).then(r => r.json()),
+    boardBaseCrop: (crop) => _json('/api/board/base/crop', { crop }),
+    boardBaseImageUrl: () => '/api/board/base/image?t=' + Date.now(),
+    boardBaseOptions: (visible, opacity) => _json('/api/board/base/options', { visible, opacity }),
+    boardBaseClear: () => _json('/api/board/base/clear', {}),
+    boardExport: (req) => _json('/api/board/export', req),
   };
 })();
