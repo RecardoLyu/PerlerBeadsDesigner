@@ -125,7 +125,7 @@ final showChartTitleProvider = StateProvider<bool>((_) => false);
 /// 导出页文件名输入框当前值（图纸标题来源；默认跟随源图）。
 final exportNameProvider = StateProvider<String>((_) => 'pattern');
 
-/// 图纸豆子风格：'real'=真实豆子(圆环填色) | 'square'=经典方格（默认 real）。
+/// 图纸豆子风格：'real'=真实豆子(同心圆环+中央孔洞) | 'square'=经典方格（默认 real）。
 final beadStyleProvider = StateProvider<String>((_) => 'real');
 
 /// 由文件名推标题：去路径去扩展名，占位名返回 null。

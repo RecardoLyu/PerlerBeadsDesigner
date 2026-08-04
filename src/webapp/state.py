@@ -61,7 +61,7 @@ class AppState:
         # skinOpacity 亮暗共用单一不透明度；skinBlur 模糊档 0=无/1=中/2=高）
         "skinImage": "", "skinColor": "", "skinAccent": "",
         "skinOpacity": 0.15, "skinBlur": 1,
-        # 图纸豆子风格：real=真实豆子(圆环填色) | square=经典方格
+        # 图纸豆子风格：real=真实豆子(同心圆环+中央孔洞) | square=经典方格
         "beadStyle": "real",
     }
 

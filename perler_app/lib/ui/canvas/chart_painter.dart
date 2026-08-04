@@ -14,8 +14,8 @@ class ChartPainter {
   static const double _maskFade = 0.70; // 对应桌面 MASK_FADE
   static const int _majorEvery = 5;
 
-  /// 画一颗豆子（对应桌面 _draw_bead）。real=圆环填色的真实拼豆（外圈描边+
-  /// 内圆+左上高光）；square=经典实心方格。
+  /// 画一颗豆子（对应桌面 _draw_bead）。real=真实拼豆（同心圆环 + 中央孔洞，
+  /// 还原材料穿孔）；square=经典实心方格。
   static void _drawBead(Canvas canvas, double x1, double y1, double cell,
       Color rgb, String style) {
     if (style != 'real') {
@@ -24,17 +24,18 @@ class ChartPainter {
     }
     final cx = x1 + cell / 2, cy = y1 + cell / 2;
     final r = cell * 0.46;
-    // 外圈描边（压暗一档）做立体边缘
-    final edge = Color.fromARGB(255, (rgb.red * 0.72).round(),
-        (rgb.green * 0.72).round(), (rgb.blue * 0.72).round());
-    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = edge);
-    // 内圆填豆色
+    Color scale(double f) => Color.fromARGB(255, (rgb.red * f).round(),
+        (rgb.green * f).round(), (rgb.blue * f).round());
+    // 1) 外圈描边（压暗一档）做立体边缘
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = scale(0.72));
+    // 2) 豆体圆环：向内一圈填豆色（外缘到孔洞之间的环带）
     canvas.drawCircle(Offset(cx, cy), r * 0.82, Paint()..color = rgb);
-    // 左上半透明白高光（向白混 55% 近似半透明）；cell 够大才画
+    // 3) 中央孔洞：拼豆材料的穿孔，压暗作内阴影
+    final hr = r * 0.42;
+    canvas.drawCircle(Offset(cx, cy), hr, Paint()..color = scale(0.50));
+    // 4) 孔洞内壁一圈更浅的过渡，让孔洞有纵深感（cell 够大才画）
     if (cell >= 8) {
-      final hl = Color.lerp(rgb, const Color(0xFFFFFFFF), 0.55)!;
-      canvas.drawCircle(Offset(cx - r * 0.32, cy - r * 0.36), r * 0.30,
-          Paint()..color = hl);
+      canvas.drawCircle(Offset(cx, cy), hr * 0.62, Paint()..color = scale(0.34));
     }
   }
 
@@ -57,7 +58,7 @@ class ChartPainter {
     String? brand,          // 品牌标签（左上角信息行）
     int colorCount = 0,     // 用到的颜色数
     int totalBeads = 0,     // 总豆数
-    String beadStyle = 'real', // real=真实豆子(圆环填色) | square=经典方格
+    String beadStyle = 'real', // real=真实豆子(同心圆环+中央孔洞) | square=经典方格
   }) {
     final codeToColor = {for (final c in palette.colors) c.code: c};
     Color codeRgb(String code, int fallback) {

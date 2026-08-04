@@ -46,30 +46,32 @@ def _bead_edge(rgb):
     return tuple(max(0, int(c * 0.72)) for c in rgb)
 
 
+def _bead_hole(rgb):
+    """真实拼豆中央孔洞色：豆色大幅压暗，模拟穿孔内的阴影。"""
+    return tuple(max(0, int(c * 0.50)) for c in rgb)
+
+
 def _draw_bead(draw, x1, y1, cell, rgb, style):
-    """画一颗豆子。style='real' 画圆环填色的真实拼豆（外圈描边+内圆+左上高光）；
+    """画一颗豆子。style='real' 画真实拼豆（同心圆环 + 中央孔洞，还原材料穿孔）；
     'square' 画经典实心方格。"""
     if style != 'real':
         draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
         return
     cx, cy = x1 + cell / 2.0, y1 + cell / 2.0
     r = cell * 0.46                       # 外径 ≈ 0.92 cell
-    # 外圈描边（压暗一档）做立体边缘
+    # 1) 外圈描边（压暗一档）做立体边缘
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=_bead_edge(rgb))
-    # 内圆填豆色
+    # 2) 豆体圆环：向内一圈填豆色（外缘到孔洞之间的环带）
     ri = r * 0.82
     draw.ellipse([cx - ri, cy - ri, cx + ri, cy + ri], fill=rgb)
-    # 左上半透明白高光（珠子反光质感）；cell 够大才画，避免小格糊成一团
+    # 3) 中央孔洞：拼豆材料的穿孔，压暗作内阴影
+    hr = r * 0.42
+    draw.ellipse([cx - hr, cy - hr, cx + hr, cy + hr], fill=_bead_hole(rgb))
+    # 4) 孔洞内壁一圈更浅的过渡，让孔洞有纵深感（cell 够大才画）
     if cell >= 8:
-        hr = r * 0.30
-        hx, hy = cx - r * 0.32, cy - r * 0.36
-        draw.ellipse([hx - hr, hy - hr, hx + hr, hy + hr],
-                     fill=_blend_white(rgb, 0.55))
-
-
-def _blend_white(rgb, t):
-    """向白色混入 t（0..1），用于高光近似半透明效果。"""
-    return tuple(min(255, int(round(c + (255 - c) * t))) for c in rgb)
+        hr2 = hr * 0.62
+        draw.ellipse([cx - hr2, cy - hr2, cx + hr2, cy + hr2],
+                     fill=tuple(max(0, int(c * 0.34)) for c in rgb))
 
 
 @dataclass
