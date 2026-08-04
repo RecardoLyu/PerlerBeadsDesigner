@@ -192,6 +192,9 @@ class ChartPainter {
         }
         final x1 = leftMargin + x * cell;
         final y1 = topMargin + y * cell;
+        // 真实豆子风格：背景格是空底板，没有插豆 —— 只保留方格网格线，不画任何
+        // 豆子，更贴近实物拼装（背景本就不计入 BOM）。经典方格保持淡化/纯色填充。
+        if (maskedOut && beadStyle == 'real') continue;
         _drawBead(canvas, x1, y1, cell, rgb, beadStyle);
         if (maskedOut) continue;
         // 真实豆子风格豆内不印色号，色号/数量统一由图纸外 BOM 呈现

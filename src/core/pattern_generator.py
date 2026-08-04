@@ -651,6 +651,10 @@ class PatternGenerator:
                 # masked-out cells: either fill a solid background (mask_bg) or
                 # fade the fill toward white; either way skip the code + BOM.
                 masked_out = use_fade and not bm[y, x]
+                if masked_out and bead_style == 'real':
+                    # 真实豆子风格：背景格是空底板，没有插豆 —— 只保留方格网格线，
+                    # 不画任何豆子，更贴近实物拼装（背景本就不计入 BOM）。
+                    continue
                 if masked_out:
                     if mask_bg is not None:
                         rgb = tuple(int(c) for c in mask_bg)
