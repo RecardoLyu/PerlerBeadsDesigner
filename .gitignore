@@ -71,6 +71,10 @@ env/
 !.github/assets/
 !.github/assets/**
 
+# Android 应用图标资源例外（启动图标，必须跟踪）
+!perler_app/android/app/src/main/res/
+!perler_app/android/app/src/main/res/**
+
 # Project specific
 output/
 *.tmp
