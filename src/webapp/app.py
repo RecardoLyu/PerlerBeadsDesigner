@@ -161,6 +161,38 @@ def update_apply():
 
 
 # --------------------------------------------------------------------------
+# Skin（图片换肤：背景图存取 + 主体色提取）
+# --------------------------------------------------------------------------
+@app.post("/api/skin/upload")
+async def skin_upload(file: UploadFile = File(...)):
+    from . import skin as skinmod
+    data = await file.read()
+    colors = _err(skinmod.save_skin, data)
+    # color 为主色（兼容旧前端），colors 为主+辅色列表（多色主题适配用）
+    return {"ok": True, "color": (colors[0] if colors else ""),
+            "colors": colors, "url": "/api/skin/image"}
+
+
+@app.get("/api/skin/image")
+def skin_image():
+    from . import skin as skinmod
+    p = skinmod.skin_path()
+    if not os.path.isfile(p):
+        raise HTTPException(404, detail="未设置皮肤图")
+    with open(p, 'rb') as f:
+        data = f.read()
+    return Response(content=data, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/skin/remove")
+def skin_remove():
+    from . import skin as skinmod
+    skinmod.remove_skin()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
 # Image loading + basic processing
 # --------------------------------------------------------------------------
 @app.post("/api/image/load")
@@ -502,6 +534,7 @@ class ChartReq(BaseModel):
     mask_bg: str = "none"            # none | white | black
     show_title: bool = False         # 是否在图纸顶部渲染文件名标题（默认不渲染）
     title: str = ""                  # 导出页文件名（勾 show_title 时优先用它做标题）
+    bead_style: str = "real"         # real=真实豆子 | square=经典方格
 
 
 @app.post("/api/pattern/chart")
@@ -524,7 +557,8 @@ def pattern_chart(req: ChartReq):
                  title=title,
                  brand=STATE.color_manager.brand_label,
                  color_count=len(colors),
-                 total_beads=int(bom.get('total_beads', 0)))
+                 total_beads=int(bom.get('total_beads', 0)),
+                 bead_style=req.bead_style)
     return _png(chart)
 
 
@@ -596,6 +630,7 @@ class ExportReq(BaseModel):
     png_scale: float = 1.0
     mask_bg: str = "none"            # none | white | black
     show_title: bool = False         # 是否在导出图纸顶部渲染文件名标题
+    bead_style: str = "real"         # real=真实豆子 | square=经典方格
 
 
 @app.post("/api/export")
@@ -618,7 +653,8 @@ def export(req: ExportReq):
                  title=title,
                  brand=STATE.color_manager.brand_label,
                  color_count=len(colors),
-                 total_beads=int(bom.get('total_beads', 0)))
+                 total_beads=int(bom.get('total_beads', 0)),
+                 bead_style=req.bead_style)
     base = os.path.join(outdir, req.filename)
     # 桌面端只导 PNG，按图纸尺寸直接生图（不再走 PDF/纸张排版）
     made = [exporter.export_png_standard(chart, req.filename,

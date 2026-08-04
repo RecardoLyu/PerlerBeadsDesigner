@@ -6,11 +6,13 @@
   window._chartReq = function () {
     const mb = $('maskBg');
     const st = $('showTitle'), en = $('expName');
+    const bs = $('beadStyle');
     return {
       bead_pixel_size: 18,
       mask_bg: mb ? mb.value : 'none',
       show_title: st ? st.checked : false,
       title: en ? en.value : '',
+      bead_style: bs ? bs.value : 'real',
     };
   };
 
@@ -219,10 +221,18 @@
       try { viewer.setImage(await API.patternChart(window._chartReq())); } catch (e) {}
     }
   });
+  /* 豆子风格下拉：改后立即重渲预览并持久化 */
+  $('beadStyle').addEventListener('change', async () => {
+    if (window.saveSettings) window.saveSettings({ beadStyle: $('beadStyle').value });
+    const s = await API.status();
+    if (s.has_pattern) {
+      try { viewer.setImage(await API.patternChart(window._chartReq())); } catch (e) {}
+    }
+  });
 
   /* 自绘玻璃下拉增强（静态卡内的两个下拉） */
   if (window.Dropdown) {
-    ['colorMetric', 'maskBg', 'brandSel'].forEach(id => { const el = $(id); if (el) window.Dropdown.enhance(el); });
+    ['colorMetric', 'maskBg', 'brandSel', 'beadStyle'].forEach(id => { const el = $(id); if (el) window.Dropdown.enhance(el); });
   }
 
   /* ---- 预览图纸 ---- */
@@ -299,6 +309,7 @@
         png_scale: +$('expScale').value,
         mask_bg: $('maskBg') ? $('maskBg').value : 'none',
         show_title: $('showTitle') ? $('showTitle').checked : false,
+        bead_style: $('beadStyle') ? $('beadStyle').value : 'real',
       });
       $('expResult').textContent = '已导出到 ' + res.output_dir + ': ' + res.files.map(f => f.split(/[\\/]/).pop()).join('、');
       busy.done('导出完成');

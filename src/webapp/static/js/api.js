@@ -74,5 +74,8 @@ const API = (() => {
     updateDownload: () => _json('/api/update/download', {}),
     updateProgress: () => _get('/api/update/progress'),
     updateApply: () => _json('/api/update/apply', {}),
+    uploadSkin: async (file) => (await _upload('/api/skin/upload', { file })).json(),
+    removeSkin: () => _json('/api/skin/remove', {}),
+    skinImageUrl: () => '/api/skin/image?t=' + Date.now(),
   };
 })();

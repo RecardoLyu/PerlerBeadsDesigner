@@ -160,7 +160,9 @@ def apply_and_restart():
         ":wait\r\n"
         f'tasklist /FI "PID eq {pid}" /NH 2>nul | find /i "{pid}" >nul\r\n'
         "if %errorlevel%==0 (timeout /t 1 /nobreak >nul & goto wait)\r\n"
-        'robocopy "%SRC%" "%DST%" /MIR /NFL /NDL /NJH /NJS /R:2 /W:1 >nul\r\n'
+        # /XF：用户文件（设置、皮肤图）不属于发布包，/MIR 会把它们当多余文件删掉，
+        # 排除后复制与镜像删除都跳过，更新后保留
+        'robocopy "%SRC%" "%DST%" /MIR /XF settings.json custom_skin.jpg /NFL /NDL /NJH /NJS /R:2 /W:1 >nul\r\n'
         'start "" "%EXE%"\r\n'
         'del "%~f0"\r\n'
     )

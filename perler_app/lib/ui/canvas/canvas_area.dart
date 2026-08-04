@@ -68,7 +68,7 @@ class _CanvasAreaState extends ConsumerState<CanvasArea> {
         ),
         child: Stack(
           children: [
-            // 径向渐变氛围
+            // 径向渐变氛围（用主题 violet：换肤后随皮肤色跟随）
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -76,7 +76,7 @@ class _CanvasAreaState extends ConsumerState<CanvasArea> {
                   gradient: RadialGradient(
                     center: const Alignment(-0.5, -0.4),
                     radius: 1.2,
-                    colors: [const Color(0xFFFB7185).withOpacity(0.18), Colors.transparent],
+                    colors: [c.violet.withOpacity(0.18), Colors.transparent],
                   ),
                 ),
               ),
@@ -138,7 +138,7 @@ class _CanvasAreaState extends ConsumerState<CanvasArea> {
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            gradient: on ? candyPrimaryGradient(Theme.of(context).brightness) : null,
+                            gradient: on ? candyPrimaryGradient(context) : null,
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(m.$2,

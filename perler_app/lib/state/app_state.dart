@@ -11,13 +11,17 @@ import '../algo/pattern_render.dart';
 import '../algo/quantizer.dart';
 import '../algo/slic.dart';
 import '../ui/canvas/chart_painter.dart';
+import 'skin_state.dart';
 
-/// 主题模式（亮/暗/跟随系统）。
+/// 主题模式（亮/暗/跟随系统）。切换即持久化（shared_preferences）。
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.system);
-  void set(ThemeMode m) => state = m;
+  ThemeModeNotifier([ThemeMode initial = ThemeMode.system]) : super(initial);
+  void set(ThemeMode m) {
+    state = m;
+    SkinNotifier.persistThemeMode(m);
+  }
   /// 顶栏快捷切换：亮 ↔ 暗（跟随系统需到设置里选）。
-  void toggle() => state = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+  void toggle() => set(state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark);
 }
 
 final themeModeProvider =
@@ -120,6 +124,9 @@ final showChartTitleProvider = StateProvider<bool>((_) => false);
 
 /// 导出页文件名输入框当前值（图纸标题来源；默认跟随源图）。
 final exportNameProvider = StateProvider<String>((_) => 'pattern');
+
+/// 图纸豆子风格：'real'=真实豆子(圆环填色) | 'square'=经典方格（默认 real）。
+final beadStyleProvider = StateProvider<String>((_) => 'real');
 
 /// 由文件名推标题：去路径去扩展名，占位名返回 null。
 String? deriveSourceTitle(String filename) {
@@ -1176,9 +1183,12 @@ class PatternNotifier extends StateNotifier<PatternState> {
   /// 生成图纸。对应桌面版 pattern_generate + render_standard_chart 一次到位。
   /// [colorLimit] null/0 = 不限色；[useMask] 且有分割 mask 时背景豆淡化、BOM 只计前景。
   /// [maskBg] none/white/black（对应桌面 MASK 背景：淡化/纯白/纯黑）。
+  /// 上次成功生成的参数（风格切换/重渲染时复用，无需重传）。
+  Map<String, dynamic>? _lastGenArgs;
+
   Future<void> generate({
-    required int gw,
-    required int gh,
+    int? gw,
+    int? gh,
     int? colorLimit,
     double salience = 1.0,
     String metric = 'ciede2000',
@@ -1188,6 +1198,24 @@ class PatternNotifier extends StateNotifier<PatternState> {
     bool useMask = true,
     String maskBg = 'none',
   }) async {
+    // 风格切换等重渲染：不传 gw/gh 时复用上次参数
+    if (gw == null || gh == null) {
+      final last = _lastGenArgs;
+      if (last == null) {
+        _status('请先设置尺寸生成图纸');
+        return;
+      }
+      gw = last['gw'] as int;
+      gh = last['gh'] as int;
+      colorLimit = last['colorLimit'] as int?;
+      salience = last['salience'] as double;
+      metric = last['metric'] as String;
+      dither = last['dither'] as bool;
+      ditherStrength = last['ditherStrength'] as double;
+      icmSmooth = last['icmSmooth'] as double;
+      useMask = last['useMask'] as bool;
+      maskBg = last['maskBg'] as String;
+    }
     final img = _ref.read(imageProvider).working;
     if (img == null) {
       _status('请先加载图像');
@@ -1195,6 +1223,11 @@ class PatternNotifier extends StateNotifier<PatternState> {
     }
     gw = gw.clamp(1, 512);
     gh = gh.clamp(1, 512);
+    _lastGenArgs = {
+      'gw': gw, 'gh': gh, 'colorLimit': colorLimit, 'salience': salience,
+      'metric': metric, 'dither': dither, 'ditherStrength': ditherStrength,
+      'icmSmooth': icmSmooth, 'useMask': useMask, 'maskBg': maskBg,
+    };
     state = state.copyWith(busy: true);
     _ref.read(busyProvider.notifier).refresh();
     _status('正在生成图纸（$gw×$gh）…');
@@ -1254,6 +1287,7 @@ class PatternNotifier extends StateNotifier<PatternState> {
         brand: Palette.brandLabels[_ref.read(brandProvider)],
         colorCount: bom.length,
         totalBeads: totalBeads,
+        beadStyle: _ref.read(beadStyleProvider),
       );
 
       // 成功：dispose 旧图纸 + version+1，就绪后再切到图纸视图（仿分割自动切 mask）

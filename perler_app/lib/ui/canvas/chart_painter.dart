@@ -14,6 +14,30 @@ class ChartPainter {
   static const double _maskFade = 0.70; // 对应桌面 MASK_FADE
   static const int _majorEvery = 5;
 
+  /// 画一颗豆子（对应桌面 _draw_bead）。real=圆环填色的真实拼豆（外圈描边+
+  /// 内圆+左上高光）；square=经典实心方格。
+  static void _drawBead(Canvas canvas, double x1, double y1, double cell,
+      Color rgb, String style) {
+    if (style != 'real') {
+      canvas.drawRect(Rect.fromLTWH(x1, y1, cell, cell), Paint()..color = rgb);
+      return;
+    }
+    final cx = x1 + cell / 2, cy = y1 + cell / 2;
+    final r = cell * 0.46;
+    // 外圈描边（压暗一档）做立体边缘
+    final edge = Color.fromARGB(255, (rgb.red * 0.72).round(),
+        (rgb.green * 0.72).round(), (rgb.blue * 0.72).round());
+    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = edge);
+    // 内圆填豆色
+    canvas.drawCircle(Offset(cx, cy), r * 0.82, Paint()..color = rgb);
+    // 左上半透明白高光（向白混 55% 近似半透明）；cell 够大才画
+    if (cell >= 8) {
+      final hl = Color.lerp(rgb, const Color(0xFFFFFFFF), 0.55)!;
+      canvas.drawCircle(Offset(cx - r * 0.32, cy - r * 0.36), r * 0.30,
+          Paint()..color = hl);
+    }
+  }
+
   /// 渲染完整图纸为 ui.Image。
   /// [quantRgb] 量化后豆图 (gw×gh, gw*gh*3)；[codes] 每豆 code；
   /// [beadMask] 非空则背景豆淡化；[palette] 解析色块 RGB。
@@ -33,6 +57,7 @@ class ChartPainter {
     String? brand,          // 品牌标签（左上角信息行）
     int colorCount = 0,     // 用到的颜色数
     int totalBeads = 0,     // 总豆数
+    String beadStyle = 'real', // real=真实豆子(圆环填色) | square=经典方格
   }) {
     final codeToColor = {for (final c in palette.colors) c.code: c};
     Color codeRgb(String code, int fallback) {
@@ -165,8 +190,10 @@ class ChartPainter {
         }
         final x1 = leftMargin + x * cell;
         final y1 = topMargin + y * cell;
-        canvas.drawRect(Rect.fromLTWH(x1, y1, cell, cell), Paint()..color = rgb);
+        _drawBead(canvas, x1, y1, cell, rgb, beadStyle);
         if (maskedOut) continue;
+        // 真实豆子风格豆内不印色号，色号/数量统一由图纸外 BOM 呈现
+        if (beadStyle == 'real') continue;
         // 对比色 code 文字（桌面 577-588）
         final lum = 0.299 * rgb.red + 0.587 * rgb.green + 0.114 * rgb.blue;
         final tc = lum > 128 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);

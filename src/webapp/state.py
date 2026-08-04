@@ -57,6 +57,12 @@ class AppState:
         "segMethod": "watershed", "brushSize": 12,
         # 外观
         "theme": "system",
+        # 图片换肤（skinImage 非空即启用；skinColor 主色、skinAccent 辅助色 hex 或空串；
+        # skinOpacity 亮暗共用单一不透明度；skinBlur 模糊档 0=无/1=中/2=高）
+        "skinImage": "", "skinColor": "", "skinAccent": "",
+        "skinOpacity": 0.15, "skinBlur": 1,
+        # 图纸豆子风格：real=真实豆子(圆环填色) | square=经典方格
+        "beadStyle": "real",
     }
 
     @staticmethod

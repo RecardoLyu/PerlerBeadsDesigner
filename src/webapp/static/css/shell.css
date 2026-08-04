@@ -8,7 +8,7 @@
 .nav{position:relative;display:flex;background:var(--color-muted);border:1px solid var(--color-border);border-radius:999px;padding:5px;gap:4px;}
 .nav-pill{position:relative;z-index:2;padding:8px 26px;border:none;border-radius:999px;background:transparent;font-family:var(--font-body);font-weight:700;font-size:14px;color:var(--color-muted-fg);cursor:pointer;transition:color .25s var(--ease);}
 .nav-pill.active{color:var(--color-on-primary)}
-.nav-thumb{position:absolute;top:5px;bottom:5px;border-radius:999px;background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));box-shadow:0 4px 14px rgba(124,58,237,.4);transition:left .3s var(--ease),width .3s var(--ease);z-index:1}
+.nav-thumb{position:absolute;top:5px;bottom:5px;border-radius:999px;background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));box-shadow:0 4px 14px rgba(var(--shadow-violet-rgb),.4);transition:left .3s var(--ease),width .3s var(--ease);z-index:1}
 .top-right{margin-left:auto;display:flex;align-items:center;gap:12px}
 .icon-btn{width:40px;height:40px;display:grid;place-items:center;border-radius:16px;border:1px solid var(--color-border);background:var(--color-surface);cursor:pointer;color:var(--color-foreground);transition:all .25s var(--ease);}
 .icon-btn:hover{transform:translateY(-2px)}
@@ -43,7 +43,7 @@
 .canvas-head h2{font-family:var(--font-head);font-size:17px;color:var(--color-foreground-strong);display:flex;align-items:center;gap:8px}
 .view-toggle{display:flex;gap:6px;background:var(--color-muted);border:1px solid var(--color-border);border-radius:999px;padding:4px}
 .view-toggle button{border:none;background:transparent;padding:6px 14px;border-radius:999px;font-family:var(--font-body);font-size:12px;font-weight:700;color:var(--color-muted-fg);cursor:pointer;transition:all .25s var(--ease)}
-.view-toggle button.on{background:var(--color-surface-strong);color:var(--color-foreground-strong);box-shadow:0 2px 8px rgba(136,19,55,.15)}
+.view-toggle button.on{background:var(--color-surface-strong);color:var(--color-foreground-strong);box-shadow:0 2px 8px rgba(var(--shadow-primary-rgb),.15)}
 
 /* 画布 */
 .canvas{position:relative;flex:1;border-radius:20px;overflow:hidden;border:1px solid var(--color-border);
@@ -51,6 +51,8 @@
    radial-gradient(circle at 25% 30%, rgba(251,113,133,.35), transparent 45%),
    radial-gradient(circle at 75% 70%, rgba(167,139,250,.35), transparent 45%),
    linear-gradient(135deg,var(--color-bg-2),var(--color-bg));}
+/* 换肤开启：画布渐变变薄，壁纸透外层 .glass 的 backdrop-filter 显示 */
+[data-skin="on"] .canvas{background:color-mix(in srgb,var(--color-bg) 30%, transparent)}
 .canvas .viewport{position:absolute;inset:0;overflow:hidden;cursor:grab}
 .canvas .viewport.panning{cursor:grabbing}
 .canvas img{position:absolute;left:0;top:0;display:block;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;
@@ -66,7 +68,7 @@
 .dropzone-inner{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 56px;border-radius:24px;
   border:2.5px dashed var(--color-primary);background:color-mix(in srgb,var(--color-primary) 12%, transparent);
   backdrop-filter:blur(3px);color:var(--color-primary);
-  box-shadow:0 0 0 9999px color-mix(in srgb,var(--color-bg) 45%, transparent) inset, 0 12px 40px rgba(124,58,237,.18)}
+  box-shadow:0 0 0 9999px color-mix(in srgb,var(--color-bg) 45%, transparent) inset, 0 12px 40px rgba(var(--shadow-violet-rgb),.18)}
 .dropzone-inner svg{width:56px;height:56px}
 .dropzone-text{font-size:17px;font-weight:800;color:var(--color-foreground-strong)}
 .dropzone-ext{font-size:12.5px;font-weight:600;color:var(--color-muted-fg);letter-spacing:.3px}
@@ -81,7 +83,7 @@
 .tool-mini svg{width:17px;height:17px}
 
 /* 鹰眼 minimap */
-.minimap{position:absolute;right:14px;bottom:14px;width:124px;height:88px;border-radius:16px;background:var(--color-surface-strong);backdrop-filter:blur(12px);border:1px solid var(--color-border);padding:6px;box-shadow:0 6px 18px rgba(136,19,55,.18);z-index:5;display:none;cursor:grab;transition:left .28s var(--ease),top .28s var(--ease)}
+.minimap{position:absolute;right:14px;bottom:14px;width:124px;height:88px;border-radius:16px;background:var(--color-surface-strong);backdrop-filter:blur(12px);border:1px solid var(--color-border);padding:6px;box-shadow:0 6px 18px rgba(var(--shadow-primary-rgb),.18);z-index:5;display:none;cursor:grab;transition:left .28s var(--ease),top .28s var(--ease)}
 .minimap.show{display:block}
 .minimap.dragging{cursor:grabbing;transition:none}
 .minimap .inner{position:relative;width:100%;height:100%;border-radius:10px;overflow:hidden;background:var(--color-muted)}
@@ -104,7 +106,7 @@
 .btn{padding:9px 18px;border:none;border-radius:16px;font-family:var(--font-body);font-weight:700;font-size:13px;cursor:pointer;transition:all .25s var(--ease);}
 .btn-sm{padding:6px 12px;font-size:12px;border-radius:12px}
 .btn:active{transform:scale(.96)}
-.btn-primary{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.35)}
+.btn-primary{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;box-shadow:0 4px 14px rgba(var(--shadow-violet-rgb),.35)}
 .btn-primary:hover{transform:translateY(-1px)}
 .btn-ghost{background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-primary)}
 .btn-ghost:hover{transform:translateY(-1px)}
@@ -163,7 +165,7 @@ select.sel:focus{outline:2px solid var(--color-ring)}
 .gsel-opt::-webkit-scrollbar{width:5px}
 
 /* tooltip 浮层 */
-.tooltip{position:fixed;z-index:200;max-width:280px;padding:9px 13px;border-radius:14px;font-size:12px;font-weight:600;line-height:1.5;color:var(--color-foreground);background:var(--color-surface-strong);border:1px solid var(--color-border);box-shadow:0 8px 30px rgba(20,10,60,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .18s var(--ease)}
+.tooltip{position:fixed;z-index:200;max-width:280px;padding:9px 13px;border-radius:14px;font-size:12px;font-weight:600;line-height:1.5;color:var(--color-foreground);background:var(--color-surface-strong);border:1px solid var(--color-border);box-shadow:0 8px 30px rgba(var(--shadow-deep-rgb),.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .18s var(--ease)}
 .tooltip.show{opacity:1}
 
 /* ===== toast 提示 ===== */

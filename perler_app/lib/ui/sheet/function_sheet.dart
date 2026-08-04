@@ -200,7 +200,7 @@ class _TabBar extends StatelessWidget {
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  gradient: on ? candyPrimaryGradient(Theme.of(context).brightness) : null,
+                  gradient: on ? candyPrimaryGradient(context) : null,
                   borderRadius: BorderRadius.circular(15),
                   // 阴影始终给非空列表：AnimatedContainer 在 null↔list 间隐式插值时，
                   // 中间帧会产生非法 blurRadius（NaN/负）触发 dart:ui 断言 → 红黄错误闪烁。

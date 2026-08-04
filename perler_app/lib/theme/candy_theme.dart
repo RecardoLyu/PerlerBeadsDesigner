@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'skin.dart';
+
 /// 拼豆图纸生成器 · 糖果系玻璃拟态设计 token
 /// 直接翻译自 design/mobile/android_prototype.html 的 CSS 变量，保证与桌面版/原型风格一致。
 class CandyColors {
@@ -47,24 +49,28 @@ class CandyColors {
 /// 玻璃模糊半径（与 CSS --glass-blur:18px 对应）
 const double kGlassBlur = 18.0;
 
-/// 主题相关的渐变色对（主按钮 / 选中态用）
-LinearGradient candyPrimaryGradient(Brightness b) => LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: b == Brightness.light
-          ? const [CandyColors.violetLight, CandyColors.violetDeepLight]
-          : const [CandyColors.violetDark, CandyColors.violetDeepDark],
-    );
+/// 主题相关的渐变色对（主按钮 / 选中态用）。
+/// 读当前 CandyTheme 扩展的 violet/violetDeep —— 换肤后自动跟随皮肤色。
+LinearGradient candyPrimaryGradient(BuildContext context) {
+  final c = context.candy;
+  return LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [c.violet, c.violetDeep],
+  );
+}
 
-/// 整体 ThemeData 构建
-ThemeData buildCandyTheme(Brightness brightness) {
+/// 整体 ThemeData 构建。[skin] 非空时按皮肤色覆盖主色/渐变对/背景染色，
+/// 且 scaffold 背景透明（壁纸由 MaterialApp.builder 的 SkinBackdrop 提供）。
+ThemeData buildCandyTheme(Brightness brightness, {SkinPalette? skin}) {
   final light = brightness == Brightness.light;
-  final primary = light ? CandyColors.primaryLight : CandyColors.primaryDark;
-  final bg = light ? CandyColors.bgLight : CandyColors.bgDark;
-  final bg2 = light ? CandyColors.bg2Light : CandyColors.bg2Dark;
-  final surface = light ? CandyColors.surfaceLight : CandyColors.surfaceDark;
-  final surfaceStrong =
-      light ? CandyColors.surfaceStrongLight : CandyColors.surfaceStrongDark;
+  final primary = skin?.primary ?? (light ? CandyColors.primaryLight : CandyColors.primaryDark);
+  final onPrimary = skin?.onPrimary ?? (light ? CandyColors.onPrimaryLight : CandyColors.onPrimaryDark);
+  final bg = skin?.bg ?? (light ? CandyColors.bgLight : CandyColors.bgDark);
+  final bg2 = skin?.bg2 ?? (light ? CandyColors.bg2Light : CandyColors.bg2Dark);
+  final surface = skin?.surface ?? (light ? CandyColors.surfaceLight : CandyColors.surfaceDark);
+  final surfaceStrong = skin?.surfaceStrong ??
+      (light ? CandyColors.surfaceStrongLight : CandyColors.surfaceStrongDark);
   final foreground =
       light ? CandyColors.foregroundLight : CandyColors.foregroundDark;
   final foregroundStrong = light
@@ -72,10 +78,10 @@ ThemeData buildCandyTheme(Brightness brightness) {
       : CandyColors.foregroundStrongDark;
   final muted = light ? CandyColors.mutedLight : CandyColors.mutedDark;
   final mutedFg = light ? CandyColors.mutedFgLight : CandyColors.mutedFgDark;
-  final border = light ? CandyColors.borderLight : CandyColors.borderDark;
-  final violet = light ? CandyColors.violetLight : CandyColors.violetDark;
-  final violetDeep =
-      light ? CandyColors.violetDeepLight : CandyColors.violetDeepDark;
+  final border = skin?.border ?? (light ? CandyColors.borderLight : CandyColors.borderDark);
+  final violet = skin?.violet ?? (light ? CandyColors.violetLight : CandyColors.violetDark);
+  final violetDeep = skin?.violetDeep ??
+      (light ? CandyColors.violetDeepLight : CandyColors.violetDeepDark);
 
   final base = ThemeData(
     useMaterial3: true,
@@ -84,10 +90,10 @@ ThemeData buildCandyTheme(Brightness brightness) {
   );
 
   return base.copyWith(
-    scaffoldBackgroundColor: bg,
+    scaffoldBackgroundColor: skin != null ? Colors.transparent : bg,
     colorScheme: base.colorScheme.copyWith(
       primary: primary,
-      onPrimary: light ? CandyColors.onPrimaryLight : CandyColors.onPrimaryDark,
+      onPrimary: onPrimary,
       secondary: violet,
       surface: surface,
       onSurface: foreground,

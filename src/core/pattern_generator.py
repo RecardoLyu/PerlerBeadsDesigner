@@ -41,6 +41,37 @@ FONT_CANDIDATES_BOLD = (
 )
 
 
+def _bead_edge(rgb):
+    """真实豆子的外圈描边色：豆色压暗一档，形成立体边缘。"""
+    return tuple(max(0, int(c * 0.72)) for c in rgb)
+
+
+def _draw_bead(draw, x1, y1, cell, rgb, style):
+    """画一颗豆子。style='real' 画圆环填色的真实拼豆（外圈描边+内圆+左上高光）；
+    'square' 画经典实心方格。"""
+    if style != 'real':
+        draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
+        return
+    cx, cy = x1 + cell / 2.0, y1 + cell / 2.0
+    r = cell * 0.46                       # 外径 ≈ 0.92 cell
+    # 外圈描边（压暗一档）做立体边缘
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=_bead_edge(rgb))
+    # 内圆填豆色
+    ri = r * 0.82
+    draw.ellipse([cx - ri, cy - ri, cx + ri, cy + ri], fill=rgb)
+    # 左上半透明白高光（珠子反光质感）；cell 够大才画，避免小格糊成一团
+    if cell >= 8:
+        hr = r * 0.30
+        hx, hy = cx - r * 0.32, cy - r * 0.36
+        draw.ellipse([hx - hr, hy - hr, hx + hr, hy + hr],
+                     fill=_blend_white(rgb, 0.55))
+
+
+def _blend_white(rgb, t):
+    """向白色混入 t（0..1），用于高光近似半透明效果。"""
+    return tuple(min(255, int(round(c + (255 - c) * t))) for c in rgb)
+
+
 @dataclass
 class PatternConfig:
     """Configuration for pattern generation"""
@@ -416,7 +447,7 @@ class PatternGenerator:
                               supersample: int = CHART_SUPERSAMPLE,
                               mask_bg=None,
                               title=None, brand=None, color_count=0,
-                              total_beads=0) -> np.ndarray:
+                              total_beads=0, bead_style: str = 'real') -> np.ndarray:
         """
         Render a standard perler-bead chart (the exported/printed form).
 
@@ -621,12 +652,15 @@ class PatternGenerator:
                         rgb = tuple(int(c) for c in mask_bg)
                     else:
                         rgb = tuple(int(round(c + (255 - c) * MASK_FADE)) for c in rgb)
-                draw.rectangle([x1, y1, x1 + cell, y1 + cell], fill=rgb)
+                _draw_bead(draw, x1, y1, cell, rgb, bead_style)
 
                 if masked_out:
                     continue
 
-                # per-cell code (adaptive, contrast-colored)
+                # per-cell code (adaptive, contrast-colored)；真实豆子风格豆内不印色号，
+                # 色号/数量统一由图纸外 BOM 呈现
+                if bead_style == 'real':
+                    continue
                 lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
                 txt_color = (0, 0, 0) if lum > 128 else (255, 255, 255)
                 cf = _load_font(max(9, int(cell * 0.43)))

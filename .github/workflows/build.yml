@@ -98,11 +98,11 @@ jobs:
     - name: Rename APK with tag
       run: |
         tag="${{ github.ref_name }}"
-        cp "perler_app/build/app/outputs/flutter-apk/app-debug.apk" "PerlerBeads-debug-${tag}.apk"
+        cp "perler_app/build/app/outputs/flutter-apk/app-debug.apk" "PerlerBeadsDesigner-android-${tag}.apk"
 
     - name: Upload Release Asset (Android)
       uses: softprops/action-gh-release@v2
       with:
-        files: "PerlerBeads-debug-${{ github.ref_name }}.apk"
+        files: "PerlerBeadsDesigner-android-${{ github.ref_name }}.apk"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

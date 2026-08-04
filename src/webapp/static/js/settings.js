@@ -18,6 +18,26 @@
     </div>
 
     <div class="panel-card glass">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-5 0-9 3.6-9 8 0 4.4 4 8 9 8 .9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6h1.9c2.6 0 4.7-2.1 4.7-4.7C21 5.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="14.5" cy="7.5" r="1.2"/></svg>自定义主题</h3>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div id="skinThumbWrap" style="width:64px;height:64px;border-radius:14px;overflow:hidden;border:1px solid var(--color-border);background:var(--color-muted);flex:none;display:grid;place-items:center">
+          <img id="skinThumb" alt="" style="width:100%;height:100%;object-fit:cover;display:none">
+          <span id="skinNone" style="font-size:11px;color:var(--color-muted-fg)">未设置</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-primary" id="skinImportBtn" style="width:100%">导入图片</button>
+          <button class="btn btn-ghost" id="skinRemoveBtn" style="width:100%;display:none">移除皮肤</button>
+        </div>
+      </div>
+      <input type="file" id="skinFile" accept="image/png,image/jpeg,image/bmp,image/webp" style="display:none">
+      <p class="hint" id="skinHint" style="margin-top:8px">导入图片作半透明背景，并自动提取主体颜色定制整套主题色。</p>
+      <div id="skinOpArea" style="display:none;margin-top:6px">
+        <div class="slider-row"><label>背景不透明度</label><input type="range" id="skinOpacity" min="5" max="40" step="1"><output id="skinOpacityOut"></output></div>
+        <div class="slider-row"><label>背景模糊</label><input type="range" id="skinBlur" min="0" max="2" step="1"><output id="skinBlurOut"></output></div>
+      </div>
+    </div>
+
+    <div class="panel-card glass">
       <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 3v18"/></svg>图纸默认参数</h3>
       <div class="num-row"><label>默认宽度(豆)</label><input type="number" id="sWidth" min="4" max="400" style="flex:1;${IN}"></div>
       <div class="check-row"><input type="checkbox" id="sKeepRatio"><label for="sKeepRatio">保持图像比例</label></div>
@@ -91,6 +111,97 @@
   });
   syncThemeChips();
 
+  /* ---- 背景皮肤（图片换肤）---- */
+  let _skinStamp = Date.now();   // 壁纸缓存戳：每次导入成功后刷新，确保背景/缩略图换新图
+  // 透明度单一共用值（跟随当前亮度初始化；旧 skinOpacityLight/Dark 迁移读取）
+  function _skinOp() {
+    if (_settings.skinOpacity != null) return _settings.skinOpacity;
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const legacy = dark ? _settings.skinOpacityDark : _settings.skinOpacityLight;
+    return legacy != null ? legacy : (dark ? 0.25 : 0.15);
+  }
+  function _skinBlur() { return _settings.skinBlur != null ? _settings.skinBlur : 1; }
+  function _skinCfg() {
+    return {
+      url: _settings.skinImage ? ('/api/skin/image?t=' + _skinStamp) : '',
+      color: _settings.skinColor || '',
+      accent: _settings.skinAccent || '',
+      op: _skinOp(),
+      blur: _skinBlur(),
+    };
+  }
+  function _applySkinNow() { if (window.skinApply) window.skinApply(_skinCfg()); }
+  function _syncSkinUI() {
+    const on = !!_settings.skinImage;
+    $('skinThumb').style.display = on ? '' : 'none';
+    $('skinThumb').src = on ? '/api/skin/image?t=' + _skinStamp : '';
+    $('skinNone').style.display = on ? 'none' : '';
+    $('skinRemoveBtn').style.display = on ? '' : 'none';
+    $('skinImportBtn').textContent = on ? '更换图片' : '导入图片';
+    $('skinOpArea').style.display = on ? '' : 'none';
+    const op = _skinOp();
+    $('skinOpacity').value = Math.round(op * 100);
+    $('skinOpacityOut').textContent = Math.round(op * 100) + '%';
+    if ($('skinBlur')) {
+      $('skinBlur').value = _skinBlur();
+      $('skinBlurOut').textContent = ['无', '中', '高'][_skinBlur()];
+    }
+    $('skinHint').innerHTML = _settings.skinColor
+      ? `已识别主体颜色 <span style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${_settings.skinColor};border:1px solid var(--color-border);vertical-align:-1px"></span> <b>${_settings.skinColor}</b>，整套主题色已跟随适配。`
+      : (on ? '未识别到主体颜色，仅更换了背景。' : '导入图片作半透明背景，并自动提取主体颜色定制整套主题色。');
+  }
+  $('skinImportBtn').addEventListener('click', () => $('skinFile').click());
+  $('skinFile').addEventListener('change', async () => {
+    const f = $('skinFile').files && $('skinFile').files[0];
+    $('skinFile').value = '';
+    if (!f) return;
+    try {
+      if (window.busy) window.busy.start('导入皮肤…');
+      const r = await API.uploadSkin(f);
+      _settings.skinImage = 'custom_skin.jpg';
+      _settings.skinColor = r.color || '';
+      _settings.skinAccent = (r.colors && r.colors[1]) || '';
+      _skinStamp = Date.now();   // 刷新缓存戳：skin.js 检测到 URL 变化才会重设背景
+      await save({ skinImage: _settings.skinImage, skinColor: _settings.skinColor, skinAccent: _settings.skinAccent });
+      _syncSkinUI();
+      _applySkinNow();
+      if (window.busy) window.busy.done('皮肤已应用');
+    } catch (e) {
+      if (window.fail) window.fail('皮肤导入失败: ' + e.message);
+    }
+  });
+  $('skinRemoveBtn').addEventListener('click', async () => {
+    try { await API.removeSkin(); } catch (e) { /* 静默 */ }
+    _settings.skinImage = ''; _settings.skinColor = ''; _settings.skinAccent = '';
+    await save({ skinImage: '', skinColor: '', skinAccent: '' });
+    _syncSkinUI();
+    _applySkinNow();
+  });
+  window.bindEditable('skinOpacity', 'skinOpacityOut', { fmt: v => v + '%', onChange: (v) => {
+    _settings.skinOpacity = v / 100;
+    save({ skinOpacity: _settings.skinOpacity });
+    _applySkinNow();
+  }});
+  /* 背景模糊三档吸附滑块（无/中/高）：step=1 天然吸附，切档即时生效 */
+  if ($('skinBlur')) {
+    $('skinBlur').addEventListener('input', () => {
+      const lvl = Math.round(parseFloat($('skinBlur').value));
+      $('skinBlurOut').textContent = ['无', '中', '高'][lvl];
+    });
+    $('skinBlur').addEventListener('change', () => {
+      const lvl = Math.round(parseFloat($('skinBlur').value));
+      _settings.skinBlur = lvl;
+      save({ skinBlur: lvl });
+      _applySkinNow();
+    });
+  }
+  /* 皮肤文件缺失（被外部删除等）→ 清配置并同步卡片（skin.js 探测到 onerror 调用） */
+  window.onSkinMissing = () => {
+    _settings.skinImage = ''; _settings.skinColor = ''; _settings.skinAccent = '';
+    save({ skinImage: '', skinColor: '', skinAccent: '' });
+    _syncSkinUI();
+  };
+
   /* ---- 默认参数：读 / 存 settings.json ---- */
   let _settings = {};
   function _fillForm(s) {
@@ -121,6 +232,7 @@
     _settings = { ..._settings, ...(partial || _collect()) };
     try { await API.saveSettings(_settings); } catch (e) { /* 静默 */ }
   }
+  window.saveSettings = save;   // 供 app.js 等非设置模块持久化单项（如豆子风格）
   /* 把默认参数灌进图纸/分割参数卡（首次加载取一次快照） */
   function _applyDefaultsToPanels(s) {
     const set = (id, v) => { const el = $(id); if (el == null || v == null) return;
@@ -129,6 +241,7 @@
     set('wBeads', s.width); set('keepRatio', s.keepRatio); set('maxColors', s.maxColors);
     set('salience', s.salience); set('colorMetric', s.metric); set('brandSel', s.brand);
     set('dither', s.dither); set('icmOn', s.icm); set('maskBg', s.maskBg);
+    set('beadStyle', s.beadStyle);
     set('segMethod', s.segMethod); set('brushSize', s.brushSize);
   }
   async function loadSettings() {
@@ -139,6 +252,9 @@
       _applyDefaultsToPanels(_settings);
       // 主题以 settings.json 为准（若与 localStorage 不一致）
       if (_settings.theme && window.setThemeMode) { window.setThemeMode(_settings.theme); syncThemeChips(); }
+      // 皮肤：同步卡片 UI 并按配置即时应用（免重启生效）
+      _syncSkinUI();
+      _applySkinNow();
     } catch (e) { /* 后端未就绪 */ }
   }
 

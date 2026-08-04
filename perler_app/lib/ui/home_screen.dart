@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/candy_theme.dart';
 import '../../state/app_state.dart';
+import '../../state/skin_state.dart';
 import 'canvas/canvas_area.dart';
 import 'sheet/function_sheet.dart';
 import 'settings/settings_screen.dart';
@@ -15,6 +16,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.candy;
     ref.watch(themeModeProvider); // 主题切换时重建顶栏图标
+    final skinOn = ref.watch(skinProvider).enabled; // 换肤时隐藏硬编码色 blob
 
     return Scaffold(
       body: Container(
@@ -28,9 +30,11 @@ class HomeScreen extends ConsumerWidget {
         child: SafeArea(
           child: Stack(
             children: [
-              // 漂浮 blob 背景
-              const _Blob(top: -120, left: -120, size: 420, color: Color(0xFFFB7185)),
-              const _Blob(bottom: -140, right: -100, size: 380, color: Color(0xFFA78BFA)),
+              // 漂浮 blob 背景（换肤开启时由壁纸替代）
+              if (!skinOn) ...[
+                const _Blob(top: -120, left: -120, size: 420, color: Color(0xFFFB7185)),
+                const _Blob(bottom: -140, right: -100, size: 380, color: Color(0xFFA78BFA)),
+              ],
 
               Column(
                 children: [

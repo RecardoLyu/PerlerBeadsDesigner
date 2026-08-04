@@ -26,7 +26,7 @@ class CandyButton extends StatelessWidget {
       height: compact ? 36 : 44,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        gradient: primary ? candyPrimaryGradient(Theme.of(context).brightness) : null,
+        gradient: primary ? candyPrimaryGradient(context) : null,
         color: primary ? null : c.surface,
         border: primary ? null : Border.all(color: c.border),
         borderRadius: BorderRadius.circular(compact ? 12 : 16),
@@ -80,7 +80,7 @@ class CandyChips extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
             constraints: const BoxConstraints(minHeight: 36),
             decoration: BoxDecoration(
-              gradient: on ? candyPrimaryGradient(Theme.of(context).brightness) : null,
+              gradient: on ? candyPrimaryGradient(context) : null,
               color: on ? null : c.muted,
               border: on ? null : Border.all(color: c.border),
               borderRadius: BorderRadius.circular(999),

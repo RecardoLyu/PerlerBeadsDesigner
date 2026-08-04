@@ -1,6 +1,9 @@
 /* ============================================================
    PerlerBeadsDesigner v2 设计 token · 玻璃拟态糖果系 · 亮/暗双主题
    与 design/v2.0.0/_design_tokens.md 保持一致
+   ⚠ 不变式：本文件（及全部样式表）禁止使用 !important ——
+   图片换肤（skin.js）依赖 inline setProperty 覆盖 CSS 变量，
+   !important 会压过 inline 值导致换肤失效。
    ============================================================ */
 :root{
   --color-primary:#E11D48; --color-on-primary:#FFFFFF;
@@ -12,6 +15,8 @@
   --color-muted:#F0ECF2; --color-muted-fg:#9A6B7C;
   --color-border:rgba(225,29,72,.18);
   --color-destructive:#DC2626; --color-ring:#E11D48;
+  /* 投影色基（box-shadow 用 rgba(var(--shadow-*-rgb),a)），换肤时按主/辅色重算 */
+  --shadow-violet-rgb:124,58,237; --shadow-primary-rgb:136,19,55; --shadow-deep-rgb:20,10,60;
   --glass-blur:18px;
   --space-1:8px; --space-2:16px; --space-3:24px; --space-4:32px; --space-6:48px;
   --ease:cubic-bezier(.34,1.56,.64,1);
@@ -29,6 +34,7 @@
   --color-muted:#2E1620; --color-muted-fg:#B98A99;
   --color-border:rgba(251,113,133,.22);
   --color-destructive:#F87171; --color-ring:#FB7185;
+  --shadow-violet-rgb:196,181,253; --shadow-primary-rgb:251,113,133; --shadow-deep-rgb:0,0,0;
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -44,6 +50,9 @@ body{
 /* 漂浮 blob */
 .blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0;}
 [data-theme="dark"] .blob{opacity:.3}
+/* 换肤开启：隐藏硬编码色 blob（与壁纸色彩冲突），body 渐变让位给壁纸层 */
+[data-skin="on"] .blob{display:none}
+[data-skin="on"] body{background:transparent}
 .blob-1{width:520px;height:520px;background:#FB7185;top:-140px;left:-120px;animation:drift1 14s ease-in-out infinite}
 .blob-2{width:460px;height:460px;background:#A78BFA;bottom:-160px;left:36%;animation:drift2 18s ease-in-out infinite}
 .blob-3{width:420px;height:420px;background:#FDBA74;top:20%;right:-140px;animation:drift3 16s ease-in-out infinite}
@@ -58,9 +67,9 @@ body{
   -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(160%);
   border:1px solid var(--color-border);
   border-radius:24px;
-  box-shadow:0 8px 32px rgba(136,19,55,.12), inset 0 1px 0 rgba(255,255,255,.35);
+  box-shadow:0 8px 32px rgba(var(--shadow-primary-rgb),.12), inset 0 1px 0 rgba(255,255,255,.35);
 }
-[data-theme="dark"] .glass{box-shadow:0 8px 32px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08)}
+[data-theme="dark"] .glass{box-shadow:0 8px 32px rgba(var(--shadow-deep-rgb),.3), inset 0 1px 0 rgba(255,255,255,.08)}
 
 /* 入场 stagger */
 @keyframes rise{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}

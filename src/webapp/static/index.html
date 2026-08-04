@@ -120,6 +120,12 @@
                 <option value="black" data-tip="背景格填纯黑色">纯黑</option>
               </select>
             </div>
+            <div class="num-row"><label>豆子风格</label>
+              <select class="sel" id="beadStyle" data-tip="图纸豆子的绘制风格：真实豆子=圆环填色+高光，贴近实物拼豆质感（默认，豆内不印色号，色号/数量在下方 BOM）；经典方格=实心方格+每格印色号。">
+                <option value="real" selected data-tip="圆环填色+高光的真实拼豆质感，色号在下方 BOM 区（默认）">真实豆子</option>
+                <option value="square" data-tip="实心方格，每格印色号">经典方格</option>
+              </select>
+            </div>
             <button class="btn btn-primary" id="genBtn" style="width:100%;margin-top:8px">预览图纸</button>
 
             <hr style="border:none;border-top:1px solid var(--color-border);margin:12px 0">
@@ -211,6 +217,7 @@
 <script src="/js/api.js"></script>
 <script src="/js/viewer.js"></script>
 <script src="/js/shell.js"></script>
+<script src="/js/skin.js"></script>
 <script src="/js/ui.js"></script>
 <script src="/js/dropdown.js"></script>
 <script src="/js/scribble.js"></script>

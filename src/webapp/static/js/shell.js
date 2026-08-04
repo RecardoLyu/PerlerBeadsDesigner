@@ -13,6 +13,8 @@
     html.setAttribute('data-theme', resolved);
     sun.style.display = resolved === 'dark' ? 'none' : 'block';
     moon.style.display = resolved === 'dark' ? 'block' : 'none';
+    // 通知皮肤等依赖方按新亮暗重算（skin.js 监听）
+    window.dispatchEvent(new Event('pbd-theme-changed'));
   }
   // 供设置页三选调用
   window.setThemeMode = (mode) => {

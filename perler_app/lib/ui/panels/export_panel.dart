@@ -115,6 +115,23 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
             ),
           ]),
         ),
+        Row(children: [
+          const SizedBox(width: 58, child: Text('豆子风格', style: TextStyle(fontSize: 12.5))),
+          Expanded(
+            child: CandyChips(
+              options: const ['真实豆子', '经典方格'],
+              selected: ref.watch(beadStyleProvider) == 'real' ? 0 : 1,
+              onChanged: (i) {
+                ref.read(beadStyleProvider.notifier).state =
+                    i == 0 ? 'real' : 'square';
+                // 已有图纸则按新风格重渲染（预览/导出共用 ChartPainter）
+                if (ref.read(patternProvider).chartImage != null) {
+                  ref.read(patternProvider.notifier).generate();
+                }
+              },
+            ),
+          ),
+        ]),
         const SizedBox(height: 8),
         CandyButton(
           label: _saving ? '导出中…' : '导出 PNG 到相册',
