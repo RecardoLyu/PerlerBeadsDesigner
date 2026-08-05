@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,7 +47,7 @@ class HomeScreen extends ConsumerWidget {
                     onToggleTheme: () => ref.read(themeModeProvider.notifier).toggle(),
                   ),
                   const _StatusLine(),
-                  // 主预览区：图像转换=图像画布，图纸画板=画板画布
+                  // 主预览区：图像转换/图纸生成=图像画布，图纸画板=画板画布
                   Expanded(child: tab == SheetTab.board ? const BoardCanvas() : const CanvasArea()),
                 ],
               ),
@@ -190,22 +192,42 @@ class _BusyIndicatorState extends ConsumerState<_BusyIndicator>
     '(✿◠‿◠)', '(¬‿¬)', '(☆▽☆)', '(ღ˘⌣˘ღ)', '(∩^o^)⊃',
   ];
   static const _kaomojiIdle = '(´・ω・`)';
-  late final AnimationController _ctl;
-  int _tick = 0;
+
+  // 换脸节奏：500ms 一个（用户反馈原先 600ms 连带每拍跳动显得闪得太快）。
+  static const _faceMs = 500;
+  // 省略号 1→2→3 循环：放慢到 1000ms，避免跟换脸叠出急促感。
+  static const _dotsMs = 1000;
+
+  late final AnimationController _ctl; // 连续 bob 浮动（不驱动换脸）
+  int _faceIdx = 0;
+  int _dotCount = 1;
+  Timer? _faceTimer;
+  Timer? _dotsTimer;
 
   @override
   void initState() {
     super.initState();
-    _ctl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
-      ..addListener(() {
-        if (mounted) setState(() => _tick++);
-      })
+    // bob：1.6s 一个往返的缓动正弦浮动（轻微上下），只看不做换脸。
+    _ctl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600))
       ..repeat();
+    // 换脸：固定 500ms 切到下一张
+    _faceTimer =
+        Timer.periodic(const Duration(milliseconds: _faceMs), (_) {
+      if (mounted) setState(() => _faceIdx = (_faceIdx + 1) % _kaomojiBusy.length);
+    });
+    // 省略号：固定 1000ms 增一个点（1→2→3 循环）
+    _dotsTimer =
+        Timer.periodic(const Duration(milliseconds: _dotsMs), (_) {
+      if (mounted) setState(() => _dotCount = 1 + (_dotCount % 3));
+    });
   }
 
   @override
   void dispose() {
     _ctl.dispose();
+    _faceTimer?.cancel();
+    _dotsTimer?.cancel();
     super.dispose();
   }
 
@@ -220,24 +242,39 @@ class _BusyIndicatorState extends ConsumerState<_BusyIndicator>
         builder: (_, __) {
           if (!busy) {
             // 空闲：静态颜文字，不跳动、无省略号
-            return Text(_kaomojiIdle, style: TextStyle(fontSize: 13, color: accent, height: 1));
+            return Text(_kaomojiIdle,
+                style: TextStyle(fontSize: 13, color: accent, height: 1));
           }
-          final kaoIdx = _tick % _kaomojiBusy.length;         // 每拍必然换脸
-          final dots = 1 + (_tick % 3);                        // 1→2→3 个点循环
-          final bob = (_tick % 2 == 0) ? -3.0 : 0.0;           // 上下跳
+          // bob：正弦缓动上下浮动（-2~+2 像素，轻微，不刺眼）
+          final bob = 2.0 * sin(2 * pi * _ctl.value);
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Transform.translate(
                 offset: Offset(0, bob),
-                child: Text(_kaomojiBusy[kaoIdx],
-                    style: TextStyle(fontSize: 13, color: accent, height: 1)),
+                // 换脸加一点微动效：轻微淡入 + 放大到位，过渡不生硬
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(
+                        scale: Tween(begin: 0.85, end: 1.0).animate(anim),
+                        child: child),
+                  ),
+                  child: Text(_kaomojiBusy[_faceIdx],
+                      key: ValueKey(_faceIdx),
+                      style: TextStyle(fontSize: 13, color: accent, height: 1)),
+                ),
               ),
               const SizedBox(width: 4),
               SizedBox(
                 width: 16,
-                child: Text('.' * dots,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: accent, height: 1)),
+                child: Text('.' * _dotCount,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                        height: 1)),
               ),
             ],
           );

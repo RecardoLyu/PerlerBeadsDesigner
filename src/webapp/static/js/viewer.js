@@ -14,6 +14,7 @@ class Viewer {
     this.panning = false; this._ps = null; this._pstart = null;
     this._miniDrag = null;
     this._userMoved = false;   // 用户手动平移/缩放后置位；fit 重置，窗口 resize 仅在未手动操作时 refit
+    this._boardAdjustLock = false;  // 图纸画板「调整底图」模式：锁定画布缩放/平移（board.js 置位）
     this._bind();
     this._bindMiniDrag();
     // viewport 尺寸变化（窗口缩放 / 侧栏折叠）时重新 fit，保持图纸居中。
@@ -30,6 +31,7 @@ class Viewer {
     this.viewport.addEventListener('wheel', (e) => {
       if (!this.img.src) return;
       e.preventDefault();
+      if (this._boardAdjustLock) return;   // 画板「调整底图」期：滚轮改派给底图，画布缩放锁定
       const factor = e.deltaY < 0 ? 1.12 : 0.89;
       const rect = this.viewport.getBoundingClientRect();
       const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
@@ -45,6 +47,7 @@ class Viewer {
 
     const start = (e) => {
       if (!this.img.src) return;
+      if (this._boardAdjustLock) return;   // 画板「调整底图」期：平移画布锁定（中键改派给底图）
       // 涂鸦/框选/裁剪时让位：左键交给交互层，但中键仍允许平移视图（放大时调整整体 ROI）
       if (this._interactionLock && e.button !== 1) return;
       if (e.button === 1 || e.button === 0 || this._panMode) {
@@ -102,6 +105,7 @@ class Viewer {
   }
 
   zoomBy(f) {
+    if (this._boardAdjustLock) return;   // 画板「调整底图」期：角落缩放按钮锁定
     const r = this.viewport.getBoundingClientRect();
     const cx = r.width / 2, cy = r.height / 2;
     const ns = Math.min(20, Math.max(0.05, this.scale * f));
@@ -113,10 +117,20 @@ class Viewer {
     this._apply();
   }
 
+  /* 鹰眼图像源：默认主图 img。画板态由 board.js 覆写返回 boardCanvas，
+     使缩略图实时对应当前模块画布。返回 {src, w, h} 或 null（无源）。 */
+  _miniSource() {
+    if (!this.img.src) return null;
+    const w = this.img.naturalWidth, h = this.img.naturalHeight;
+    if (!w) return null;
+    return { src: this.img, w, h };
+  }
+
   _updateMini() {
-    if (!this.minimap || !this.img.src || !this.miniCtx) return;
-    const iw = this.img.naturalWidth, ih = this.img.naturalHeight;
-    if (!iw) return;
+    if (!this.minimap || !this.miniCtx) return;
+    const ms = this._miniSource();
+    if (!ms) return;
+    const iw = ms.w, ih = ms.h;
     const r = this.viewport.getBoundingClientRect();
     // 用 CSS 内容盒尺寸（减 padding），而不是量 getBoundingClientRect ——
     // minimap 在「未 show」时是 display:none，量出来是 0，会导致永远加不上 show。
@@ -125,7 +139,7 @@ class Viewer {
     const ihCss = (parseFloat(cs.height) || 88)  - (parseFloat(cs.paddingTop)   || 0) - (parseFloat(cs.paddingBottom) || 0);
     if (iwCss < 2 || ihCss < 2) return;
 
-    // 用主图当前已渲染好的像素画到迷你 canvas。devicePixelRatio 适配，保证缩略图锐利不糊。
+    // 用当前模块画布已渲染好的像素画到迷你 canvas。devicePixelRatio 适配，保证缩略图锐利不糊。
     const dpr = window.devicePixelRatio || 1;
     const cw = Math.max(2, Math.round(iwCss * dpr));
     const ch = Math.max(2, Math.round(ihCss * dpr));
@@ -137,7 +151,7 @@ class Viewer {
     const mScale = Math.min(iwCss / iw, ihCss / ih);
     const drawW = iw * mScale * dpr, drawH = ih * mScale * dpr;
     const offX = (cw - drawW) / 2, offY = (ch - drawH) / 2;
-    try { ctx.drawImage(this.img, offX, offY, drawW, drawH); } catch { return; }
+    try { ctx.drawImage(ms.src, offX, offY, drawW, drawH); } catch { return; }
 
     // visible image rect (image coords) → 投影到 inner 盒子百分比
     const vx = -this.tx / this.scale, vy = -this.ty / this.scale;

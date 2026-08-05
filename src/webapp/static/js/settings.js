@@ -54,7 +54,7 @@
       </div>
       <div class="num-row"><label>品牌</label>
         <select class="sel" id="sBrand">
-          <option value="mard">MARD 曼德</option>
+          <option value="mard">MARD</option>
           <option value="perler">Perler</option>
           <option value="hama">Hama</option>
           <option value="artkal_s">Artkal S-5mm</option>

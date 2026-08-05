@@ -42,15 +42,17 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- flutter_downloader：下载完成后通过 FileProvider 授权系统安装器读取 APK -->
+        <!-- flutter_downloader：下载完成后通过 FileProvider 授权系统安装器读取 APK。
+             必须按插件官方配置：用插件自带的 DownloadedFileProvider 类 + 插件 AAR 内的
+             @xml/provider_paths 资源，勿用通用 androidx FileProvider / 自定义 paths。 -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="vn.hunghd.flutterdownloader.DownloadedFileProvider"
             android:authorities="${applicationId}.flutter_downloader.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+                android:resource="@xml/provider_paths" />
         </provider>
     </application>
     <!-- Required to query activities that can process text, see:

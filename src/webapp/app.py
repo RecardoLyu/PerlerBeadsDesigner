@@ -698,6 +698,8 @@ def board_state():
         "base": STATE.board_base is not None,
         "base_opacity": STATE.board_base_opacity,
         "base_visible": STATE.board_base_visible,
+        "base_offx": STATE.board_base_offx, "base_offy": STATE.board_base_offy,
+        "base_scale": STATE.board_base_scale,
         "can_undo": bool(STATE.board_undo), "can_redo": bool(STATE.board_redo),
         "palette": [{"code": c.code, "name": c.name, "hex": c.hex}
                     for c in palette.colors],
@@ -764,7 +766,8 @@ def board_fill(req: BoardFillReq):
             x, y = q.popleft()
             old = g[y, x] or None
             changed.append((x, y, old, code))
-            for nx, ny in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
+            for nx, ny in ((x-1, y), (x+1, y), (x, y-1), (x, y+1),
+                           (x-1, y-1), (x+1, y-1), (x-1, y+1), (x+1, y+1)):  # 8-连通域
                 if 0 <= nx < w and 0 <= ny < h and not seen[ny, nx] \
                         and (g[ny, nx] or None) == target:
                     seen[ny, nx] = True
@@ -804,30 +807,21 @@ def board_clear():
 # ---- 底图 ----
 @app.post("/api/board/base/load")
 async def board_base_load(file: UploadFile = File(...)):
-    """导入底图原图（未裁剪）。暂存供正方形框选，回显原图 PNG。"""
+    """整图直接拖放：导入整幅底图（不再强制正方形裁剪），默认居中放置。"""
     arr = _err(png_to_ndarray, await file.read())
-    STATE.board_base_src = arr.copy()
-    return _png(arr)
-
-
-class BoardBaseCropReq(BaseModel):
-    crop: list[int]                  # [x1,y1,x2,y2] 源图坐标，强制取正方形
-
-
-@app.post("/api/board/base/crop")
-def board_base_crop(req: BoardBaseCropReq):
-    """按前端框选（强制正方形）裁剪底图并存为叠加层。"""
-    src = STATE.board_base_src
-    if src is None:
-        raise HTTPException(400, detail="请先导入底图")
-    sh, sw = src.shape[:2]
-    x1, y1, x2, y2 = [int(v) for v in req.crop]
-    side = min(x2 - x1, y2 - y1)
-    x1 = max(0, min(x1, sw - 1)); y1 = max(0, min(y1, sh - 1))
-    side = max(1, min(side, sw - x1, sh - y1))
-    STATE.board_base = src[y1:y1+side, x1:x1+side].copy()
-    STATE.board_base_visible = True
-    return {"ok": True, "side": int(side)}
+    with STATE.lock:
+        STATE.board_base = arr.copy()
+        STATE.board_base_src = None
+        STATE.board_base_visible = True
+        # 默认等比例铺满画板（超出部分裁切），并令底图中心对齐画板中心
+        sh, sw = arr.shape[:2]
+        dim = float(STATE.board_size)
+        STATE.board_base_scale = max(dim / sw, dim / sh)
+        STATE.board_base_offx = (dim - sw * STATE.board_base_scale) / 2.0
+        STATE.board_base_offy = (dim - sh * STATE.board_base_scale) / 2.0
+        return {"ok": True, "w": int(sw), "h": int(sh),
+                "scale": STATE.board_base_scale,
+                "offx": STATE.board_base_offx, "offy": STATE.board_base_offy}
 
 
 @app.get("/api/board/base/image")
@@ -840,22 +834,38 @@ def board_base_image():
 class BoardBaseOptsReq(BaseModel):
     visible: bool | None = None
     opacity: float | None = None
+    offx: float | None = None
+    offy: float | None = None
+    scale: float | None = None
 
 
 @app.post("/api/board/base/options")
 def board_base_options(req: BoardBaseOptsReq):
-    if req.visible is not None:
-        STATE.board_base_visible = bool(req.visible)
-    if req.opacity is not None:
-        STATE.board_base_opacity = float(min(1.0, max(0.0, req.opacity)))
-    return {"ok": True, "visible": STATE.board_base_visible,
-            "opacity": STATE.board_base_opacity}
+    with STATE.lock:
+        if req.visible is not None:
+            STATE.board_base_visible = bool(req.visible)
+        if req.opacity is not None:
+            STATE.board_base_opacity = float(min(1.0, max(0.0, req.opacity)))
+        if req.offx is not None:
+            STATE.board_base_offx = float(req.offx)
+        if req.offy is not None:
+            STATE.board_base_offy = float(req.offy)
+        if req.scale is not None:
+            STATE.board_base_scale = float(min(40.0, max(0.02, req.scale)))
+        return {"ok": True, "visible": STATE.board_base_visible,
+                "opacity": STATE.board_base_opacity,
+                "offx": STATE.board_base_offx, "offy": STATE.board_base_offy,
+                "scale": STATE.board_base_scale}
 
 
 @app.post("/api/board/base/clear")
 def board_base_clear():
-    STATE.board_base = None
-    STATE.board_base_src = None
+    with STATE.lock:
+        STATE.board_base = None
+        STATE.board_base_src = None
+        STATE.board_base_offx = 0.0
+        STATE.board_base_offy = 0.0
+        STATE.board_base_scale = 1.0
     return {"ok": True}
 
 

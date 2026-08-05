@@ -86,9 +86,8 @@ const API = (() => {
     boardRedo: () => _json('/api/board/redo', {}),
     boardClear: () => _json('/api/board/clear', {}),
     boardBaseLoad: (file) => _upload('/api/board/base/load', { file }).then(r => r.json()),
-    boardBaseCrop: (crop) => _json('/api/board/base/crop', { crop }),
     boardBaseImageUrl: () => '/api/board/base/image?t=' + Date.now(),
-    boardBaseOptions: (visible, opacity) => _json('/api/board/base/options', { visible, opacity }),
+    boardBaseOptions: (visible, opacity, offx, offy, scale) => _json('/api/board/base/options', { visible, opacity, offx, offy, scale }),
     boardBaseClear: () => _json('/api/board/base/clear', {}),
     boardExport: (req) => _json('/api/board/export', req),
   };

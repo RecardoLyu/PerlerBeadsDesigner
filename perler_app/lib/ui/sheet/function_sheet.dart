@@ -33,6 +33,19 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
   static const double _half = 0.46;
   static const double _full = 0.82;
 
+  // 「露色板」档：图纸画板 Tab 专属，恰好把面板第一个子项（色板横滚条）完整露出，
+  // 方便绘制中不展开整张 Sheet 即可选色。约 272px（把手~87 + PanelTitle~42 +
+  // 品牌下拉~63 + 间距 + 横滚条 64），随屏高动态换算成占比。
+  double _peek(BuildContext context) {
+    final screenH = MediaQuery.of(context).size.height;
+    return (272 / screenH).clamp(_collapsed, _half);
+  }
+
+  // 当前 Tab 的吸附档列表：图纸画板多一个「露色板」档，其它 Tab 维持原 3 档。
+  List<double> _sizes(BuildContext context) => _tab == SheetTab.board
+      ? [_collapsed, _peek(context), _half, _full]
+      : const [_collapsed, _half, _full];
+
   void _onTabTap(SheetTab t) {
     final same = _tab == t;
     // 切到不同面板：取消进行中的画布子交互（框选/涂抹/裁剪），防止泄露。
@@ -44,18 +57,32 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
     if (t == SheetTab.board) {
       Future.microtask(() => ref.read(boardProvider.notifier).ensure());
     }
-    // 点当前已选 Tab：在半开/收起间切换；点其它：升到半开。
+    // 切到图纸画板：默认停在「露色板」档（恰好露出色板横滚条）；
+    // 切其它 Tab：升到半开。点当前已选 Tab：在 露色板/半开/收起 间就近循环。
     // 注意：用 easeOutCubic 而非 easeOutBack —— easeOutBack 过冲会让 _ctrl.size
     // 瞬时越出 [min,max] 区间，DraggableScrollableSheet 尺寸异常 → 巨大/负高度
     // → RenderFlex 「BOTTOM OVERFLOWED BY 99696 PIXELS」断言（红黄闪烁的根源）。
     if (same) {
       final cur = _ctrl.size;
-      final target = (cur - _half).abs() < 0.02 ? _collapsed : _half;
+      // 点当前已选 Tab：在档位间就近循环。图纸画板含「露色板」档（peek/半开/收起），
+      // 其它 Tab 维持原 半开↔收起 两档切换。
+      final cycle = _tab == SheetTab.board
+          ? [_peek(context), _half, _collapsed]
+          : [_half, _collapsed];
+      // 找到当前最近的档位索引
+      var idx = 0;
+      var best = double.infinity;
+      for (var i = 0; i < cycle.length; i++) {
+        final dd = (cycle[i] - cur).abs();
+        if (dd < best) { best = dd; idx = i; }
+      }
+      final target = cycle[(idx + 1) % cycle.length];
       _ctrl.animateTo(target,
           duration: const Duration(milliseconds: 320),
           curve: Curves.easeOutCubic);
     } else {
-      _ctrl.animateTo(_half,
+      final target = (t == SheetTab.board) ? _peek(context) : _half;
+      _ctrl.animateTo(target,
           duration: const Duration(milliseconds: 320),
           curve: Curves.easeOutCubic);
     }
@@ -70,8 +97,8 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
   }
 
   void _onDragEnd(DragEndDetails d) {
-    // 松手吸附到最近档位
-    final sizes = [_collapsed, _half, _full];
+    // 松手吸附到最近档位（图纸画板含「露色板」档）
+    final sizes = _sizes(context);
     final cur = _ctrl.size;
     final v = d.primaryVelocity ?? 0;
     double target;
@@ -101,7 +128,7 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
       minChildSize: _collapsed,
       maxChildSize: _full,
       snap: true,
-      snapSizes: const [_collapsed, _half, _full],
+      snapSizes: _sizes(context),
       builder: (context, scroll) {
         final dark = Theme.of(context).brightness == Brightness.dark;
         return ClipRRect(
@@ -154,7 +181,7 @@ class _FunctionSheetState extends ConsumerState<FunctionSheet> {
       case SheetTab.pattern:
         return const PatternGenPanel();    // 图纸 + 导出
       case SheetTab.board:
-        return const BoardPanel();         // 图纸画板
+        return const BoardPanel();         // 图纸画板（色板已内嵌为第一个子项）
     }
   }
 }

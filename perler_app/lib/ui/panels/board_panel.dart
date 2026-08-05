@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../algo/quantizer.dart';
@@ -44,7 +43,7 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
   }
 
   Future<void> _switchBrand(String brand) async {
-    final ok = await _confirm('切换品牌豆色将清空当前画板（色号体系不同），确定？');
+    final ok = await _confirm('切换拼豆品牌将清空当前画板（色号体系不同），确定？');
     if (ok) await ref.read(boardProvider.notifier).newBoard(ref.read(boardProvider).size, brand);
   }
 
@@ -68,30 +67,10 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
       ref.read(statusMessageProvider.notifier).state = '未选择图像';
       return;
     }
-    // 居中裁剪正方形（移动端简化：自动取中心最大正方形，铺满画板）
-    final w = res.width, h = res.height;
-    final side = w < h ? w : h;
-    final x0 = ((w - side) / 2).round(), y0 = ((h - side) / 2).round();
-    final rgb = res.rgb;
-    final cropped = _cropSquare(rgb, w, x0, y0, side);
-    final img = await rgbToUiImage(cropped, side, side);
-    ref.read(boardProvider.notifier).setBase(img, side);
-    ref.read(statusMessageProvider.notifier).state = '底图已设为参考（中心正方形）';
-  }
-
-  /// 从 RGB(h*w*3) 裁出正方形 (side×side)。
-  Uint8List _cropSquare(Uint8List rgb, int w, int x0, int y0, int side) {
-    final out = Uint8List(side * side * 3);
-    for (var y = 0; y < side; y++) {
-      for (var x = 0; x < side; x++) {
-        final s = ((y0 + y) * w + (x0 + x)) * 3;
-        final d = (y * side + x) * 3;
-        out[d] = rgb[s];
-        out[d + 1] = rgb[s + 1];
-        out[d + 2] = rgb[s + 2];
-      }
-    }
-    return out;
+    // 整图导入（不再裁正方形），默认等比例铺满画板（超出裁切）并居中
+    final img = await rgbToUiImage(res.rgb, res.width, res.height);
+    ref.read(boardProvider.notifier).setBase(img);
+    ref.read(statusMessageProvider.notifier).state = '底图已铺满画板（点「调整底图」可缩放/移动）';
   }
 
   Future<void> _export() async {
@@ -124,14 +103,80 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
     ref.watch(boardProvider.select((s) => s.version));
     final n = ref.read(boardProvider.notifier);
     final bom = n.bom();
+    final colors = b.palette?.colors ?? const <BeadColor>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // ---- 色板（图纸画板栏上方，绘制中快捷选色）----
+        const PanelTitle(
+            icon: Icons.palette_outlined, title: '色板', sub: '实心色块，点上即选为当前豆色'),
+        SelectRow<String>(
+          label: '拼豆品牌',
+          value: b.brand,
+          items: Palette.brandLabels.entries.map((e) => (e.key, e.value)).toList(),
+          onChanged: _switchBrand,
+        ),
+        const SizedBox(height: 6),
+        // 实心圆形色块横滚
+        SizedBox(
+          height: 64,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: colors.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final col = colors[i];
+              final sel = col.code == b.color;
+              final color = _hex(col.hex);
+              return GestureDetector(
+                onTap: () => n.setColor(col.code),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color,
+                        border: Border.all(
+                          color: sel
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.transparent,
+                          width: 2.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.12),
+                              blurRadius: 3, offset: const Offset(0, 1)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(col.code,
+                        style: TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w800,
+                            color: sel
+                                ? Theme.of(context).colorScheme.primary
+                                : c.mutedFg)),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text('当前：${b.color ?? '—'}',
+            style: TextStyle(fontSize: 11.5, color: c.mutedFg)),
+
+        const PanelDivider(),
+
+        // ---- 图纸画板（规格/工具/笔触）----
         const PanelTitle(
             icon: Icons.brush_rounded, title: '图纸画板', sub: '自由绘制拼豆图纸（单指绘制 · 双指缩放平移）'),
 
-        // ---- 规格 + 品牌 ----
+        // ---- 规格 ----
         Row(children: [
           const SizedBox(width: 58, child: Text('规格', style: TextStyle(fontSize: 12.5))),
           Expanded(
@@ -142,12 +187,6 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
             ),
           ),
         ]),
-        SelectRow<String>(
-          label: '品牌豆色',
-          value: b.brand,
-          items: Palette.brandLabels.entries.map((e) => (e.key, e.value)).toList(),
-          onChanged: _switchBrand,
-        ),
 
         // ---- 工具条 ----
         Padding(
@@ -159,13 +198,13 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
                   _toolBtn(BoardTool.pen, Icons.edit_rounded, '画笔', b, n),
-                  _toolBtn(BoardTool.eraser, Icons.auto_fix_off_rounded, '橡皮', b, n),
+                  _toolBtn(BoardTool.eraser, Icons.auto_fix_off_rounded, '橡皮擦', b, n),
                   _toolBtn(BoardTool.fill, Icons.format_color_fill_rounded, '填充', b, n),
-                  _toolBtn(BoardTool.rect, Icons.crop_square_rounded, '框选', b, n),
+                  _toolBtn(BoardTool.rect, Icons.crop_square_rounded, '框选填充', b, n),
                   const SizedBox(width: 6),
                   _actBtn(Icons.undo_rounded, '撤销', b.canUndo, n.undoOp),
                   _actBtn(Icons.redo_rounded, '重做', b.canRedo, n.redoOp),
-                  _actBtn(Icons.delete_outline_rounded, '清空', b.hasBoard, () async {
+                  _actBtn(Icons.delete_outline_rounded, '清空画板', b.hasBoard, () async {
                     if (await _confirm('清空整块画板？（可撤销）')) n.clearBoard();
                   }),
                 ]),
@@ -184,55 +223,12 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
 
         const PanelDivider(),
 
-        // ---- 豆色（圆环+编号 横滚条） ----
-        const PanelTitle(icon: Icons.palette_outlined, title: '豆色', sub: '圆环+编号，画上即真实豆色'),
-        SizedBox(
-          height: 62,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: b.palette?.colors.length ?? 0,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, i) {
-              final col = b.palette!.colors[i];
-              final sel = col.code == b.color;
-              final color = _hex(col.hex);
-              return GestureDetector(
-                onTap: () => n.setColor(col.code),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 34, height: 34,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: sel ? Theme.of(context).colorScheme.primary : Colors.transparent,
-                          width: 2.5,
-                        ),
-                      ),
-                      child: CustomPaint(painter: _BeadRingPainter(color)),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(col.code,
-                        style: TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w800,
-                            color: sel ? Theme.of(context).colorScheme.primary : c.mutedFg)),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-
-        const PanelDivider(),
-
         // ---- 参考底图 ----
         const PanelTitle(icon: Icons.image_outlined, title: '参考底图', sub: '高透明叠加在豆之下，不干扰绘制'),
         Row(children: [
           Expanded(
             child: CandyButton(
-              label: b.baseImage == null ? '导入底图…' : '更换底图…',
+              label: b.baseImage == null ? '上传底图' : '更换底图…',
               icon: Icons.add_photo_alternate_outlined,
               primary: false, compact: true,
               onPressed: _importBase,
@@ -242,7 +238,7 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
             const SizedBox(width: 8),
             Expanded(
               child: CandyButton(
-                label: '清除底图', icon: Icons.close_rounded,
+                label: '清除', icon: Icons.close_rounded,
                 primary: false, compact: true,
                 onPressed: () => n.clearBase(),
               ),
@@ -250,9 +246,41 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
           ],
         ]),
         if (b.baseImage != null) ...[
+          const SizedBox(height: 8),
+          // 调整底图：进入后切【取消】【保存调整】，双指缩放/拖动底图，画布锁定
+          if (!b.baseAdjusting)
+            CandyButton(
+              label: '调整底图', icon: Icons.open_with_rounded,
+              primary: false, compact: true,
+              onPressed: () => n.enterBaseAdjust(),
+            )
+          else ...[
+            Row(children: [
+              Expanded(
+                child: CandyButton(
+                  label: '取消', icon: Icons.close_rounded,
+                  primary: false, compact: true,
+                  onPressed: () => n.cancelBaseAdjust(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CandyButton(
+                  label: '保存调整', icon: Icons.check_rounded,
+                  primary: true, compact: true,
+                  onPressed: () => n.saveBaseAdjust(),
+                ),
+              ),
+            ]),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('调整中：双指捏合缩放底图 · 拖动平移底图 · 画板缩放已锁定',
+                  style: TextStyle(fontSize: 11, color: c.mutedFg)),
+            ),
+          ],
           CheckRow(label: '显示底图', value: b.baseVisible, onChanged: (v) => n.setBaseVisible(v)),
           SliderRow(
-            label: '透明度',
+            label: '不透明度',
             value: b.baseOpacity, min: 0.1, max: 1.0, decimals: 2,
             onChanged: (v) => n.setBaseOpacity(v),
           ),
@@ -290,7 +318,7 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
           ]),
         ),
         CandyButton(
-          label: _saving ? '导出中…' : '导出 PNG 到相册',
+          label: _saving ? '导出中…' : '导出 PNG + BOM',
           icon: Icons.bolt_rounded,
           onPressed: _saving ? null : _export,
         ),
@@ -388,26 +416,4 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
       ),
     );
   }
-}
-
-/// 豆色圆环（与真实豆子同比例：外圈压暗 + 豆体 + 中央孔洞透底板色）。
-class _BeadRingPainter extends CustomPainter {
-  final Color rgb;
-  const _BeadRingPainter(this.rgb);
-  static const Color _pegboard = Color(0xFFF5F3EE);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    final r = size.width * 0.46;
-    Color scale(double f) => Color.fromARGB(255, (rgb.red * f).round(),
-        (rgb.green * f).round(), (rgb.blue * f).round());
-    canvas.drawCircle(Offset(cx, cy), r, Paint()..color = scale(0.72));
-    canvas.drawCircle(Offset(cx, cy), r * 0.82, Paint()..color = rgb);
-    final hr = size.width * 0.13;
-    canvas.drawCircle(Offset(cx, cy), hr, Paint()..color = scale(0.55));
-    canvas.drawCircle(Offset(cx, cy), hr * 0.72, Paint()..color = _pegboard);
-  }
-
-  @override
-  bool shouldRepaint(_BeadRingPainter old) => old.rgb != rgb;
 }

@@ -116,6 +116,8 @@
 .btn-primary:hover{transform:translateY(-1px)}
 .btn-ghost{background:var(--color-surface);border:1px solid var(--color-border);color:var(--color-primary)}
 .btn-ghost:hover{transform:translateY(-1px)}
+.btn-danger{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;box-shadow:0 4px 14px rgba(220,38,38,.32)}
+.btn-danger:hover{transform:translateY(-1px)}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
 
 .slider-row{display:flex;align-items:center;gap:10px;margin:8px 0;min-width:0}
@@ -129,6 +131,17 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .chip{padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;background:var(--color-muted);color:var(--color-muted-fg);border:1px solid var(--color-border);cursor:pointer;transition:all .25s var(--ease)}
 .chip.on{background:linear-gradient(135deg,var(--color-violet),var(--color-violet-deep));color:#fff;border-color:transparent}
+/* 画板色板/BOM 豆子 chip：统一尺寸、徽章等宽、色号完整单行不裁切 */
+.chip.bead-chip{padding:3px;flex:0 0 auto}
+.chip.bead-chip>span{min-width:40px;height:26px;padding:0 8px;font-variant-numeric:tabular-nums}
+/* 主题内联确认模态（替代原生 confirm，贴合全局 glass 风格） */
+.ui-confirm-mask{position:fixed;inset:0;background:rgba(15,10,25,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s}
+.ui-confirm-mask.show{opacity:1;pointer-events:auto}
+.ui-confirm-card{width:min(360px,86vw);padding:22px;border-radius:20px;background:var(--color-surface-strong);border:1px solid var(--color-border);box-shadow:0 24px 60px rgba(20,10,40,.35)}
+.ui-confirm-card h4{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--color-foreground)}
+.ui-confirm-card p{margin:0 0 18px;font-size:13px;line-height:1.6;color:var(--color-muted-fg);white-space:pre-wrap}
+.ui-confirm-btns{display:flex;gap:10px;justify-content:flex-end}
+.ui-confirm-btns .btn{min-width:84px}
 /* 涂抹前景/背景真实大小笔触圆点（直径由 JS 内联控制，10~26px） */
 .brush-dot{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;margin-right:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
 .brush-dot.fg{background:#EF4444}

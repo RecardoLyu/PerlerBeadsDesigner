@@ -274,6 +274,7 @@
     requestAnimationFrame(() => requestAnimationFrame(() => viewer.fit()));
   }
   async function showMode(mode, btn) {
+    window._convViewMode = mode;   // 记忆当前视图模式，切回图像转换时按此恢复
     try {
       busy.start('切换显示…');
       if (mode === 'original') viewer.setImage(API.currentImageUrl() + '?t=' + Date.now());
@@ -294,6 +295,29 @@
   /* 供 app.js 在生成图纸 / 切到图纸视图后，把「图纸预览」设为当前选中 */
   window.setChartViewActive = () => {
     [...$('viewToggle').children].forEach(x => x.classList.toggle('on', x.dataset.mode === 'chart'));
+  };
+
+  /* 切回图像转换时恢复：重建五模式按钮（画板态 syncViewToggle 改写过 DOM），
+     并按记忆的 _convViewMode 重设 img.src 恢复画布。 */
+  window.restoreConversionView = async function () {
+    const el = $('viewToggle'); if (!el) return;
+    const mode = window._convViewMode || 'original';
+    el.innerHTML = `
+      <button class="${mode === 'original' ? 'on' : ''}" data-mode="original">原图</button>
+      <button class="${mode === 'highlight' ? 'on' : ''}" data-mode="highlight">原图+高亮</button>
+      <button class="${mode === 'mask' ? 'on' : ''}" data-mode="mask">Mask</button>
+      <button class="${mode === 'applied' ? 'on' : ''}" data-mode="applied">应用结果</button>
+      <button class="${mode === 'chart' ? 'on' : ''}" data-mode="chart">图纸预览</button>`;
+    el.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      [...el.children].forEach(x => x.classList.remove('on')); b.classList.add('on');
+      showMode(b.dataset.mode, b);
+    };
+    // 若后端还没有任何图像（img 从未加载），保持空画布，仅复位按钮
+    try {
+      const s = await API.status();
+      if (s.has_image) await showMode(mode);
+    } catch (_) { /* 后端未就绪 */ }
   };
 
   /* ---- 一体动作按钮：

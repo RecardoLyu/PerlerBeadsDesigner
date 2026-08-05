@@ -35,7 +35,7 @@ class Palette {
 
   /// 拼豆品牌颜色库（key → assets/palette/<key>.json）。与桌面端 ColorManager.BRANDS 对齐。
   static const Map<String, String> brandLabels = {
-    'mard': 'MARD 曼德',
+    'mard': 'MARD',
     'perler': 'Perler',
     'hama': 'Hama',
     'artkal_s': 'Artkal S-5mm',

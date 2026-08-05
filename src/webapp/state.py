@@ -52,11 +52,15 @@ class AppState:
         self.board_brand: str = 'mard'                 # 画板用色品牌（独立于图像转换）
         # 网格：object 数组 (h,w)，每格色号 str 或 None（空板格）
         self.board_grid: Optional[np.ndarray] = None
-        # 底图：用户裁剪好的正方形 RGB 图（叠加显示在绘制层之下）
-        self.board_base: Optional[np.ndarray] = None   # (N,N,3) uint8 正方形
-        self.board_base_src: Optional[np.ndarray] = None  # 导入的底图原图（待裁剪）
+        # 底图：整图直接拖放，按偏移叠加显示在绘制层之下，超出画板自动裁切
+        self.board_base: Optional[np.ndarray] = None   # (H,W,3) uint8 整图（不再强制正方形）
+        self.board_base_src: Optional[np.ndarray] = None  # 兼容旧字段（已废弃，同 board_base）
         self.board_base_opacity: float = 0.35
         self.board_base_visible: bool = True
+        # 底图偏移（画板格坐标，可为负=向左/上超出）；缩放 base_scale = 1 源像素渲染为几格（等比例）
+        self.board_base_offx: float = 0.0
+        self.board_base_offy: float = 0.0
+        self.board_base_scale: float = 1.0
         # 增量笔画历史（撤销/重做，各 cap 5）。每条 op={'kind','cells':[(x,y,old,new),...]}
         self.board_undo: list = []
         self.board_redo: list = []
@@ -196,6 +200,9 @@ class AppState:
             self.board_grid = np.full((size, size), None, dtype=object)
             self.board_base = None
             self.board_base_src = None
+            self.board_base_offx = 0.0
+            self.board_base_offy = 0.0
+            self.board_base_scale = 1.0
             self.board_undo, self.board_redo = [], []
             self.board_active = True
 

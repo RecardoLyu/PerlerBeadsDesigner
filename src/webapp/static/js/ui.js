@@ -190,4 +190,41 @@
   document.getElementById('helpClose').addEventListener('click', closeHelp);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeHelp(); });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHelp(); });
+
+  /* ---- 主题内联确认模态：替代原生 confirm，贴合全局 glass 风格 ----
+     uiConfirm(message, {title, okText, cancelText, danger}) -> Promise<boolean> */
+  window.uiConfirm = function (message, opts = {}) {
+    return new Promise((resolve) => {
+      const mask = document.createElement('div');
+      mask.className = 'ui-confirm-mask';
+      mask.innerHTML = `
+        <div class="ui-confirm-card">
+          <h4>${opts.title || '请确认'}</h4>
+          <p></p>
+          <div class="ui-confirm-btns">
+            <button class="btn btn-ghost" data-a="cancel">${opts.cancelText || '取消'}</button>
+            <button class="btn ${opts.danger ? 'btn-danger' : 'btn-primary'}" data-a="ok">${opts.okText || '确定'}</button>
+          </div>
+        </div>`;
+      mask.querySelector('p').textContent = message;   // textContent 防注入、保留换行
+      document.body.appendChild(mask);
+      requestAnimationFrame(() => mask.classList.add('show'));
+      const done = (val) => {
+        mask.classList.remove('show');
+        window.removeEventListener('keydown', onKey, true);
+        setTimeout(() => mask.remove(), 200);
+        resolve(val);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); done(false); }
+        else if (e.key === 'Enter') { e.stopPropagation(); done(true); }
+      };
+      window.addEventListener('keydown', onKey, true);
+      mask.addEventListener('click', (e) => {
+        const a = e.target.closest('[data-a]');
+        if (a) done(a.dataset.a === 'ok');
+        else if (e.target === mask) done(false);
+      });
+    });
+  };
 })();

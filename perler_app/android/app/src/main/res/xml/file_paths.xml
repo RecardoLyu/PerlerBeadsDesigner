@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- flutter_downloader 下载目录 FileProvider 映射：外部存储根目录（含应用专属目录） -->
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="external_files" path="." />
-    <external-files-path name="app_external_files" path="." />
-</paths>

@@ -115,25 +115,41 @@ def _png_bytes(arr):
     return ndarray_to_png(arr)
 
 
-def test_base_load_crop_options(client):
+def test_base_load_options(client):
     client.post("/api/board/new", json={"size": 52, "brand": "mard"})
     img = np.zeros((100, 200, 3), dtype=np.uint8)
     img[:, :, 0] = 255
     r = client.post("/api/board/base/load",
                     files={"file": ("b.png", _png_bytes(img), "image/png")})
     assert r.status_code == 200
-    # 裁正方形（给矩形，强制取 min 边）
-    r2 = client.post("/api/board/base/crop", json={"crop": [10, 10, 90, 60]})
-    assert r2.json()["side"] == 50
-    assert STATE.board_base.shape == (50, 50, 3)
-    # 底图可见性/透明度
-    r3 = client.post("/api/board/base/options", json={"visible": False, "opacity": 0.6})
+    # 整图直接拖放：整幅存底图（不再强制正方形），默认等比例铺满画板（超出裁切）并居中
+    assert STATE.board_base.shape == (100, 200, 3)
+    scale = max(52 / 200, 52 / 100)   # = max(0.26, 0.52) = 0.52
+    assert abs(r.json()["scale"] - scale) < 1e-6
+    assert abs(STATE.board_base_scale - scale) < 1e-6
+    assert abs(r.json()["offx"] - (52 - 200 * scale) / 2.0) < 1e-6
+    assert abs(r.json()["offy"] - (52 - 100 * scale) / 2.0) < 1e-6
+    # 底图可见性/透明度/偏移/缩放持久化
+    r3 = client.post("/api/board/base/options",
+                     json={"visible": False, "opacity": 0.6, "offx": 3, "offy": -7, "scale": 2.5})
     assert r3.json()["visible"] is False and abs(r3.json()["opacity"] - 0.6) < 1e-6
+    assert STATE.board_base_offx == 3 and STATE.board_base_offy == -7
+    assert abs(r3.json()["scale"] - 2.5) < 1e-6 and abs(STATE.board_base_scale - 2.5) < 1e-6
+    # scale 限幅（上限 40）
+    r4 = client.post("/api/board/base/options", json={"scale": 999})
+    assert abs(r4.json()["scale"] - 40.0) < 1e-6
+    client.post("/api/board/base/options", json={"scale": 2.5})
+    # state 返回偏移与缩放
+    st = client.get("/api/board/state").json()
+    assert st["base_offx"] == 3 and st["base_offy"] == -7
+    assert abs(st["base_scale"] - 2.5) < 1e-6
     # 底图图片路由
     assert client.get("/api/board/base/image").status_code == 200
-    # 清除
+    # 清除（重置偏移与缩放）
     client.post("/api/board/base/clear")
     assert STATE.board_base is None
+    assert STATE.board_base_offx == 0 and STATE.board_base_offy == 0
+    assert abs(STATE.board_base_scale - 1.0) < 1e-6
     assert client.get("/api/board/base/image").status_code == 404
 
 

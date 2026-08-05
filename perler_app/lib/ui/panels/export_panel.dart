@@ -51,7 +51,10 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
       return;
     }
     setState(() => _saving = true);
-    ref.read(statusMessageProvider.notifier).state = '正在导出图纸 PNG …';
+    // 切全局 busy：颜文字跳动 + 指示灯变红，与「导出中…」按钮同步生效。
+    ref.read(patternProvider.notifier).setBusy(true, '正在导出图纸 PNG …');
+    // 让出一帧，保证 busy UI 立刻重绘，再做 4K 重渲染/PNG 编码。
+    await Future.delayed(Duration.zero);
     try {
       final widthPx = ExportService.resolutions[_resIndex].$2;
       final name = _nameCtrl.text.trim();
@@ -64,6 +67,7 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
     } catch (e) {
       ref.read(statusMessageProvider.notifier).state = '导出失败：$e';
     } finally {
+      ref.read(patternProvider.notifier).setBusy(false);
       if (mounted) setState(() => _saving = false);
     }
   }

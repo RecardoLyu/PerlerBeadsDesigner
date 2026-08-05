@@ -314,7 +314,7 @@ class ColorManager:
     # 支持的拼豆品牌：key -> (显示名, palette 目录下的文件名)
     # 数据来自 GitHub maxcleme/beadcolors（真实色号+RGB，转 {code,name,hex}）。
     BRANDS = {
-        'mard':     ('MARD 曼德',      'mard.json'),
+        'mard':     ('MARD',           'mard.json'),
         'perler':   ('Perler',         'perler.json'),
         'hama':     ('Hama',           'hama.json'),
         'artkal_s': ('Artkal S-5mm',   'artkal_s.json'),

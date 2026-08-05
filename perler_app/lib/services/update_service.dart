@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
@@ -41,6 +42,7 @@ class UpdateService {
   static const _kVersion = 'upd_version';
   static const _kSavedDir = 'upd_saved_dir';
   static const _kFileName = 'upd_file_name';
+  static const _kApkSize = 'upd_apk_size'; // 期望字节数（GitHub asset.size）
 
   /// 当前安装版本（来自 pubspec version，如 2.4.1）。
   static Future<String> currentVersion() async {
@@ -74,10 +76,19 @@ class UpdateService {
       final latest = tag.replaceFirst(RegExp(r'^[vV]'), '');
       final assets = (data['assets'] as List? ?? []);
       String? apkUrl;
+      int? apkSize;
+      String? apkSha256;
       for (final a in assets) {
         final name = ((a as Map)['name'] as String? ?? '').toLowerCase();
         if (name.endsWith('.apk')) {
           apkUrl = a['browser_download_url'] as String?;
+          // 期望字节数（必有的服务端元数据），用于下载后完整性校验
+          apkSize = (a['size'] as num?)?.toInt();
+          // 部分 API 版本带 digest（形如 "sha256:…"），剥前缀；没有则 null 降级
+          final digest = (a['digest'] as String? ?? '').trim();
+          if (digest.toLowerCase().startsWith('sha256:')) {
+            apkSha256 = digest.substring(7);
+          }
           break;
         }
       }
@@ -89,6 +100,8 @@ class UpdateService {
         notes: (data['body'] as String? ?? '').trim(),
         apkUrl: apkUrl,
         releaseUrl: data['html_url'] as String?,
+        apkSize: apkSize,
+        apkSha256: apkSha256,
       );
     } catch (_) {
       return null;
@@ -148,6 +161,11 @@ class UpdateService {
           await prefs.setString(_kVersion, info.latest);
           await prefs.setString(_kSavedDir, dir.path);
           await prefs.setString(_kFileName, fileName);
+          if (info.apkSize != null) {
+            await prefs.setInt(_kApkSize, info.apkSize!);
+          } else {
+            await prefs.remove(_kApkSize);
+          }
           return true;
         }
       } catch (_) {
@@ -185,11 +203,12 @@ class UpdateService {
   }
 
   /// 绑定回调端口（幂等）。设置页进入时调用一次。
+  /// 注意：FlutterDownloader.registerCallback 已在 main() 初始化后立即注册，
+  /// 这里只负责把后台 isolate 的 SendPort 挂到 IsolateNameServer 并监听转发。
   static void bindCallback() {
     if (_portBound) return;
     _portBound = true;
     IsolateNameServer.registerPortWithName(_port.sendPort, _portName);
-    FlutterDownloader.registerCallback(downloadCallback);
     _port.listen((data) async {
       final id = data[0] as String;
       final status = DownloadTaskStatus.fromInt(data[1] as int);
@@ -204,11 +223,55 @@ class UpdateService {
   static Future<void> _onDownloadComplete(String taskId) async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getString(_kTaskId) != taskId) return;
-    // 下载完成 → 包名校验通过则自动调起安装
+    // 下载完成 → 完整性校验通过才调起安装；坏包（镜像截断/污染）自动换镜像重下，
+    // 绝不把坏包交给系统安装器（否则报「软件包似乎无效」）。
     final path = await downloadedApkPath();
-    if (path != null && await verifyPackage(path)) {
+    if (path == null) return;
+    if (await verifyDownloadedApk(path)) {
       await installApk(path);
+    } else {
+      await _handleCorruptDownload();
     }
+  }
+
+  /// 下载到坏包：删文件 + 自动换下一个镜像重下；全镜像都坏则清任务，
+  /// 由设置页提示「安装包损坏，请到 Release 页手动下载」。
+  static Future<void> _handleCorruptDownload() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 连续换镜像重下次数（持久化，防无限循环）
+    const kRetry = 'upd_corrupt_retry';
+    final retried = prefs.getInt(kRetry) ?? 0;
+    final path = await downloadedApkPath();
+    if (path != null) {
+      try {
+        await File(path).delete();
+      } catch (_) {}
+    }
+    if (retried < _mirrors.length - 1) {
+      await prefs.setInt(kRetry, retried + 1);
+      final info = await check();
+      if (info != null && info.apkUrl != null) {
+        await startDownload(info);
+        return;
+      }
+    }
+    // 放弃：清任务，设置页轮询 restore 时按「无有效包」提示
+    await prefs.remove(kRetry);
+    await clearTask();
+  }
+
+  /// 读取持久化的期望字节数（无则 null）。
+  static Future<int?> _expectedApkSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getInt(_kApkSize);
+    return (v != null && v > 0) ? v : null;
+  }
+
+  /// 校验「当前持久化任务」下载到的 APK 是否完整（供完成回调与设置页复用）。
+  /// 用持久化的期望字节数；sha256 仅在本轮 check() 拿到 digest 时可用（见 verifyPackage）。
+  static Future<bool> verifyDownloadedApk(String apkPath) async {
+    final size = await _expectedApkSize();
+    return verifyPackage(apkPath, expectedSize: size);
   }
 
   /// 恢复持久化的下载任务状态（重进设置页时调用）。
@@ -227,9 +290,9 @@ class UpdateService {
         }
       }
       if (task == null) {
-        // 系统已清掉该任务（如重启后）→ 看文件是否已完整下载
+        // 系统已清掉该任务（如重启后）→ 看文件是否已完整下载（且通过完整性校验）
         final path = await downloadedApkPath();
-        if (path != null && await File(path).exists()) {
+        if (path != null && await verifyDownloadedApk(path)) {
           return UpdateTaskSnapshot(
               version: prefs.getString(_kVersion) ?? '',
               status: DownloadTaskStatus.complete,
@@ -240,11 +303,22 @@ class UpdateService {
         return null;
       }
       final path = await downloadedApkPath();
+      // 任务标记完成但文件损坏（镜像截断）→ 不算可安装，按「失败」返回让 UI 走重试
+      if (task.status == DownloadTaskStatus.complete &&
+          (path == null || !await verifyDownloadedApk(path))) {
+        return UpdateTaskSnapshot(
+          version: prefs.getString(_kVersion) ?? '',
+          status: DownloadTaskStatus.failed,
+          progress: task.progress,
+          apkPath: null,
+        );
+      }
+      final complete = task.status == DownloadTaskStatus.complete;
       return UpdateTaskSnapshot(
         version: prefs.getString(_kVersion) ?? '',
         status: task.status,
         progress: task.progress,
-        apkPath: task.status == DownloadTaskStatus.complete ? path : null,
+        apkPath: complete ? path : null,
       );
     } catch (_) {
       return null;
@@ -301,16 +375,47 @@ class UpdateService {
     await prefs.remove(_kVersion);
     await prefs.remove(_kSavedDir);
     await prefs.remove(_kFileName);
+    await prefs.remove(_kApkSize);
   }
 
-  /// 校验下载的 APK 包名与本应用一致（防装错包 / 防签名冲突装到别的应用上）。
-  static Future<bool> verifyPackage(String apkPath) async {
-    // 轻量校验：确认文件存在且非空。完整包名/签名校验交给系统安装器，
-    // 若签名不一致系统会提示「与已安装应用签名冲突」，此时需卸载旧版再装
-    // （本地 flutter run 装的 debug 包与 CI 包签名可能不同）。
+  /// 校验下载的 APK 完整性（防镜像截断/污染装出「软件包似乎无效」）。
+  /// 三道闸，逐道降级（拿不到期望值就跳过该道）：
+  ///   1. 文件存在且非空；
+  ///   2. ZIP 魔数头 `PK\x03\x04`（排除镜像返回的 HTML 错误页/重定向页）；
+  ///   3. [expectedSize] 非空 → 实际字节数必须相等（GitHub asset.size，必有）；
+  ///   4. [expectedSha256] 非空 → 流式 sha256 比对（API 带 digest 时才有）。
+  /// 任一硬性校验失败即判坏包。签名一致性仍交给系统安装器（冲突时引导卸载旧版）。
+  static Future<bool> verifyPackage(String apkPath,
+      {int? expectedSize, String? expectedSha256}) async {
     try {
       final f = File(apkPath);
-      return await f.exists() && await f.length() > 0;
+      if (!await f.exists()) return false;
+      final len = await f.length();
+      if (len <= 0) return false;
+
+      // 文件头必须是 ZIP（APK 即 ZIP）；HTML 错误页以 '<' 开头
+      final raf = await f.open();
+      final head = await raf.read(4);
+      await raf.close();
+      if (head.length < 4 ||
+          head[0] != 0x50 || // 'P'
+          head[1] != 0x4B || // 'K'
+          head[2] != 0x03 ||
+          head[3] != 0x04) {
+        return false;
+      }
+
+      // 字节数精确比对（最有效的截断检测）
+      if (expectedSize != null && expectedSize > 0 && len != expectedSize) {
+        return false;
+      }
+
+      // sha256（有 digest 才做；流式读避免一次性载入 ~149MB）
+      if (expectedSha256 != null && expectedSha256.isNotEmpty) {
+        final digest = await sha256.bind(f.openRead()).first;
+        if (digest.toString() != expectedSha256.toLowerCase()) return false;
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -330,6 +435,8 @@ class UpdateInfo {
   final String notes;
   final String? apkUrl;
   final String? releaseUrl;
+  final int? apkSize; // 期望字节数（GitHub asset.size），完整性校验用
+  final String? apkSha256; // 期望 sha256（API 带 digest 时才有），可空降级
   const UpdateInfo({
     required this.current,
     required this.latest,
@@ -337,6 +444,8 @@ class UpdateInfo {
     required this.notes,
     this.apkUrl,
     this.releaseUrl,
+    this.apkSize,
+    this.apkSha256,
   });
 }
 

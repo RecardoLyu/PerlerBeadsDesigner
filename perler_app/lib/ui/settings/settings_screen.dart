@@ -470,13 +470,17 @@ class _AboutState extends State<_About> {
     if (!mounted) return;
     if (status == DownloadTaskStatus.complete) {
       final path = await UpdateService.downloadedApkPath();
+      // 完整性校验：坏包（镜像截断/污染）不亮「安装」，由后台自动换镜像重下
+      final ok = path != null && await UpdateService.verifyDownloadedApk(path);
       if (!mounted) return;
       setState(() {
         _progress = null;
-        _failed = false;
-        _downloaded = path != null;
-        _apkPath = path;
-        _status = path != null ? '下载完成，点击安装' : '下载完成但文件缺失，请重试';
+        _failed = !ok;
+        _downloaded = ok;
+        _apkPath = ok ? path : null;
+        _status = ok
+            ? '下载完成，点击安装'
+            : '安装包损坏（下载被截断），正在自动换源重下…';
       });
       _syncPolling();
     } else if (status == DownloadTaskStatus.failed ||

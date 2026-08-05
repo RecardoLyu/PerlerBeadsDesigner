@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../algo/basic_adjust.dart';
 import '../algo/cv_ops.dart';
+import '../algo/pattern_pipeline.dart';
 import '../algo/pattern_render.dart';
 import '../algo/quantizer.dart';
 import '../algo/slic.dart';
@@ -1180,6 +1183,16 @@ class PatternNotifier extends StateNotifier<PatternState> {
     return p;
   }
 
+  /// 导出图纸时占用全局 busy（导出本身在 ExportService，不经 generate）。
+  /// 让颜文字跳动 + 指示灯变红在导出期间同步生效，导出完恢复。
+  /// [msg] 非空时顺带更新状态行文案。
+  void setBusy(bool v, [String? msg]) {
+    if (state.busy == v && msg == null) return;
+    state = state.copyWith(busy: v);
+    _ref.read(busyProvider.notifier).refresh();
+    if (msg != null) _status(msg);
+  }
+
   /// 生成图纸。对应桌面版 pattern_generate + render_standard_chart 一次到位。
   /// [colorLimit] null/0 = 不限色；[useMask] 且有分割 mask 时背景豆淡化、BOM 只计前景。
   /// [maskBg] none/white/black（对应桌面 MASK 背景：淡化/纯白/纯黑）。
@@ -1231,52 +1244,47 @@ class PatternNotifier extends StateNotifier<PatternState> {
     state = state.copyWith(busy: true);
     _ref.read(busyProvider.notifier).refresh();
     _status('正在生成图纸（$gw×$gh）…');
+    // 主动让出一帧：保证按钮「生成中…」、颜文字跳动、指示灯变红立刻重绘，
+    // 用户点下即见反馈（否则紧接的同步收集会让这一帧推迟）。
+    await Future.delayed(Duration.zero);
     try {
       final palette = await _ensurePalette(metric);
 
-      // 1) 大图 → 豆域小图（盒式平均 = cv2.INTER_AREA，避免高色限摩尔纹）
-      final beadRgb = PatternRender.boxAverageDownsample(
-          img.rgbBytes, img.width, img.height, gw, gh);
-
-      // 2) 量化（豆域，毫秒级）
-      final qres = Quantizer(palette).quantize(
-        beadRgb, gh, gw,
-        colorLimit: (colorLimit == null || colorLimit <= 0) ? null : colorLimit,
+      // 收集纯 Dart 计算所需输入（全部可跨 isolate 传递）。
+      // mask：useMask 且有分割 mask 时传入计算域小图。
+      final seg = _ref.read(segmentProvider);
+      final segMask = (useMask && seg.mask != null) ? seg.mask! : null;
+      final input = PatternComputeInput(
+        imgRgb: img.rgbBytes,
+        imgW: img.width,
+        imgH: img.height,
+        gw: gw,
+        gh: gh,
+        colorLimit: colorLimit,
         salience: salience,
         dither: dither,
         ditherStrength: ditherStrength,
         icmSmooth: icmSmooth,
+        metric: metric,
+        palette: palette,
+        segMask: segMask,
+        segW: seg.width,
+        segH: seg.height,
       );
 
-      // 3) 逐豆 code
-      final codes = PatternRender.buildCodes(palette, qres.rgb, gw, gh);
+      // 下采样→量化(ICM/抖动)→逐豆色号→mask 对齐→BOM 整条纯 Dart 链
+      // 移到后台 isolate 跑，主 isolate 持续 pump 帧（颜文字/指示灯不冻结）。
+      final res = await compute(runPatternPipeline, input);
 
-      // 4) beadMask：useMask 且有分割 mask 时，把 mask 对齐到豆网格
-      //    （对称清写：不勾/无 mask 一律 null，不残留旧遮罩 → 对齐桌面修复）
-      List<bool>? beadMask;
-      final seg = _ref.read(segmentProvider);
-      if (useMask && seg.mask != null) {
-        beadMask = PatternRender.maskToBeadGrid(
-            seg.mask!, seg.width, seg.height, gw, gh);
-      }
-
-      // 5) BOM（mask 时只计前景）
-      final bom = PatternRender.buildBom(
-        palette, qres.usage, gw * gh,
-        beadMask: beadMask, codes: codes,
-      );
-      final totalBeads =
-          beadMask == null ? gw * gh : beadMask.where((b) => b).length;
-
-      // 6) 渲染完整图纸（离线录制一次成 ui.Image）
+      // 渲染完整图纸（dart:ui 必须留在主 isolate；离线录制一次成 ui.Image）
       final chart = await ChartPainter.render(
-        quantRgb: qres.rgb,
+        quantRgb: res.quantRgb,
         gw: gw,
         gh: gh,
-        codes: codes,
+        codes: res.codes,
         palette: palette,
-        bom: bom,
-        beadMask: beadMask,
+        bom: res.bom,
+        beadMask: res.beadMask,
         fadeMasked: maskBg == 'none',
         maskBg: maskBg,
         title: _ref.read(showChartTitleProvider)
@@ -1285,8 +1293,8 @@ class PatternNotifier extends StateNotifier<PatternState> {
                 : _ref.read(sourceNameProvider))
             : null,
         brand: Palette.brandLabels[_ref.read(brandProvider)],
-        colorCount: bom.length,
-        totalBeads: totalBeads,
+        colorCount: res.bom.length,
+        totalBeads: res.totalBeads,
         beadStyle: _ref.read(beadStyleProvider),
       );
 
@@ -1295,18 +1303,18 @@ class PatternNotifier extends StateNotifier<PatternState> {
       state = state.copyWith(
         gw: gw,
         gh: gh,
-        codes: codes,
-        beadMask: beadMask,
-        clearBeadMask: beadMask == null,
-        bom: bom,
-        totalBeads: totalBeads,
+        codes: res.codes,
+        beadMask: res.beadMask,
+        clearBeadMask: res.beadMask == null,
+        bom: res.bom,
+        totalBeads: res.totalBeads,
         chartImage: chart,
         version: state.version + 1,
         busy: false,
       );
       _ref.read(busyProvider.notifier).refresh();
       _ref.read(viewModeProvider.notifier).state = CanvasViewMode.pattern;
-      _status('图纸已生成：$gw×$gh · ${bom.length} 色 · $totalBeads 豆');
+      _status('图纸已生成：$gw×$gh · ${res.bom.length} 色 · ${res.totalBeads} 豆');
     } catch (e) {
       state = state.copyWith(busy: false);
       _ref.read(busyProvider.notifier).refresh();
@@ -1341,11 +1349,16 @@ class BoardState {
   final String? color;            // 当前色号
   final int brush;                // 笔触粗细（格 1-3）
   final String style;             // real 真实风 | square 图纸风
-  // 底图（裁剪好的正方形，叠加显示）
+  // 底图（整图 ui.Image，按 缩放+偏移 等比例叠加显示，超出画板裁切）
   final ui.Image? baseImage;
-  final int baseSide;             // 底图边长（px）
+  final int baseW;                // 源图宽（px）
+  final int baseH;                // 源图高（px）
+  final double baseScale;         // 缩放：1 源像素渲染为 baseScale 格（等比例）
+  final double baseOffX;          // 底图左上角偏移（画板格坐标，可为负）
+  final double baseOffY;
   final bool baseVisible;
   final double baseOpacity;
+  final bool baseAdjusting;       // 「调整底图」模式开关（与涂色互斥，画布缩放锁定）
   // 撤/重栈：每条 = 一次笔画改动的格子 [(index, oldCode, newCode)]
   final List<List<(int, String?, String?)>> undo;
   final List<List<(int, String?, String?)>> redo;
@@ -1361,9 +1374,14 @@ class BoardState {
     this.brush = 1,
     this.style = 'real',
     this.baseImage,
-    this.baseSide = 0,
+    this.baseW = 0,
+    this.baseH = 0,
+    this.baseScale = 1.0,
+    this.baseOffX = 0.0,
+    this.baseOffY = 0.0,
     this.baseVisible = true,
     this.baseOpacity = 0.35,
+    this.baseAdjusting = false,
     this.undo = const [],
     this.redo = const [],
     this.version = 0,
@@ -1376,7 +1394,9 @@ class BoardState {
   BoardState copyWith({
     int? size, String? brand, List<String?>? grid, Palette? palette,
     BoardTool? tool, String? color, int? brush, String? style,
-    ui.Image? baseImage, int? baseSide, bool? baseVisible, double? baseOpacity,
+    ui.Image? baseImage, int? baseW, int? baseH, double? baseScale,
+    double? baseOffX, double? baseOffY, bool? baseVisible, double? baseOpacity,
+    bool? baseAdjusting,
     List<List<(int, String?, String?)>>? undo,
     List<List<(int, String?, String?)>>? redo,
     int? version, bool clearBase = false,
@@ -1391,9 +1411,14 @@ class BoardState {
         brush: brush ?? this.brush,
         style: style ?? this.style,
         baseImage: clearBase ? null : (baseImage ?? this.baseImage),
-        baseSide: clearBase ? 0 : (baseSide ?? this.baseSide),
+        baseW: clearBase ? 0 : (baseW ?? this.baseW),
+        baseH: clearBase ? 0 : (baseH ?? this.baseH),
+        baseScale: clearBase ? 1.0 : (baseScale ?? this.baseScale),
+        baseOffX: clearBase ? 0.0 : (baseOffX ?? this.baseOffX),
+        baseOffY: clearBase ? 0.0 : (baseOffY ?? this.baseOffY),
         baseVisible: baseVisible ?? this.baseVisible,
         baseOpacity: baseOpacity ?? this.baseOpacity,
+        baseAdjusting: clearBase ? false : (baseAdjusting ?? this.baseAdjusting),
         undo: undo ?? this.undo,
         redo: redo ?? this.redo,
         version: version ?? this.version,
@@ -1428,6 +1453,7 @@ class BoardNotifier extends StateNotifier<BoardState> {
   /// 确保画板已建（进入画板时若未建则按当前规格/品牌建）。
   Future<void> ensure() async {
     if (!state.hasBoard) await newBoard(state.size, state.brand);
+    await restoreBaseTransform();   // 读回持久化的底图变换/透明度/可见性
   }
 
   void setTool(BoardTool t) => state = state.copyWith(tool: t);
@@ -1437,24 +1463,123 @@ class BoardNotifier extends StateNotifier<BoardState> {
   void setBrush(int b) => state = state.copyWith(brush: b.clamp(1, 3));
   void setStyle(String s) =>
       state = state.copyWith(style: s, version: state.version + 1);
-  void setBaseVisible(bool v) =>
-      state = state.copyWith(baseVisible: v, version: state.version + 1);
-  void setBaseOpacity(double o) => state =
-      state.copyWith(baseOpacity: o.clamp(0.0, 1.0), version: state.version + 1);
+  void setBaseVisible(bool v) {
+    state = state.copyWith(baseVisible: v, version: state.version + 1);
+    _persistBaseTransform();
+  }
 
-  /// 设置底图（已裁剪的正方形 ui.Image + 边长）。
-  void setBase(ui.Image img, int side) {
+  void setBaseOpacity(double o) {
+    state = state.copyWith(
+        baseOpacity: o.clamp(0.0, 1.0), version: state.version + 1);
+    _persistBaseTransform();
+  }
+
+  /// 设置底图（整图 ui.Image）：默认等比例铺满画板（超出裁切）并居中。
+  void setBase(ui.Image img) {
     state.baseImage?.dispose();
+    final dim = state.size.toDouble();
+    final sw = img.width.toDouble(), sh = img.height.toDouble();
+    final scale = (dim / sw) > (dim / sh) ? dim / sw : dim / sh;   // max → 铺满
     state = state.copyWith(
         baseImage: img,
-        baseSide: side,
+        baseW: img.width,
+        baseH: img.height,
+        baseScale: scale,
+        baseOffX: (dim - sw * scale) / 2,
+        baseOffY: (dim - sh * scale) / 2,
         baseVisible: true,
         version: state.version + 1);
+    _persistBaseTransform();
   }
 
   void clearBase() {
     state.baseImage?.dispose();
     state = state.copyWith(clearBase: true, version: state.version + 1);
+    _clearPersistedBase();
+  }
+
+  // ---- 底图调整状态机：进入快照 → 手势实时改 scale/偏移 → 保存持久化 / 取消回滚 ----
+  (double, double, double)? _baseSnap;   // (scale, offx, offy)
+
+  void enterBaseAdjust() {
+    if (state.baseImage == null) return;
+    _baseSnap = (state.baseScale, state.baseOffX, state.baseOffY);
+    state = state.copyWith(baseAdjusting: true, version: state.version + 1);
+  }
+
+  void cancelBaseAdjust() {
+    final s = _baseSnap;
+    _baseSnap = null;
+    if (s != null) {
+      state = state.copyWith(
+          baseScale: s.$1, baseOffX: s.$2, baseOffY: s.$3,
+          baseAdjusting: false, version: state.version + 1);
+    } else {
+      state = state.copyWith(baseAdjusting: false, version: state.version + 1);
+    }
+  }
+
+  void saveBaseAdjust() {
+    _baseSnap = null;
+    state = state.copyWith(baseAdjusting: false, version: state.version + 1);
+    _persistBaseTransform();
+  }
+
+  /// 手势中实时更新底图变换（等比例缩放 + 平移）。
+  void setBaseTransform(double scale, double offx, double offy) {
+    state = state.copyWith(
+        baseScale: scale.clamp(0.02, 40.0),
+        baseOffX: offx, baseOffY: offy,
+        version: state.version + 1);
+  }
+
+  // ---- 底图变换本地持久化（shared_preferences），重启 App 保留 ----
+  static const _kBaseScale = 'board_base_scale';
+  static const _kBaseOffX = 'board_base_offx';
+  static const _kBaseOffY = 'board_base_offy';
+  static const _kBaseOpacity = 'board_base_opacity';
+  static const _kBaseVisible = 'board_base_visible';
+
+  Future<void> _persistBaseTransform() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setDouble(_kBaseScale, state.baseScale);
+      await p.setDouble(_kBaseOffX, state.baseOffX);
+      await p.setDouble(_kBaseOffY, state.baseOffY);
+      await p.setDouble(_kBaseOpacity, state.baseOpacity);
+      await p.setBool(_kBaseVisible, state.baseVisible);
+    } catch (_) {}
+  }
+
+  Future<void> _clearPersistedBase() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.remove(_kBaseScale);
+      await p.remove(_kBaseOffX);
+      await p.remove(_kBaseOffY);
+      await p.remove(_kBaseOpacity);
+      await p.remove(_kBaseVisible);
+    } catch (_) {}
+  }
+
+  /// 读回持久化的底图变换（ensure/建板后调用；仅当已有底图时应用缩放/偏移）。
+  Future<void> restoreBaseTransform() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final op = p.getDouble(_kBaseOpacity);
+      final vis = p.getBool(_kBaseVisible);
+      double? sc, ox, oy;
+      if (state.baseImage != null) {
+        sc = p.getDouble(_kBaseScale);
+        ox = p.getDouble(_kBaseOffX);
+        oy = p.getDouble(_kBaseOffY);
+      }
+      state = state.copyWith(
+        baseOpacity: op, baseVisible: vis,
+        baseScale: sc, baseOffX: ox, baseOffY: oy,
+        version: state.version + 1,
+      );
+    } catch (_) {}
   }
 
   /// 应用一组格子改动为新的一笔（入撤销栈，清重做栈，cap 5）。
