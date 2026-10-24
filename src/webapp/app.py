@@ -337,10 +337,19 @@ async def grabcut_refine(fgd: UploadFile | None = File(None),
 class AutoSegReq(BaseModel):
     method: str                      # u2netp | grabcut_rect | watershed | otsu | slic
     rect: list[int] | None = None    # grabcut_rect [x1,y1,x2,y2]
-    fg_ratio: float = 0.4            # watershed
+    foreground_strength: float | None = None  # u2netp / watershed: higher -> more foreground
+    fg_ratio: float = 0.4            # legacy watershed distance ratio
     n_segments: int = 150            # slic
     provider: str = "auto"           # u2netp: auto | cpu | directml | cuda
-    threshold: float = 0.5           # u2netp foreground threshold
+    threshold: float = 0.5           # legacy u2netp probability threshold
+
+
+def _strength_complement(value: float) -> float:
+    """Convert the UI's 0-1 foreground strength to an internal threshold."""
+    value = float(value)
+    if not 0.0 <= value <= 1.0:
+        raise HTTPException(400, detail="前景强度必须在 0 到 1 之间")
+    return 1.0 - value
 
 
 @app.get("/api/segment/neural/status")
@@ -355,14 +364,18 @@ def segment_auto(req: AutoSegReq):
     if req.method == "u2netp":
         from src.utils.neural_segmentation import U2NetPSegmenter
         segmenter = U2NetPSegmenter(provider=req.provider)
-        mask = _err(segmenter.segment, img, float(req.threshold))
+        threshold = (float(req.threshold) if req.foreground_strength is None
+                     else _strength_complement(req.foreground_strength))
+        mask = _err(segmenter.segment, img, threshold)
     else:
         s = segmod.ImageSegmentation()
         if req.method == "grabcut_rect":
             r = req.rect or [10, 10, img.shape[1] - 20, img.shape[0] - 20]
             mask = _err(s.grabcut_rect, img, r[0], r[1], r[2], r[3])
         elif req.method == "watershed":
-            mask = _err(s.watershed_auto, img, float(req.fg_ratio))
+            fg_ratio = (float(req.fg_ratio) if req.foreground_strength is None
+                        else _strength_complement(req.foreground_strength))
+            mask = _err(s.watershed_auto, img, fg_ratio)
         elif req.method == "otsu":
             mask = _err(s.otsu_segment, img)
         elif req.method == "slic":

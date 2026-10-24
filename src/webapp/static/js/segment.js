@@ -63,9 +63,9 @@
           <option value="cuda">CUDA（NVIDIA GPU）</option>
         </select>
       </div>
-      <div class="slider-row" id="neuralThresholdRow"><label>前景阈值</label><input type="range" id="neuralThreshold" min="0.1" max="0.9" step="0.05" value="0.5" data-tip="U²-Netp：越低保留越多前景，越高边缘越保守"><output id="neuralThresholdOut">0.50</output></div>
+      <div class="slider-row" id="neuralStrengthRow"><label>前景强度</label><input type="range" id="neuralStrength" min="0" max="1" step="0.01" value="0.5" data-tip="U²-Netp：数值越大，最终保留的前景越多；越小则越少。可调范围为 0～1。"><output id="neuralStrengthOut">0.50</output></div>
       <p class="hint" id="neuralStatus" style="margin:4px 0 8px">正在检测神经分割模型与计算后端…</p>
-      <div class="slider-row" id="wsRow" style="display:none"><label>前景比例</label><input type="range" id="fgRatio" min="0.1" max="0.9" step="0.05" value="0.4" data-tip="分水岭：估计前景占图像的比例，用于定位种子点。前景越大调越大。"><output id="fgRatioOut">0.40</output></div>
+      <div class="slider-row" id="wsRow" style="display:none"><label>前景强度</label><input type="range" id="watershedStrength" min="0" max="1" step="0.01" value="0.6" data-tip="分水岭：数值越大，最终保留的前景越多；越小则越少。可调范围为 0～1。"><output id="watershedStrengthOut">0.60</output></div>
       <div class="slider-row" id="slicRow" style="display:none"><label>超像素数</label><input type="range" id="nSeg" min="50" max="400" step="10" value="150" data-tip="SLIC：把图像聚成多少个超像素块，越多越精细、越慢。"><output id="nSegOut">150</output></div>
       <button class="btn btn-primary" id="autoSegBtn" style="width:100%;margin-top:8px" data-tip="按所选方法自动分割出前景 Mask">执行分割</button>
       <button class="btn btn-ghost" id="autoApplyBtn" style="width:100%;margin-top:6px" data-tip="保留原图与 Mask，生成图纸仅用前景、背景不计入 BOM">应用分割结果</button>
@@ -115,8 +115,8 @@
     });
   }
   window.bindEditable('brushSize', 'brushSizeOut', { fmt: v => v, onChange: v => { scribble.brushSize = v; updateBrushDots(v); } });
-  window.bindEditable('fgRatio', 'fgRatioOut', { fmt: v => (+v).toFixed(2) });
-  window.bindEditable('neuralThreshold', 'neuralThresholdOut', { fmt: v => (+v).toFixed(2) });
+  window.bindEditable('watershedStrength', 'watershedStrengthOut', { fmt: v => (+v).toFixed(2) });
+  window.bindEditable('neuralStrength', 'neuralStrengthOut', { fmt: v => (+v).toFixed(2) });
   window.bindEditable('nSeg', 'nSegOut', { fmt: v => v });
   window.bindEditable('morphK', 'morphKOut', { fmt: v => v });
 
@@ -396,15 +396,18 @@
   });
 
   /* ---- 自动分割（方法下拉 + 参数区显隐） ---- */
-  $('segMethod').addEventListener('change', () => {
+  function syncAutoSegParams() {
     const m = $('segMethod').value;
     const neural = m === 'u2netp';
     $('neuralProviderRow').style.display = neural ? '' : 'none';
-    $('neuralThresholdRow').style.display = neural ? '' : 'none';
+    $('neuralStrengthRow').style.display = neural ? '' : 'none';
     $('neuralStatus').style.display = neural ? '' : 'none';
     $('wsRow').style.display = m === 'watershed' ? '' : 'none';
     $('slicRow').style.display = m === 'slic' ? '' : 'none';
-  });
+  }
+  $('segMethod').addEventListener('change', syncAutoSegParams);
+  // 默认就是模型方案：DOM 注入后立即同步，不能等异步后端检测或首次切换。
+  syncAutoSegParams();
   async function refreshNeuralStatus() {
     const label = $('neuralStatus');
     try {
@@ -422,23 +425,23 @@
         ? 'U²-Netp 已就绪 · 可用：' + names.join('、')
         : '神经分割不可用：请检查模型和 ONNX Runtime，其他算法仍可使用';
       if (!ready && $('segMethod').value === 'u2netp') {
-        $('segMethod').value = 'watershed';
-        $('segMethod').dispatchEvent(new Event('change'));
+        if ($('segMethod')._gsel) $('segMethod')._gsel.setValue('watershed', true);
+        else { $('segMethod').value = 'watershed'; syncAutoSegParams(); }
       }
     } catch (err) {
       label.textContent = '神经分割状态检测失败，其他算法仍可使用';
     }
   }
   refreshNeuralStatus();
-  $('segMethod').dispatchEvent(new Event('change'));
   $('autoSegBtn').addEventListener('click', async () => {
     const m = $('segMethod').value;
     window.exitCropInteraction?.();   // 进入新交互先退裁剪
     try {
       busy.start(m === 'u2netp' ? 'U²-Netp 神经分割中…' : '自动分割中…');
       const req = {
-        method: m, fg_ratio: +$('fgRatio').value, n_segments: +$('nSeg').value,
-        provider: $('neuralProvider').value, threshold: +$('neuralThreshold').value,
+        method: m, n_segments: +$('nSeg').value,
+        foreground_strength: +(m === 'watershed' ? $('watershedStrength').value : $('neuralStrength').value),
+        provider: $('neuralProvider').value,
       };
       await API.segmentAuto(req);   // 触发后端分割；返回值是 mask blob，不直接显示
       // 自动分割后显示 原图+高亮（非 mask），与初始分割对齐
