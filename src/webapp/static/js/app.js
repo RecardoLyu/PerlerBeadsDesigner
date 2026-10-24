@@ -221,7 +221,7 @@
       try { viewer.setImage(await API.patternChart(window._chartReq())); } catch (e) {}
     }
   });
-  /* 豆子风格下拉：改后立即重渲预览并持久化 */
+  /* 预览风格下拉：改后立即重渲并持久化，默认真实。 */
   $('beadStyle').addEventListener('change', async () => {
     if (window.saveSettings) window.saveSettings({ beadStyle: $('beadStyle').value });
     const s = await API.status();
@@ -300,16 +300,21 @@
     } catch (err) { window.fail('设置输出路径失败: ' + err.message); }
   });
 
-  /* 导出图纸：只导 PNG，按图纸大小直接生图 */
+  /* 导出与预览风格独立：默认图纸，可单选或同时导出真实与图纸。 */
   $('exportBtn').addEventListener('click', async () => {
     try {
+      const beadStyles = [
+        ...($('exportStyleReal').checked ? ['real'] : []),
+        ...($('exportStyleSquare').checked ? ['square'] : []),
+      ];
+      if (!beadStyles.length) { window.fail('请至少选择一种导出风格'); return; }
       busy.start('导出中…');
       const res = await API.export({
         filename: $('expName').value || 'pattern',
         png_scale: +$('expScale').value,
         mask_bg: $('maskBg') ? $('maskBg').value : 'none',
         show_title: $('showTitle') ? $('showTitle').checked : false,
-        bead_style: $('beadStyle') ? $('beadStyle').value : 'real',
+        bead_styles: beadStyles,
         export_bom: $('exportBom') ? $('exportBom').checked : false,
       });
       $('expResult').textContent = '已导出到 ' + res.output_dir + ': ' + res.files.map(f => f.split(/[\\/]/).pop()).join('、');

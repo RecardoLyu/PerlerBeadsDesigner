@@ -1198,6 +1198,57 @@ class PatternNotifier extends StateNotifier<PatternState> {
   /// [maskBg] none/white/black（对应桌面 MASK 背景：淡化/纯白/纯黑）。
   /// 上次成功生成的参数（风格切换/重渲染时复用，无需重传）。
   Map<String, dynamic>? _lastGenArgs;
+  PatternComputeResult? _lastResult;
+  Palette? _lastPalette;
+  int _lastGw = 0, _lastGh = 0;
+  String _lastMaskBg = 'none';
+  String _lastBrand = 'mard';
+
+  Future<ui.Image> _renderResult(
+    PatternComputeResult res,
+    Palette palette, {
+    required int gw,
+    required int gh,
+    required String maskBg,
+    required String brand,
+    required String style,
+    required String? title,
+  }) =>
+      ChartPainter.render(
+        quantRgb: res.quantRgb,
+        gw: gw,
+        gh: gh,
+        codes: res.codes,
+        palette: palette,
+        bom: res.bom,
+        beadMask: res.beadMask,
+        fadeMasked: maskBg == 'none',
+        maskBg: maskBg,
+        title: title,
+        brand: Palette.brandLabels[brand],
+        colorCount: res.bom.length,
+        totalBeads: res.totalBeads,
+        beadStyle: style,
+      );
+
+  /// 按导出风格重渲染同一份网格，不改变当前预览，也不重新量化。
+  Future<ui.Image> renderChart({required String style, String? title}) {
+    final res = _lastResult;
+    final palette = _lastPalette;
+    if (res == null || palette == null) {
+      throw StateError('请先生成图纸');
+    }
+    return _renderResult(
+      res,
+      palette,
+      gw: _lastGw,
+      gh: _lastGh,
+      maskBg: _lastMaskBg,
+      brand: _lastBrand,
+      style: style,
+      title: title,
+    );
+  }
 
   Future<void> generate({
     int? gw,
@@ -1277,26 +1328,27 @@ class PatternNotifier extends StateNotifier<PatternState> {
       final res = await compute(runPatternPipeline, input);
 
       // 渲染完整图纸（dart:ui 必须留在主 isolate；离线录制一次成 ui.Image）
-      final chart = await ChartPainter.render(
-        quantRgb: res.quantRgb,
+      final brand = _ref.read(brandProvider);
+      final chart = await _renderResult(
+        res,
+        palette,
         gw: gw,
         gh: gh,
-        codes: res.codes,
-        palette: palette,
-        bom: res.bom,
-        beadMask: res.beadMask,
-        fadeMasked: maskBg == 'none',
         maskBg: maskBg,
+        brand: brand,
+        style: _ref.read(beadStyleProvider),
         title: _ref.read(showChartTitleProvider)
             ? (_ref.read(exportNameProvider).trim().isNotEmpty
                 ? _ref.read(exportNameProvider).trim()
                 : _ref.read(sourceNameProvider))
             : null,
-        brand: Palette.brandLabels[_ref.read(brandProvider)],
-        colorCount: res.bom.length,
-        totalBeads: res.totalBeads,
-        beadStyle: _ref.read(beadStyleProvider),
       );
+      _lastResult = res;
+      _lastPalette = palette;
+      _lastGw = gw;
+      _lastGh = gh;
+      _lastMaskBg = maskBg;
+      _lastBrand = brand;
 
       // 成功：dispose 旧图纸 + version+1，就绪后再切到图纸视图（仿分割自动切 mask）
       state.chartImage?.dispose();
@@ -1325,6 +1377,9 @@ class PatternNotifier extends StateNotifier<PatternState> {
   /// 清空图纸（图像更换/恢复时调用）。
   void reset() {
     state.chartImage?.dispose();
+    _lastResult = null;
+    _lastPalette = null;
+    _lastGenArgs = null;
     state = const PatternState();
   }
 }

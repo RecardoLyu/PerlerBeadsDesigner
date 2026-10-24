@@ -4,7 +4,7 @@ import '../../algo/quantizer.dart';
 import '../../state/app_state.dart';
 import '../../theme/candy_theme.dart';
 
-/// 图纸画板画布：实时 CustomPainter 绘制底板 + 网格 + 真实风豆子
+/// 图纸画板画布：实时 CustomPainter 绘制底板 + 网格 + 真实豆子
 /// （比例同 ChartPainter._drawBead），单指绘制、双指捏合缩放/平移。
 /// 手势与交互逻辑对齐 canvas_area.dart 的瞬时手势模型。
 class BoardCanvas extends ConsumerStatefulWidget {
@@ -228,7 +228,7 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
                 }),
               ),
             ),
-            // 画布上方：真实风/图纸风 切换入口（与电脑端画板态顶部切换对齐）
+            // 画布上方：真实/图纸 切换入口（与电脑端画板态顶部切换对齐）
             Positioned(
               top: 12, left: 0, right: 0,
               child: Center(
@@ -242,9 +242,9 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _StylePill(label: '真实风', selected: b.style == 'real',
+                      _StylePill(label: '真实', selected: b.style == 'real',
                           onTap: () => ref.read(boardProvider.notifier).setStyle('real')),
-                      _StylePill(label: '图纸风', selected: b.style == 'square',
+                      _StylePill(label: '图纸', selected: b.style == 'square',
                           onTap: () => ref.read(boardProvider.notifier).setStyle('square')),
                     ],
                   ),
