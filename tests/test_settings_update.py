@@ -31,7 +31,7 @@ def test_settings_default_when_no_file(state_tmp):
     assert s["width"] == 104
     assert s["metric"] == "ciede2000"
     assert s["theme"] == "system"
-    assert s["segMethod"] == "watershed"
+    assert s["segMethod"] == "u2netp"
 
 
 def test_settings_roundtrip(state_tmp):

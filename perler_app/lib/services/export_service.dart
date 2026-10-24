@@ -10,7 +10,7 @@ class ExportService {
 
   static const _channel = MethodChannel('perler_app/export');
 
-  /// 导出分辨率档（对应原「纸张 A4/Letter」，改为按输出宽度像素）。
+  /// PNG 导出分辨率档，按输出宽度像素选择。
   /// label 展示给用户；widthPx 为目标图宽（高按图纸纵横比自适应）。
   static const resolutions = <(String, int)>[
     ('1080P', 1080),

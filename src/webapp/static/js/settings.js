@@ -69,6 +69,7 @@
       <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>分割默认参数</h3>
       <div class="num-row"><label>默认方法</label>
         <select class="sel" id="sSegMethod">
+          <option value="u2netp">U²-Netp（推荐）</option>
           <option value="grabcut_rect">GrabCut矩形</option>
           <option value="watershed">分水岭</option>
           <option value="otsu">Otsu</option>

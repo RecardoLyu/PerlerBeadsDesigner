@@ -45,16 +45,27 @@
     </div>
 
     <div class="panel-card glass">
-      <h3 style="cursor:help" data-tip="一键自动分割：从四种算法（GrabCut矩形/分水岭/Otsu/SLIC）中选一种，点「执行分割」自动抠出前景，无需手动框选或涂抹。执行后可在「Mask / 原图+高亮」查看，再点「应用分割结果」把 Mask 保留为独立层（生成图纸仅用前景、背景不计入 BOM）。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
+      <h3 style="cursor:help" data-tip="一键自动分割：优先使用 U²-Netp 轻量神经网络，也可选择 GrabCut矩形、分水岭、Otsu 或 SLIC。执行后可在「Mask / 原图+高亮」查看，再点「应用分割结果」把 Mask 保留为独立层（生成图纸仅用前景、背景不计入 BOM）。"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h3>
       <div class="num-row"><label>方法</label>
         <select class="sel" id="segMethod" data-tip="自动分割算法选择">
+          <option value="u2netp" selected data-tip="轻量神经网络通用显著物体分割，适合人物、玩具和手工作品；结果可用 GrabCut 或形态学继续修正">U²-Netp（推荐）</option>
           <option value="grabcut_rect" data-tip="以矩形框选初始化做迭代分割，适合边界清晰的主体">GrabCut矩形</option>
-          <option value="watershed" selected data-tip="按亮度梯度漫水分割，适合前景居中、对比明显的图">分水岭</option>
+          <option value="watershed" data-tip="按亮度梯度漫水分割，适合前景居中、对比明显的图">分水岭</option>
           <option value="otsu" data-tip="自动阈值二值化，适合明暗反差大的图">Otsu</option>
           <option value="slic" data-tip="超像素聚类分割，适合颜色块分明的图">SLIC</option>
         </select>
       </div>
-      <div class="slider-row" id="wsRow"><label>前景比例</label><input type="range" id="fgRatio" min="0.1" max="0.9" step="0.05" value="0.4" data-tip="分水岭：估计前景占图像的比例，用于定位种子点。前景越大调越大。"><output id="fgRatioOut">0.40</output></div>
+      <div class="num-row" id="neuralProviderRow"><label>计算后端</label>
+        <select class="sel" id="neuralProvider" data-tip="自动优先使用可用 GPU，无可用 GPU 时使用 CPU；也可强制指定后端">
+          <option value="auto">自动（GPU／CPU）</option>
+          <option value="cpu">CPU</option>
+          <option value="directml">DirectML（GPU）</option>
+          <option value="cuda">CUDA（NVIDIA GPU）</option>
+        </select>
+      </div>
+      <div class="slider-row" id="neuralThresholdRow"><label>前景阈值</label><input type="range" id="neuralThreshold" min="0.1" max="0.9" step="0.05" value="0.5" data-tip="U²-Netp：越低保留越多前景，越高边缘越保守"><output id="neuralThresholdOut">0.50</output></div>
+      <p class="hint" id="neuralStatus" style="margin:4px 0 8px">正在检测神经分割模型与计算后端…</p>
+      <div class="slider-row" id="wsRow" style="display:none"><label>前景比例</label><input type="range" id="fgRatio" min="0.1" max="0.9" step="0.05" value="0.4" data-tip="分水岭：估计前景占图像的比例，用于定位种子点。前景越大调越大。"><output id="fgRatioOut">0.40</output></div>
       <div class="slider-row" id="slicRow" style="display:none"><label>超像素数</label><input type="range" id="nSeg" min="50" max="400" step="10" value="150" data-tip="SLIC：把图像聚成多少个超像素块，越多越精细、越慢。"><output id="nSegOut">150</output></div>
       <button class="btn btn-primary" id="autoSegBtn" style="width:100%;margin-top:8px" data-tip="按所选方法自动分割出前景 Mask">执行分割</button>
       <button class="btn btn-ghost" id="autoApplyBtn" style="width:100%;margin-top:6px" data-tip="保留原图与 Mask，生成图纸仅用前景、背景不计入 BOM">应用分割结果</button>
@@ -105,6 +116,7 @@
   }
   window.bindEditable('brushSize', 'brushSizeOut', { fmt: v => v, onChange: v => { scribble.brushSize = v; updateBrushDots(v); } });
   window.bindEditable('fgRatio', 'fgRatioOut', { fmt: v => (+v).toFixed(2) });
+  window.bindEditable('neuralThreshold', 'neuralThresholdOut', { fmt: v => (+v).toFixed(2) });
   window.bindEditable('nSeg', 'nSegOut', { fmt: v => v });
   window.bindEditable('morphK', 'morphKOut', { fmt: v => v });
 
@@ -386,16 +398,48 @@
   /* ---- 自动分割（方法下拉 + 参数区显隐） ---- */
   $('segMethod').addEventListener('change', () => {
     const m = $('segMethod').value;
+    const neural = m === 'u2netp';
+    $('neuralProviderRow').style.display = neural ? '' : 'none';
+    $('neuralThresholdRow').style.display = neural ? '' : 'none';
+    $('neuralStatus').style.display = neural ? '' : 'none';
     $('wsRow').style.display = m === 'watershed' ? '' : 'none';
     $('slicRow').style.display = m === 'slic' ? '' : 'none';
   });
+  async function refreshNeuralStatus() {
+    const label = $('neuralStatus');
+    try {
+      const st = await API.neuralStatus();
+      const available = st.providers || [];
+      [...$('neuralProvider').options].forEach(opt => {
+        if (opt.value === 'auto') return;
+        const technical = { cpu: 'CPUExecutionProvider', directml: 'DmlExecutionProvider', cuda: 'CUDAExecutionProvider' }[opt.value];
+        opt.disabled = !available.includes(technical);
+      });
+      const ready = st.model_available && available.length > 0;
+      $('segMethod').querySelector('option[value="u2netp"]').disabled = !ready;
+      const names = available.map(p => (st.provider_labels || {})[p] || p);
+      label.textContent = ready
+        ? 'U²-Netp 已就绪 · 可用：' + names.join('、')
+        : '神经分割不可用：请检查模型和 ONNX Runtime，其他算法仍可使用';
+      if (!ready && $('segMethod').value === 'u2netp') {
+        $('segMethod').value = 'watershed';
+        $('segMethod').dispatchEvent(new Event('change'));
+      }
+    } catch (err) {
+      label.textContent = '神经分割状态检测失败，其他算法仍可使用';
+    }
+  }
+  refreshNeuralStatus();
   $('segMethod').dispatchEvent(new Event('change'));
   $('autoSegBtn').addEventListener('click', async () => {
     const m = $('segMethod').value;
     window.exitCropInteraction?.();   // 进入新交互先退裁剪
     try {
-      busy.start('自动分割中…');
-      const req = { method: m, fg_ratio: +$('fgRatio').value, n_segments: +$('nSeg').value };
+      busy.start(m === 'u2netp' ? 'U²-Netp 神经分割中…' : '自动分割中…');
+      const req = {
+        method: m, fg_ratio: +$('fgRatio').value, n_segments: +$('nSeg').value,
+        provider: $('neuralProvider').value, threshold: +$('neuralThreshold').value,
+      };
       await API.segmentAuto(req);   // 触发后端分割；返回值是 mask blob，不直接显示
       // 自动分割后显示 原图+高亮（非 mask），与初始分割对齐
       setMaskView();
@@ -509,7 +553,7 @@
 
   /* ---- 自绘玻璃下拉增强（逐选项悬停出 tooltip） ---- */
   if (window.Dropdown) {
-    ['igcShape', 'segMethod', 'morphOp', 'morphShape'].forEach(id => {
+    ['igcShape', 'segMethod', 'neuralProvider', 'morphOp', 'morphShape'].forEach(id => {
       const el = $(id); if (el) window.Dropdown.enhance(el);
     });
     // morphShape 自绘下拉 change 后联动示意图

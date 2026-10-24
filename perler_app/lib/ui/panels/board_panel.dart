@@ -318,7 +318,7 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
           ]),
         ),
         CandyButton(
-          label: _saving ? '导出中…' : '导出 PNG + BOM',
+          label: _saving ? '导出中…' : '导出 PNG 到相册',
           icon: Icons.bolt_rounded,
           onPressed: _saving ? null : _export,
         ),

@@ -35,6 +35,7 @@ a = Analysis(
     hiddenimports=[
         'cv2',
         'numpy',
+        'onnxruntime',
         'PIL',
         'PIL.Image',
         # FastAPI / uvicorn ASGI server (lazy-loaded submodules PyInstaller misses)

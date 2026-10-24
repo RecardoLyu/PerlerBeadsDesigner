@@ -72,8 +72,8 @@ class AppState:
         "width": 104, "keepRatio": True, "maxColors": 0, "salience": 1.0,
         "metric": "ciede2000", "dither": False, "ditherStrength": 1.0,
         "icm": False, "icmSmooth": 0.5, "brand": "mard", "maskBg": "none",
-        # 分割默认参数
-        "segMethod": "watershed", "brushSize": 12,
+        # 分割默认参数（桌面端优先轻量神经分割，旧用户设置保持不变）
+        "segMethod": "u2netp", "brushSize": 12,
         # 外观
         "theme": "system",
         # 图片换肤（skinImage 非空即启用；skinColor 主色、skinAccent 辅助色 hex 或空串；

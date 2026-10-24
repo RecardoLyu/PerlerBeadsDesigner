@@ -136,6 +136,7 @@
             <hr style="border:none;border-top:1px solid var(--color-border);margin:12px 0">
             <div class="num-row"><label>文件名</label><input type="text" id="expName" value="pattern" style="flex:1;padding:7px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13px"></div>
             <div class="check-row"><input type="checkbox" id="showTitle"><label for="showTitle" data-tip="勾选后把上方文件名画到图纸顶部居中标题；默认不勾，图纸不显示文件名">在图纸上显示文件名</label></div>
+            <div class="check-row"><input type="checkbox" id="exportBom"><label for="exportBom" data-tip="除 PNG 图纸外，同时导出可用表格软件打开的 UTF-8 CSV 物料清单">同时导出 BOM（CSV）</label></div>
             <div class="slider-row"><label>PNG缩放</label><input type="range" id="expScale" min="0.5" max="3" step="0.25" value="1" data-tip="导出 PNG 的缩放倍数：小于 1 缩小，大于 1 放大，越大越清晰、文件越大。"><output id="expScaleOut">1×</output></div>
             <div class="num-row"><label>输出路径</label>
               <button class="btn btn-ghost" id="chooseDirBtn" data-tip="选择图纸导出的保存目录（独立窗口内用系统对话框，浏览器中请直接键入路径）">选择目录…</button>
