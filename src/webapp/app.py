@@ -337,10 +337,19 @@ async def grabcut_refine(fgd: UploadFile | None = File(None),
 class AutoSegReq(BaseModel):
     method: str                      # u2netp | grabcut_rect | watershed | otsu | slic
     rect: list[int] | None = None    # grabcut_rect [x1,y1,x2,y2]
-    fg_ratio: float = 0.4            # watershed
+    foreground_strength: float | None = None  # u2netp / watershed: higher -> more foreground
+    fg_ratio: float = 0.4            # legacy watershed distance ratio
     n_segments: int = 150            # slic
     provider: str = "auto"           # u2netp: auto | cpu | directml | cuda
-    threshold: float = 0.5           # u2netp foreground threshold
+    threshold: float = 0.5           # legacy u2netp probability threshold
+
+
+def _strength_complement(value: float) -> float:
+    """Convert the UI's 0-1 foreground strength to an internal threshold."""
+    value = float(value)
+    if not 0.0 <= value <= 1.0:
+        raise HTTPException(400, detail="前景强度必须在 0 到 1 之间")
+    return 1.0 - value
 
 
 @app.get("/api/segment/neural/status")
@@ -355,14 +364,18 @@ def segment_auto(req: AutoSegReq):
     if req.method == "u2netp":
         from src.utils.neural_segmentation import U2NetPSegmenter
         segmenter = U2NetPSegmenter(provider=req.provider)
-        mask = _err(segmenter.segment, img, float(req.threshold))
+        threshold = (float(req.threshold) if req.foreground_strength is None
+                     else _strength_complement(req.foreground_strength))
+        mask = _err(segmenter.segment, img, threshold)
     else:
         s = segmod.ImageSegmentation()
         if req.method == "grabcut_rect":
             r = req.rect or [10, 10, img.shape[1] - 20, img.shape[0] - 20]
             mask = _err(s.grabcut_rect, img, r[0], r[1], r[2], r[3])
         elif req.method == "watershed":
-            mask = _err(s.watershed_auto, img, float(req.fg_ratio))
+            fg_ratio = (float(req.fg_ratio) if req.foreground_strength is None
+                        else _strength_complement(req.foreground_strength))
+            mask = _err(s.watershed_auto, img, fg_ratio)
         elif req.method == "otsu":
             mask = _err(s.otsu_segment, img)
         elif req.method == "slic":
@@ -637,13 +650,31 @@ def pattern_preview(bead_pixel_size: int = 10):
 # --------------------------------------------------------------------------
 # Export
 # --------------------------------------------------------------------------
+def _export_styles(styles: list[str] | None, legacy: str) -> list[str]:
+    """Validate export styles while keeping the old single-style API compatible."""
+    requested = [legacy] if styles is None else styles
+    if not requested:
+        raise HTTPException(400, detail="至少选择一种导出风格")
+    if any(style not in {'real', 'square'} for style in requested):
+        raise HTTPException(400, detail="导出风格仅支持 real 或 square")
+    return list(dict.fromkeys(requested))
+
+
+def _export_name(filename: str, style: str, style_count: int) -> str:
+    """Keep legacy names for one style; disambiguate dual-style output."""
+    if style_count == 1:
+        return filename
+    return f"{filename}_{'real' if style == 'real' else 'chart'}"
+
+
 class ExportReq(BaseModel):
     filename: str = "pattern"
     output_dir: str | None = None
     png_scale: float = 1.0
     mask_bg: str = "none"            # none | white | black
     show_title: bool = False         # 是否在导出图纸顶部渲染文件名标题
-    bead_style: str = "real"         # real=真实豆子 | square=经典方格
+    bead_style: str = "real"         # 兼容旧调用：real=真实 | square=图纸
+    bead_styles: list[str] | None = None  # 可一次导出真实、图纸或两者
     export_bom: bool = False         # 桌面端可选同时导出 BOM CSV
 
 
@@ -653,6 +684,7 @@ def export(req: ExportReq):
     if gen.pattern is None:
         raise HTTPException(400, detail="尚未生成图案")
     from src.utils.export import PatternExporter
+    styles = _export_styles(req.bead_styles, req.bead_style)
     outdir = req.output_dir or STATE.output_dir
     outdir = os.path.abspath(outdir)
     os.makedirs(outdir, exist_ok=True)
@@ -660,18 +692,21 @@ def export(req: ExportReq):
     exporter = PatternExporter(outdir)
     bom = gen.bom or {}
     colors = bom.get('colors', {})
-    # 标题默认不渲染；勾选后用导出文件名
+    # 标题默认不渲染；勾选后用导出文件名。
     title = (req.filename.strip() or STATE.source_name) if req.show_title else None
-    chart = _err(gen.render_standard_chart, 30, 5, STATE.color_manager.palette,
-                 gen.bead_mask, True, mask_bg=_mask_bg(req.mask_bg),
-                 title=title,
-                 brand=STATE.color_manager.brand_label,
-                 color_count=len(colors),
-                 total_beads=int(bom.get('total_beads', 0)),
-                 bead_style=req.bead_style)
+    made = []
+    for style in styles:
+        chart = _err(gen.render_standard_chart, 30, 5,
+                     STATE.color_manager.palette, gen.bead_mask, True,
+                     mask_bg=_mask_bg(req.mask_bg), title=title,
+                     brand=STATE.color_manager.brand_label,
+                     color_count=len(colors),
+                     total_beads=int(bom.get('total_beads', 0)),
+                     bead_style=style)
+        name = _export_name(req.filename, style, len(styles))
+        made.append(exporter.export_png_standard(
+            chart, name, float(req.png_scale)))
     # 桌面端输出 PNG，可选同时导出独立 BOM CSV。
-    made = [exporter.export_png_standard(chart, req.filename,
-                                         float(req.png_scale))]
     if req.export_bom:
         made.append(exporter.export_bom_csv(
             bom, req.filename, STATE.color_manager.brand))
@@ -891,7 +926,8 @@ class BoardExportReq(BaseModel):
     output_dir: str | None = None
     png_scale: float = 1.0
     show_title: bool = False
-    bead_style: str = "real"         # real=真实风 | square=图纸风
+    bead_style: str = "real"         # 兼容旧调用：real=真实 | square=图纸
+    bead_styles: list[str] | None = None  # 新调用可一次导出 real、square 或两者
     export_bom: bool = False         # 桌面端可选同时导出 BOM CSV
 
 
@@ -900,6 +936,7 @@ def board_export(req: BoardExportReq):
     if STATE.board_grid is None:
         raise HTTPException(400, detail="尚未新建画板")
     from src.utils.export import PatternExporter
+    styles = _export_styles(req.bead_styles, req.bead_style)
     STATE.board_to_generator()
     gen = STATE.generator
     palette = STATE._board_palette()
@@ -910,15 +947,17 @@ def board_export(req: BoardExportReq):
     STATE.output_dir = outdir
     exporter = PatternExporter(outdir)
     title = req.filename.strip() if req.show_title else None
-    chart = _err(gen.render_standard_chart, 30, 5, palette,
-                 gen.bead_mask, True, mask_bg=None,
-                 title=title,
-                 brand=STATE.color_manager.BRANDS[STATE.board_brand][0],
-                 color_count=len(colors),
-                 total_beads=int(bom.get('total_beads', 0)),
-                 bead_style=req.bead_style)
-    made = [exporter.export_png_standard(chart, req.filename,
-                                         float(req.png_scale))]
+    made = []
+    for style in styles:
+        chart = _err(gen.render_standard_chart, 30, 5, palette,
+                     gen.bead_mask, True, mask_bg=None, title=title,
+                     brand=STATE.color_manager.BRANDS[STATE.board_brand][0],
+                     color_count=len(colors),
+                     total_beads=int(bom.get('total_beads', 0)),
+                     bead_style=style)
+        name = _export_name(req.filename, style, len(styles))
+        made.append(exporter.export_png_standard(
+            chart, name, float(req.png_scale)))
     if req.export_bom:
         made.append(exporter.export_bom_csv(
             bom, req.filename, STATE.board_brand))

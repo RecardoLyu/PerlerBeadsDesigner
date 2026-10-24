@@ -17,6 +17,7 @@ class ExportPanel extends ConsumerStatefulWidget {
 class _ExportPanelState extends ConsumerState<ExportPanel> {
   late final TextEditingController _nameCtrl;
   int _resIndex = 1; // 默认 2K
+  int _styleIndex = 1; // 默认导出图纸，预览仍默认真实
   bool _saving = false;
 
   @override
@@ -45,8 +46,7 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
   }
 
   Future<void> _export() async {
-    final chart = ref.read(patternProvider).chartImage;
-    if (chart == null) {
+    if (ref.read(patternProvider).chartImage == null) {
       ref.read(statusMessageProvider.notifier).state = '请先在「图纸」页生成图纸';
       return;
     }
@@ -57,13 +57,26 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
     await Future.delayed(Duration.zero);
     try {
       final widthPx = ExportService.resolutions[_resIndex].$2;
-      final name = _nameCtrl.text.trim();
-      final saved = await ExportService.saveChart(
-        chart,
-        widthPx,
-        name: name.isEmpty ? 'pattern' : name,
-      );
-      ref.read(statusMessageProvider.notifier).state = '已导出：$saved';
+      final rawName = _nameCtrl.text.trim();
+      final name = rawName.isEmpty ? 'pattern' : rawName;
+      final styles = ExportService.stylesForSelection(_styleIndex);
+      final saved = <String>[];
+      for (final style in styles) {
+        final chart = await ref.read(patternProvider.notifier).renderChart(
+          style: style,
+          title: ref.read(showChartTitleProvider) ? name : null,
+        );
+        try {
+          saved.add(await ExportService.saveChart(
+            chart,
+            widthPx,
+            name: ExportService.fileBaseName(name, style, styles.length),
+          ));
+        } finally {
+          chart.dispose();
+        }
+      }
+      ref.read(statusMessageProvider.notifier).state = '已导出：${saved.join('；')}';
     } catch (e) {
       ref.read(statusMessageProvider.notifier).state = '导出失败：$e';
     } finally {
@@ -120,19 +133,12 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
           ]),
         ),
         Row(children: [
-          const SizedBox(width: 58, child: Text('豆子风格', style: TextStyle(fontSize: 12.5))),
+          const SizedBox(width: 58, child: Text('风格', style: TextStyle(fontSize: 12.5))),
           Expanded(
             child: CandyChips(
-              options: const ['真实风', '图纸风'],
-              selected: ref.watch(beadStyleProvider) == 'real' ? 0 : 1,
-              onChanged: (i) {
-                ref.read(beadStyleProvider.notifier).state =
-                    i == 0 ? 'real' : 'square';
-                // 已有图纸则按新风格重渲染（预览/导出共用 ChartPainter）
-                if (ref.read(patternProvider).chartImage != null) {
-                  ref.read(patternProvider.notifier).generate();
-                }
-              },
+              options: ExportService.styleOptions,
+              selected: _styleIndex,
+              onChanged: (i) => setState(() => _styleIndex = i),
             ),
           ),
         ]),
@@ -145,7 +151,7 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
-            hasChart ? '将按所选分辨率保存当前图纸。' : '请先在「图纸」页生成图纸。',
+            hasChart ? '按所选风格与分辨率保存；两种同时导出时自动添加风格后缀。' : '请先在「图纸」页生成图纸。',
             style: TextStyle(fontSize: 11.5, color: c.mutedFg),
           ),
         ),

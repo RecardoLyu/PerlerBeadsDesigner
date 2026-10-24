@@ -249,6 +249,20 @@ select.sel:focus{outline:2px solid var(--color-ring)}
 .help-body pre{background:var(--color-muted);border:1px solid var(--color-border);border-radius:10px;padding:10px 14px;overflow:auto;font-size:12.5px;line-height:1.6;margin:10px 0}
 .help-body pre code{background:none;padding:0;color:var(--color-foreground)}
 
+/* ===== 图纸画板首次引导 ===== */
+.board-guide-mask{z-index:100}
+.board-guide{width:min(480px,90vw);max-height:86vh;overflow:auto;padding:22px 24px;border-radius:24px;color:var(--color-foreground)}
+.board-guide header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.board-guide h2{font-family:var(--font-head);font-size:19px;color:var(--color-foreground-strong)}
+.board-guide-icon{width:82px;height:82px;margin:22px auto 16px;display:grid;place-items:center;border-radius:26px;background:linear-gradient(135deg,var(--color-primary),var(--color-accent));color:#fff;font-size:42px;font-weight:600}
+.board-guide h3{text-align:center;font-size:21px;color:var(--color-foreground-strong);margin-bottom:12px}
+.board-guide>p{font-size:14px;line-height:1.75;margin:0}
+.board-guide-gesture{margin-top:14px;padding:11px 13px;border-radius:13px;background:var(--color-muted);color:var(--color-muted-fg);font-size:13px;line-height:1.55}
+.board-guide-dots{display:flex;justify-content:center;gap:7px;margin:20px 0 14px}
+.board-guide-dots span{width:7px;height:7px;border-radius:99px;background:var(--color-border);transition:width .18s,background .18s}
+.board-guide-dots span.on{width:21px;background:var(--color-primary)}
+.board-guide footer{display:flex;justify-content:space-between;gap:12px}
+
 /* ===== 图纸画板 ===== */
 #boardCanvas{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;z-index:5}
 .viewport.board-mode img{opacity:0}                 /* 画板态隐藏占位 img，仅保留 transform 容器语义 */

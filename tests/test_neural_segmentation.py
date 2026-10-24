@@ -68,13 +68,19 @@ def test_neural_segmentation_api():
         assert status.status_code == 200
         assert status.json()['model_available'] is True
         response = client.post('/api/segment/auto', json={
-            'method': 'u2netp', 'provider': 'cpu', 'threshold': 0.5,
+            'method': 'u2netp', 'provider': 'cpu', 'foreground_strength': 0.1,
         })
         assert response.status_code == 200
         assert response.headers['content-type'] == 'image/png'
         assert STATE.mask.shape == (48, 64)
+        low_area = int(np.count_nonzero(STATE.mask))
+        response = client.post('/api/segment/auto', json={
+            'method': 'u2netp', 'provider': 'cpu', 'foreground_strength': 0.9,
+        })
+        assert response.status_code == 200
+        assert int(np.count_nonzero(STATE.mask)) >= low_area
         invalid = client.post('/api/segment/auto', json={
-            'method': 'u2netp', 'provider': 'cpu', 'threshold': 2.0,
+            'method': 'u2netp', 'provider': 'cpu', 'foreground_strength': 1.01,
         })
         assert invalid.status_code == 400
     finally:

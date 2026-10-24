@@ -21,7 +21,7 @@
     tool: 'pen',                    // pen | eraser | fill | rect
     color: null,                    // 当前色号
     brush: 1,                       // 笔触粗细（格）
-    style: 'real',                  // real 真实风 | square 图纸风
+    style: 'real',                  // real 真实 | square 图纸
     base: false, baseVisible: true, baseOpacity: 0.35,
     baseImg: null,                  // 整幅底图 HTMLImage（叠加显示，按偏移+缩放裁切）
     baseOffX: 0, baseOffY: 0,       // 底图偏移（画板格坐标，可为负）
@@ -60,7 +60,7 @@
     if (!code) return;
     const hex = colorOf(code);
     if (B.style !== 'real') {
-      // 图纸风：实心方格 + 中央印色号（对齐图像转换图纸预览），按亮度选字色
+      // 图纸：实心方格 + 中央印色号（对齐图像转换图纸预览），按亮度选字色
       ctx.fillStyle = hex; ctx.fillRect(px, py, cell, cell);
       const [r, g, b] = hexToRgb(hex);
       const lum = r * .3 + g * .59 + b * .11;
@@ -200,6 +200,7 @@
     $('emptyHint').style.display = 'none';
     await refresh(true);
     if (viewer._updateMini) viewer._updateMini();   // 切到画板 → 鹰眼切到 boardCanvas
+    if (window.BoardGuide) window.BoardGuide.showIfFirstUse();
   };
   /* 离开画板（切回图像转换时由 app.onViewSwitch 链触发） */
   window.onExitBoard = function () {
@@ -214,13 +215,13 @@
     if (viewer._updateMini) viewer._updateMini();
   };
 
-  /* 视图切换按钮：画板态显示「真实风/图纸风」，图像转换态恢复原五模式 */
+  /* 视图切换按钮：画板态显示「真实/图纸」，图像转换态恢复原五模式 */
   function syncViewToggle() {
     const vt = $('viewToggle');
     if (!vt) return;
     vt.innerHTML = `
-      <button class="${B.style === 'real' ? 'on' : ''}" data-bstyle="real">真实风</button>
-      <button class="${B.style === 'square' ? 'on' : ''}" data-bstyle="square">图纸风</button>`;
+      <button class="${B.style === 'real' ? 'on' : ''}" data-bstyle="real">真实</button>
+      <button class="${B.style === 'square' ? 'on' : ''}" data-bstyle="square">图纸</button>`;
     vt.onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
       B.style = b.dataset.bstyle;
@@ -397,27 +398,35 @@
     B.baseScale = ns;
     render();
   }, { capture: true, passive: false });
-  window.addEventListener('mousemove', (e) => {
+  /* PointerEvent 的合并样本包含一帧内的高速移动；逐个取出再补格，
+     比只处理 mousemove 的最后一个位置更连贯。 */
+  window.addEventListener('pointermove', (e) => {
     if (!B.active) return;
-    if (B.baseAdjust && B.baseDrag) {          // 中键拖动底图
-      const dx = (e.clientX - B.baseDrag.sx) / viewer.scale / CELL;
-      const dy = (e.clientY - B.baseDrag.sy) / viewer.scale / CELL;
-      B.baseOffX = B.baseDrag.ox + dx; B.baseOffY = B.baseDrag.oy + dy;
-      render();
-      return;
+    const coalesced = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+    const samples = coalesced.length ? coalesced : [e];
+    let changed = false;
+    for (const sample of samples) {
+      if (B.baseAdjust && B.baseDrag) {          // 中键拖动底图
+        const dx = (sample.clientX - B.baseDrag.sx) / viewer.scale / CELL;
+        const dy = (sample.clientY - B.baseDrag.sy) / viewer.scale / CELL;
+        B.baseOffX = B.baseDrag.ox + dx; B.baseOffY = B.baseDrag.oy + dy;
+        changed = true;
+        continue;
+      }
+      if (B.baseAdjust) continue;                // 调整期不进入任何绘制分支
+      if (B.rectStart && !B.drawing) {           // 框选拖动
+        const c = toCell(sample);
+        if (c) { B.rectEnd = c; changed = true; }
+        continue;
+      }
+      if (!B.drawing || !B.stroke) continue;
+      const c = toCell(sample); if (!c) continue;
+      const last = B.stroke.last || c;
+      lineCells(last[0], last[1], c[0], c[1]).forEach(([x, y]) => stamp(x, y));
+      B.stroke.last = c;
+      changed = true;
     }
-    if (B.baseAdjust) return;                  // 调整期不进入任何绘制分支
-    if (B.rectStart && !B.drawing) {           // 框选拖动
-      const c = toCell(e); if (c) { B.rectEnd = c; render(); }
-      return;
-    }
-    if (!B.drawing || !B.stroke) return;
-    const c = toCell(e); if (!c) return;
-    // Bresenham 走线：last→当前沿途整格全 stamp，快速滑动不断线（自然满足 8-连通）
-    const last = B.stroke.last || c;
-    lineCells(last[0], last[1], c[0], c[1]).forEach(([x, y]) => stamp(x, y));
-    B.stroke.last = c;
-    render();
+    if (changed) render();
   });
   window.addEventListener('mouseup', async (e) => {
     if (!B.active) return;
@@ -467,6 +476,7 @@
     host.innerHTML = `
       <div class="panel-card glass">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>画板</h3>
+        <button class="btn btn-ghost" id="boardGuideBtn" style="width:100%;margin-bottom:6px">查看新手引导</button>
         <div class="num-row"><label>规格</label><select class="sel" id="boardSize">${sizeOpts}</select></div>
         <div class="num-row"><label>拼豆品牌</label><select class="sel" id="boardBrand">${brandOpts}</select></div>
         <div class="tool-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
@@ -493,7 +503,7 @@
       <div class="panel-card glass">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-6 6"/></svg>参考底图</h3>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-ghost" id="boardBaseLoadBtn" style="flex:1">上传底图</button>
+          <button class="btn btn-ghost" id="boardBaseLoadBtn" style="flex:1">${B.base ? '更换底图…' : '上传底图'}</button>
           <button class="btn btn-ghost" id="boardBaseClearBtn">清除</button>
         </div>
         <input type="file" id="boardBaseFile" accept="image/*" style="display:none">
@@ -512,16 +522,12 @@
 
       <div class="panel-card glass">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>导出图纸</h3>
-        <div class="num-row"><label>风格</label>
-          <select class="sel" id="boardExpStyle">
-            <option value="real" ${B.style === 'real' ? 'selected' : ''}>真实风</option>
-            <option value="square" ${B.style === 'square' ? 'selected' : ''}>图纸风</option>
-          </select></div>
+        <div class="num-row"><label>导出风格</label><div class="check-row" style="flex:1;gap:12px"><input type="checkbox" id="boardExportReal"><label for="boardExportReal">真实</label><input type="checkbox" id="boardExportSquare" checked><label for="boardExportSquare">图纸</label></div></div>
         <div class="num-row" style="flex-wrap:nowrap"><label>文件名</label>
           <input type="text" id="boardExpName" value="board" style="flex:1;min-width:0;padding:7px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13px"></div>
         <div class="check-row"><input type="checkbox" id="boardExportBom"><label for="boardExportBom">同时导出 BOM（CSV）</label></div>
         <button class="btn btn-primary" id="boardExportBtn" style="width:100%;margin-top:8px">导出 PNG</button>
-        <p class="hint" id="boardExpResult">导出 PNG 图纸，可选择同时导出物料清单。</p>
+        <p class="hint" id="boardExpResult">可单选或同时导出真实与图纸，并可附带物料清单。</p>
       </div>
 
       <div class="panel-card glass">
@@ -532,7 +538,7 @@
     buildPalette();
     bindToolbar();
     // 下拉走 gsel 玻璃拟态（与图像转换一致）
-    ['boardSize', 'boardBrand', 'boardExpStyle'].forEach(id => {
+    ['boardSize', 'boardBrand'].forEach(id => {
       const el = $(id); if (el && window.Dropdown) window.Dropdown.enhance(el);
     });
     // 滑块走可编辑虚线框（与图像转换一致）
@@ -589,6 +595,7 @@
   }
 
   function bindToolbar() {
+    $('boardGuideBtn').addEventListener('click', () => window.BoardGuide.show());
     $('boardSize').addEventListener('change', async () => {
       const sz = +$('boardSize').value;
       const ok = await window.uiConfirm('切换到 ' + sz + '×' + sz + ' 将清空当前画板，确定？', { title: '切换规格', danger: true });
@@ -650,11 +657,16 @@
     // 导出
     $('boardExportBtn').addEventListener('click', async () => {
       try {
+        const beadStyles = [
+          ...($('boardExportReal').checked ? ['real'] : []),
+          ...($('boardExportSquare').checked ? ['square'] : []),
+        ];
+        if (!beadStyles.length) { window.fail('请至少选择一种导出风格'); return; }
         busy.start('导出图纸…');
         const od = (await API.getOutputDir()).output_dir;
         const r = await API.boardExport({
           filename: $('boardExpName').value || 'board',
-          output_dir: od, bead_style: $('boardExpStyle').value,
+          output_dir: od, bead_styles: beadStyles,
           export_bom: $('boardExportBom').checked,
         });
         $('boardExpResult').textContent = '已导出: ' + r.files.map(f => f.split(/[\\/]/).pop()).join('、');

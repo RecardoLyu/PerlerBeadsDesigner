@@ -319,7 +319,7 @@ select.sel:focus{outline:2px solid var(--color-ring)}
           <div class="divider"></div>
           <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>自动分割</h4>
           <div class="num-row"><label>方法</label><div class="sel-wrap"><select class="sel" id="segMethod"><option value="grabcut_rect">GrabCut矩形</option><option value="watershed" selected>分水岭</option><option value="otsu">Otsu</option><option value="slic">SLIC</option></select></div></div>
-          <div class="slider-row" data-showfor="watershed"><label>前景比例</label><input type="range" min="0.1" max="0.9" step="0.05" value="0.4"><output>0.40</output></div>
+          <div class="slider-row" data-showfor="watershed"><label>前景强度</label><input type="range" min="0" max="1" step="0.01" value="0.6"><output>0.60</output></div>
           <div class="slider-row" data-showfor="slic" style="display:none"><label>超像素数</label><input type="range" min="50" max="400" step="10" value="150"><output>150</output></div>
           <div class="btn-row"><button class="btn btn-primary" data-demo="执行分割">执行分割</button></div>
           <div class="btn-row"><button class="btn btn-ghost" data-demo="应用分割结果">应用分割结果</button></div>

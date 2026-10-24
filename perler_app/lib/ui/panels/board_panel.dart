@@ -5,6 +5,7 @@ import '../../services/export_service.dart';
 import '../../services/image_loader.dart';
 import '../../state/app_state.dart';
 import '../../theme/candy_theme.dart';
+import '../board/board_guide.dart';
 import '../widgets.dart';
 
 /// 图纸画板面板：工具条 + 圆环编号豆色横滚条 + 参考底图 + 导出（底部「屏幕下方」）。
@@ -17,6 +18,7 @@ class BoardPanel extends ConsumerStatefulWidget {
 
 class _BoardPanelState extends ConsumerState<BoardPanel> {
   int _resIndex = 1; // 默认 2K
+  int _styleIndex = 1; // 默认导出图纸，不改变画板预览风格
   bool _saving = false;
   late final TextEditingController _nameCtrl;
 
@@ -24,8 +26,11 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: 'board');
-    // 首次进入确保画板已建
-    Future.microtask(() => ref.read(boardProvider.notifier).ensure());
+    // 首次进入确保画板已建，并显示一次分步新手引导。
+    Future.microtask(() async {
+      await ref.read(boardProvider.notifier).ensure();
+      if (mounted) await BoardGuideDialog.showIfFirstUse(context);
+    });
   }
 
   @override
@@ -82,13 +87,27 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
     setState(() => _saving = true);
     ref.read(statusMessageProvider.notifier).state = '正在导出图纸 PNG …';
     try {
-      final chart = await ref.read(boardProvider.notifier).renderChart(
-          title: _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim());
+      final rawName = _nameCtrl.text.trim();
+      final name = rawName.isEmpty ? 'board' : rawName;
       final widthPx = ExportService.resolutions[_resIndex].$2;
-      final saved = await ExportService.saveChart(chart, widthPx,
-          name: _nameCtrl.text.trim().isEmpty ? 'board' : _nameCtrl.text.trim());
-      chart.dispose();
-      ref.read(statusMessageProvider.notifier).state = '已导出：$saved';
+      final styles = ExportService.stylesForSelection(_styleIndex);
+      final saved = <String>[];
+      for (final style in styles) {
+        final chart = await ref.read(boardProvider.notifier).renderChart(
+          title: name,
+          style: style,
+        );
+        try {
+          saved.add(await ExportService.saveChart(
+            chart,
+            widthPx,
+            name: ExportService.fileBaseName(name, style, styles.length),
+          ));
+        } finally {
+          chart.dispose();
+        }
+      }
+      ref.read(statusMessageProvider.notifier).state = '已导出：${saved.join('；')}';
     } catch (e) {
       ref.read(statusMessageProvider.notifier).state = '导出失败：$e';
     } finally {
@@ -175,6 +194,15 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
         // ---- 图纸画板（规格/工具/笔触）----
         const PanelTitle(
             icon: Icons.brush_rounded, title: '图纸画板', sub: '自由绘制拼豆图纸（单指绘制 · 双指缩放平移）'),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => showDialog<void>(
+                context: context, builder: (_) => const BoardGuideDialog()),
+            icon: const Icon(Icons.school_outlined, size: 17),
+            label: const Text('查看新手引导'),
+          ),
+        ),
 
         // ---- 规格 ----
         Row(children: [
@@ -294,9 +322,9 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
           const SizedBox(width: 58, child: Text('风格', style: TextStyle(fontSize: 12.5))),
           Expanded(
             child: CandyChips(
-              options: const ['真实风', '图纸风'],
-              selected: b.style == 'real' ? 0 : 1,
-              onChanged: (i) => n.setStyle(i == 0 ? 'real' : 'square'),
+              options: ExportService.styleOptions,
+              selected: _styleIndex,
+              onChanged: (i) => setState(() => _styleIndex = i),
             ),
           ),
         ]),

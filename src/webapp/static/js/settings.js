@@ -233,7 +233,7 @@
     _settings = { ..._settings, ...(partial || _collect()) };
     try { await API.saveSettings(_settings); } catch (e) { /* 静默 */ }
   }
-  window.saveSettings = save;   // 供 app.js 等非设置模块持久化单项（如豆子风格）
+  window.saveSettings = save;   // 供 app.js 等非设置模块持久化单项（如预览风格）
   /* 把默认参数灌进图纸/分割参数卡（首次加载取一次快照） */
   function _applyDefaultsToPanels(s) {
     const set = (id, v) => { const el = $(id); if (el == null || v == null) return;

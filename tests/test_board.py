@@ -173,3 +173,38 @@ def test_export(client, tmp_path):
         rows = list(csv.DictReader(f))
     assert rows == [{"brand": "mard", "code": "H1", "name": "纯白",
                      "count": "3", "percentage": "100.00"}]
+
+
+def test_export_both_styles_for_board_and_pattern(client, tmp_path):
+    import os
+
+    client.post("/api/board/new", json={"size": 52, "brand": "mard"})
+    client.post("/api/board/stroke", json={
+        "cells": [[0, 0], [5, 5], [10, 10]], "code": "H1"})
+    response = client.post("/api/board/export", json={
+        "filename": "dual", "output_dir": str(tmp_path),
+        "bead_styles": ["real", "square"], "png_scale": 0.1,
+    })
+    assert response.status_code == 200
+    files = response.json()["files"]
+    assert [os.path.basename(path) for path in files] == [
+        "dual_real.png", "dual_chart.png"]
+    assert all(os.path.isfile(path) for path in files)
+    assert open(files[0], "rb").read() != open(files[1], "rb").read()
+
+    # 画板已建立同一份生成器网格；转换导出走同一套双风格规则。
+    response = client.post("/api/export", json={
+        "filename": "pattern", "output_dir": str(tmp_path),
+        "bead_styles": ["real", "square"], "png_scale": 0.1,
+        "export_bom": True,
+    })
+    assert response.status_code == 200
+    files = response.json()["files"]
+    assert [os.path.basename(path) for path in files] == [
+        "pattern_real.png", "pattern_chart.png", "pattern_bom.csv"]
+    assert client.post("/api/export", json={
+        "output_dir": str(tmp_path), "bead_styles": [],
+    }).status_code == 400
+    assert client.post("/api/board/export", json={
+        "output_dir": str(tmp_path), "bead_styles": ["unknown"],
+    }).status_code == 400

@@ -18,6 +18,21 @@ class ExportService {
     ('4K', 3840),
   ];
 
+  /// 导出风格与桌面一致：默认图纸，也支持真实或两种同时导出。
+  static const styleOptions = ['真实', '图纸', '两种'];
+
+  static List<String> stylesForSelection(int index) => switch (index) {
+        0 => const ['real'],
+        2 => const ['real', 'square'],
+        _ => const ['square'],
+      };
+
+  /// 单风格沿用原文件名；双风格添加后缀，避免相互覆盖。
+  static String fileBaseName(String name, String style, int styleCount) {
+    if (styleCount == 1) return name;
+    return '${name}_${style == 'real' ? 'real' : 'chart'}';
+  }
+
   /// 把图纸 [chart] 编码为 PNG 并保存到相册，返回保存结果描述。
   /// [targetWidthPx] 目标宽度像素；按图纸纵横比缩放（锐利图纸用最近邻放大防糊）。
   static Future<String> saveChart(ui.Image chart, int targetWidthPx,

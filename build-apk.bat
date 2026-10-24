@@ -15,20 +15,32 @@ for %%V in (ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY BAGGAGE ^
   set "%%V="
 )
 
-REM ---- 必要环境变量 ----
+REM ---- 必要环境变量（全部固定在 D 盘，不回落 C 盘）----
+if not exist "D:\SDK\jdk-17.0.19+10\bin\java.exe" (
+  echo [build] 错误：缺少 D:\SDK\jdk-17.0.19+10，请先安装 Temurin JDK 17。
+  endlocal & exit /b 1
+)
+set "JAVA_HOME=D:\SDK\jdk-17.0.19+10"
+set "ANDROID_HOME=D:\SDK\android-sdk"
+set "ANDROID_SDK_ROOT=D:\SDK\android-sdk"
+set "GRADLE_USER_HOME=D:\SDK\gradle"
+set "ANDROID_USER_HOME=D:\SDK\android-home"
 set "PUB_CACHE=D:\pub-cache"
 set "DARTCV_CACHE_DIR=D:\WS\PYTHON\PerlerBeadsDesigner\build_cv\dartcv-cache"
+set "TEMP=D:\Temp\PerlerBuild"
+set "TMP=D:\Temp\PerlerBuild"
+set "FLUTTER_SUPPRESS_ANALYTICS=true"
+if not exist "D:\Temp\PerlerBuild" mkdir "D:\Temp\PerlerBuild"
+if not exist "D:\SDK\android-home" mkdir "D:\SDK\android-home"
 
-REM ---- 选 JDK：优先 D:\SDK 的 JDK 17（Gradle 9.1 支持 17-24），退回 AS 自带 jbr ----
-if exist "D:\SDK\jdk-17.0.19+10\bin\java.exe" (
-  set "JAVA_HOME=D:\SDK\jdk-17.0.19+10"
-) else if exist "C:\Program Files\Android\Android Studio\jbr\bin\java.exe" (
-  set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
-)
+REM ---- 只对本构建进程追加 PATH（setlocal 隔离，不污染系统）----
+set "PATH=D:\SDK\flutter\bin;%JAVA_HOME%\bin;D:\SDK\android-sdk\platform-tools;D:\SDK\android-sdk\cmdline-tools\latest\bin;%PATH%"
 
 cd /d "%~dp0perler_app\android"
 
 echo [build] JAVA_HOME=%JAVA_HOME%
+echo [build] ANDROID_HOME=%ANDROID_HOME%
+echo [build] GRADLE_USER_HOME=%GRADLE_USER_HOME%
 echo [build] PUB_CACHE=%PUB_CACHE%
 echo [build] DARTCV_CACHE_DIR=%DARTCV_CACHE_DIR%
 echo.
