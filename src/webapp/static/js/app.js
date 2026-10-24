@@ -310,6 +310,7 @@
         mask_bg: $('maskBg') ? $('maskBg').value : 'none',
         show_title: $('showTitle') ? $('showTitle').checked : false,
         bead_style: $('beadStyle') ? $('beadStyle').value : 'real',
+        export_bom: $('exportBom') ? $('exportBom').checked : false,
       });
       $('expResult').textContent = '已导出到 ' + res.output_dir + ': ' + res.files.map(f => f.split(/[\\/]/).pop()).join('、');
       busy.done('导出完成');

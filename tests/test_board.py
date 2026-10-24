@@ -159,10 +159,17 @@ def test_export(client, tmp_path):
                                            "code": "H1"})
     r = client.post("/api/board/export", json={
         "filename": "testboard", "output_dir": str(tmp_path),
-        "bead_style": "real", "png_scale": 1.0})
+        "bead_style": "real", "png_scale": 1.0, "export_bom": True})
     assert r.status_code == 200
     data = r.json()
     assert data["bom"]["total_beads"] == 3
-    assert len(data["files"]) == 1 and data["files"][0].endswith(".png")
+    assert len(data["files"]) == 2
+    assert data["files"][0].endswith(".png")
+    assert data["files"][1].endswith("_bom.csv")
+    import csv
     import os
     assert os.path.exists(data["files"][0])
+    with open(data["files"][1], encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows == [{"brand": "mard", "code": "H1", "name": "纯白",
+                     "count": "3", "percentage": "100.00"}]

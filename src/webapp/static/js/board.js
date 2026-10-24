@@ -519,8 +519,9 @@
           </select></div>
         <div class="num-row" style="flex-wrap:nowrap"><label>文件名</label>
           <input type="text" id="boardExpName" value="board" style="flex:1;min-width:0;padding:7px 10px;border-radius:12px;border:1px solid var(--color-border);background:var(--color-surface-strong);color:var(--color-foreground);font-family:var(--font-body);font-size:13px"></div>
-        <button class="btn btn-primary" id="boardExportBtn" style="width:100%;margin-top:8px">导出 PNG + BOM</button>
-        <p class="hint" id="boardExpResult">导出图纸与物料清单。</p>
+        <div class="check-row"><input type="checkbox" id="boardExportBom"><label for="boardExportBom">同时导出 BOM（CSV）</label></div>
+        <button class="btn btn-primary" id="boardExportBtn" style="width:100%;margin-top:8px">导出 PNG</button>
+        <p class="hint" id="boardExpResult">导出 PNG 图纸，可选择同时导出物料清单。</p>
       </div>
 
       <div class="panel-card glass">
@@ -654,8 +655,9 @@
         const r = await API.boardExport({
           filename: $('boardExpName').value || 'board',
           output_dir: od, bead_style: $('boardExpStyle').value,
+          export_bom: $('boardExportBom').checked,
         });
-        $('boardExpResult').textContent = '已导出: ' + r.files[0];
+        $('boardExpResult').textContent = '已导出: ' + r.files.map(f => f.split(/[\\/]/).pop()).join('、');
         busy.done('已导出（共 ' + r.bom.total_beads + ' 豆）');
       } catch (e) { window.fail('导出失败: ' + e.message); }
     });

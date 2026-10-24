@@ -55,6 +55,7 @@ const API = (() => {
       return _uploadUrl('/api/segment/grabcut/refine', f);
     },
     segmentAuto: (req) => _blobUrl('/api/segment/auto', req),
+    neuralStatus: () => _get('/api/segment/neural/status'),
     segmentMorph: (op, kernel, shape) => _blobUrl('/api/segment/morph', { op, kernel, shape }),
     segmentMorphUndo: () => _blobUrl('/api/segment/morph/undo', {}),
     segmentMorphRedo: () => _blobUrl('/api/segment/morph/redo', {}),

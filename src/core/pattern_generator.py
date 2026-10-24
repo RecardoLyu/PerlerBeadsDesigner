@@ -14,7 +14,7 @@ import json
 MASK_FADE = 0.70
 
 # Standard-chart render resolution (pixels per bead cell). 30 keeps per-cell
-# codes crisp and mitigates PDF upscale blur.
+# codes crisp in the exported PNG.
 CHART_BEAD_PX = 30
 
 # Supersample factor for the standard chart: render at Nx then LANCZOS down.

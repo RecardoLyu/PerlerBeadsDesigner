@@ -5,9 +5,9 @@ import '../../state/app_state.dart';
 import '../../theme/candy_theme.dart';
 import '../widgets.dart';
 
-/// 导出面板：一键把图纸 PNG 存到相册 + BOM（对应桌面版导出+BOM 两卡）。
-/// 移动端不再让用户选目录/选格式：固定导出 PNG 到相册「Pictures/拼豆图纸」，
-/// 分辨率三档（1080P / 2K / 4K），不提供缩放滑块与 PDF 开关。
+/// 导出面板：一键把图纸 PNG 存到相册，BOM 仅供界面查看。
+/// 移动端不让用户选目录/格式：固定导出 PNG 到相册「Pictures/拼豆图纸」，
+/// 分辨率三档（1080P / 2K / 4K），不提供独立 BOM 文件导出。
 class ExportPanel extends ConsumerStatefulWidget {
   const ExportPanel({super.key});
   @override

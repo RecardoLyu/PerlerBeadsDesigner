@@ -335,27 +335,40 @@ async def grabcut_refine(fgd: UploadFile | None = File(None),
 
 
 class AutoSegReq(BaseModel):
-    method: str                      # grabcut_rect | watershed | otsu | slic
+    method: str                      # u2netp | grabcut_rect | watershed | otsu | slic
     rect: list[int] | None = None    # grabcut_rect [x1,y1,x2,y2]
     fg_ratio: float = 0.4            # watershed
     n_segments: int = 150            # slic
+    provider: str = "auto"           # u2netp: auto | cpu | directml | cuda
+    threshold: float = 0.5           # u2netp foreground threshold
+
+
+@app.get("/api/segment/neural/status")
+def segment_neural_status():
+    from src.utils import neural_segmentation
+    return {"ok": True, **neural_segmentation.neural_status()}
 
 
 @app.post("/api/segment/auto")
 def segment_auto(req: AutoSegReq):
     img = _err(STATE.require_image)
-    s = segmod.ImageSegmentation()
-    if req.method == "grabcut_rect":
-        r = req.rect or [10, 10, img.shape[1] - 20, img.shape[0] - 20]
-        mask = _err(s.grabcut_rect, img, r[0], r[1], r[2], r[3])
-    elif req.method == "watershed":
-        mask = _err(s.watershed_auto, img, float(req.fg_ratio))
-    elif req.method == "otsu":
-        mask = _err(s.otsu_segment, img)
-    elif req.method == "slic":
-        mask = _err(s.slic_segment, img, int(req.n_segments))
+    if req.method == "u2netp":
+        from src.utils.neural_segmentation import U2NetPSegmenter
+        segmenter = U2NetPSegmenter(provider=req.provider)
+        mask = _err(segmenter.segment, img, float(req.threshold))
     else:
-        raise HTTPException(400, detail=f"未知分割方法: {req.method}")
+        s = segmod.ImageSegmentation()
+        if req.method == "grabcut_rect":
+            r = req.rect or [10, 10, img.shape[1] - 20, img.shape[0] - 20]
+            mask = _err(s.grabcut_rect, img, r[0], r[1], r[2], r[3])
+        elif req.method == "watershed":
+            mask = _err(s.watershed_auto, img, float(req.fg_ratio))
+        elif req.method == "otsu":
+            mask = _err(s.otsu_segment, img)
+        elif req.method == "slic":
+            mask = _err(s.slic_segment, img, int(req.n_segments))
+        else:
+            raise HTTPException(400, detail=f"未知分割方法: {req.method}")
     STATE.set_mask(mask)
     return _png(mask)
 
@@ -631,6 +644,7 @@ class ExportReq(BaseModel):
     mask_bg: str = "none"            # none | white | black
     show_title: bool = False         # 是否在导出图纸顶部渲染文件名标题
     bead_style: str = "real"         # real=真实豆子 | square=经典方格
+    export_bom: bool = False         # 桌面端可选同时导出 BOM CSV
 
 
 @app.post("/api/export")
@@ -655,10 +669,12 @@ def export(req: ExportReq):
                  color_count=len(colors),
                  total_beads=int(bom.get('total_beads', 0)),
                  bead_style=req.bead_style)
-    base = os.path.join(outdir, req.filename)
-    # 桌面端只导 PNG，按图纸尺寸直接生图（不再走 PDF/纸张排版）
+    # 桌面端输出 PNG，可选同时导出独立 BOM CSV。
     made = [exporter.export_png_standard(chart, req.filename,
                                          float(req.png_scale))]
+    if req.export_bom:
+        made.append(exporter.export_bom_csv(
+            bom, req.filename, STATE.color_manager.brand))
     return {"ok": True, "files": made, "output_dir": outdir}
 
 
@@ -876,6 +892,7 @@ class BoardExportReq(BaseModel):
     png_scale: float = 1.0
     show_title: bool = False
     bead_style: str = "real"         # real=真实风 | square=图纸风
+    export_bom: bool = False         # 桌面端可选同时导出 BOM CSV
 
 
 @app.post("/api/board/export")
@@ -902,6 +919,9 @@ def board_export(req: BoardExportReq):
                  bead_style=req.bead_style)
     made = [exporter.export_png_standard(chart, req.filename,
                                          float(req.png_scale))]
+    if req.export_bom:
+        made.append(exporter.export_bom_csv(
+            bom, req.filename, STATE.board_brand))
     return {"ok": True, "files": made, "output_dir": outdir, "bom": bom}
 
 
