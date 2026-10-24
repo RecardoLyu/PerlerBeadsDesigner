@@ -20,8 +20,11 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
   Matrix4 _startMatrix = Matrix4.identity();
   Offset _startFocal = Offset.zero;
   bool _multiTouch = false;
-  // 进行中的单指笔画（去重格集合），松手一次性提交
+  // 原始指针事件逐点采样；相邻采样点之间补格，松手一次性提交。
   final Set<int> _stroke = <int>{};
+  final Set<int> _activePointers = <int>{};
+  int? _drawingPointer;
+  (int, int)? _lastStrokeCell;
   // 框选起止（格坐标）
   (int, int)? _rectStart, _rectEnd;
   // 底图调整模式：拖拽/捏合起始快照（等比例变换，不改画布）
@@ -60,6 +63,53 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
     return (x, y);
   }
 
+  void _onPointerDown(PointerDownEvent d, Size box, BoardState b) {
+    _activePointers.add(d.pointer);
+    if (b.baseAdjusting) return;
+    if (_activePointers.length > 1) {
+      // 第二根手指加入后立即取消未提交笔画，把后续手势完整交给缩放。
+      _drawingPointer = null;
+      _lastStrokeCell = null;
+      if (_stroke.isNotEmpty) setState(_stroke.clear);
+      return;
+    }
+    if (b.tool != BoardTool.pen && b.tool != BoardTool.eraser) return;
+    final cell = _toCell(d.localPosition, box, b.size);
+    if (cell == null) return;
+    _drawingPointer = d.pointer;
+    _lastStrokeCell = cell;
+    _stroke.clear();
+    _stroke
+        .addAll(ref.read(boardProvider.notifier).stampCells(cell.$1, cell.$2));
+    setState(() {});
+  }
+
+  void _onPointerMove(PointerMoveEvent d, Size box, BoardState b) {
+    if (d.pointer != _drawingPointer || _activePointers.length != 1) return;
+    final cell = _toCell(d.localPosition, box, b.size);
+    if (cell == null) return;
+    final last = _lastStrokeCell;
+    final n = ref.read(boardProvider.notifier);
+    _stroke.addAll(last == null
+        ? n.stampCells(cell.$1, cell.$2)
+        : n.strokeLineCells(last, cell));
+    _lastStrokeCell = cell;
+    setState(() {});
+  }
+
+  void _onPointerUp(PointerEvent d, BoardState b, {bool cancelled = false}) {
+    _activePointers.remove(d.pointer);
+    if (d.pointer != _drawingPointer) return;
+    if (!cancelled && _stroke.isNotEmpty) {
+      ref
+          .read(boardProvider.notifier)
+          .stroke(_stroke, b.tool == BoardTool.eraser ? null : b.color);
+    }
+    _drawingPointer = null;
+    _lastStrokeCell = null;
+    setState(_stroke.clear);
+  }
+
   void _onScaleStart(ScaleStartDetails d, Size box, BoardState b) {
     // 底图调整模式：单/双指都改派给底图（拖动/捏合），不绘制、不缩放画布
     if (b.baseAdjusting) {
@@ -85,14 +135,14 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
         n.fill(cell.$1, cell.$2, b.color);
         break;
       case BoardTool.rect:
-        setState(() { _rectStart = cell; _rectEnd = cell; });
+        setState(() {
+          _rectStart = cell;
+          _rectEnd = cell;
+        });
         break;
       case BoardTool.pen:
       case BoardTool.eraser:
-        _stroke.clear();
-        _stroke.addAll(n.stampCells(cell.$1, cell.$2));
-        setState(() {});
-        break;
+        break; // 画笔与橡皮由原始指针回调逐点采样。
     }
   }
 
@@ -101,16 +151,13 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
     if (b.baseAdjusting) {
       final side = box.shortestSide;
       final cell = side / b.size;
-      // 平移（单指或双指拖动）
       var offX = _startBaseOffX + (d.focalPoint.dx - _startFocal.dx) / cell;
       var offY = _startBaseOffY + (d.focalPoint.dy - _startFocal.dy) / cell;
-      // 双指捏合缩放：以起始 focal 为锚，等比例
       var scale = _startBaseScale;
       if (d.pointerCount >= 2) {
         scale = (_startBaseScale * d.scale).clamp(0.02, 40.0);
-        // focal-fixed：保持锚点下的图点不动。锚点格坐标 = (localFocal-off)/cell
         final offBx = (box.width - side) / 2, offBy = (box.height - side) / 2;
-        final ax = (_startFocal.dx - offBx) / cell;   // 锚点（画板格坐标）
+        final ax = (_startFocal.dx - offBx) / cell;
         final ay = (_startFocal.dy - offBy) / cell;
         final k = scale / _startBaseScale;
         offX = ax - (ax - _startBaseOffX) * k;
@@ -128,8 +175,8 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
       m.translate(anchor.dx, anchor.dy);
       m.scale(scale);
       m.translate(-anchor.dx, -anchor.dy);
-      m.translate(d.focalPoint.dx - _startFocal.dx,
-          d.focalPoint.dy - _startFocal.dy);
+      m.translate(
+          d.focalPoint.dx - _startFocal.dx, d.focalPoint.dy - _startFocal.dy);
       _tx.value = m;
       return;
     }
@@ -137,16 +184,10 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
     if (cell == null) return;
     if (b.tool == BoardTool.rect && _rectStart != null) {
       setState(() => _rectEnd = cell);
-      return;
-    }
-    if (b.tool == BoardTool.pen || b.tool == BoardTool.eraser) {
-      _stroke.addAll(ref.read(boardProvider.notifier).stampCells(cell.$1, cell.$2));
-      setState(() {});
     }
   }
 
   void _onScaleEnd(ScaleEndDetails d, BoardState b) {
-    // 底图调整模式：不提交笔画，仅结束本次拖拽
     if (b.baseAdjusting) return;
     final n = ref.read(boardProvider.notifier);
     if (b.tool == BoardTool.rect && _rectStart != null && _rectEnd != null) {
@@ -155,15 +196,9 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
       final x2 = _rectStart!.$1 > _rectEnd!.$1 ? _rectStart!.$1 : _rectEnd!.$1;
       final y2 = _rectStart!.$2 > _rectEnd!.$2 ? _rectStart!.$2 : _rectEnd!.$2;
       n.rectFill(x1, y1, x2, y2, b.color);
-    } else if ((b.tool == BoardTool.pen || b.tool == BoardTool.eraser) &&
-        _stroke.isNotEmpty && !_multiTouch) {
-      n.stroke(_stroke, b.tool == BoardTool.eraser ? null : b.color);
     }
     _multiTouch = false;
-    setState(() {
-      _stroke.clear();
-      _rectStart = _rectEnd = null;
-    });
+    setState(() => _rectStart = _rectEnd = null);
   }
 
   @override
@@ -209,19 +244,27 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
                     // 画板始终接管手势（单指绘制、双指缩放平移），关闭 InteractiveViewer 自带手势
                     panEnabled: false,
                     scaleEnabled: false,
-                    child: GestureDetector(
+                    child: Listener(
                       behavior: HitTestBehavior.opaque,
-                      onScaleStart: (d) => _onScaleStart(d, box, b),
-                      onScaleUpdate: (d) => _onScaleUpdate(d, box, b),
-                      onScaleEnd: (d) => _onScaleEnd(d, b),
-                      child: CustomPaint(
-                        painter: _BoardPainter(
-                          state: b,
-                          stroke: _stroke,
-                          rectStart: _rectStart,
-                          rectEnd: _rectEnd,
+                      onPointerDown: (d) => _onPointerDown(d, box, b),
+                      onPointerMove: (d) => _onPointerMove(d, box, b),
+                      onPointerUp: (d) => _onPointerUp(d, b),
+                      onPointerCancel: (d) =>
+                          _onPointerUp(d, b, cancelled: true),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onScaleStart: (d) => _onScaleStart(d, box, b),
+                        onScaleUpdate: (d) => _onScaleUpdate(d, box, b),
+                        onScaleEnd: (d) => _onScaleEnd(d, b),
+                        child: CustomPaint(
+                          painter: _BoardPainter(
+                            state: b,
+                            stroke: _stroke,
+                            rectStart: _rectStart,
+                            rectEnd: _rectEnd,
+                          ),
+                          size: Size.infinite,
                         ),
-                        size: Size.infinite,
                       ),
                     ),
                   );
@@ -230,7 +273,9 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
             ),
             // 画布上方：真实/图纸 切换入口（与电脑端画板态顶部切换对齐）
             Positioned(
-              top: 12, left: 0, right: 0,
+              top: 12,
+              left: 0,
+              right: 0,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.all(4),
@@ -242,10 +287,18 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _StylePill(label: '真实', selected: b.style == 'real',
-                          onTap: () => ref.read(boardProvider.notifier).setStyle('real')),
-                      _StylePill(label: '图纸', selected: b.style == 'square',
-                          onTap: () => ref.read(boardProvider.notifier).setStyle('square')),
+                      _StylePill(
+                          label: '真实',
+                          selected: b.style == 'real',
+                          onTap: () => ref
+                              .read(boardProvider.notifier)
+                              .setStyle('real')),
+                      _StylePill(
+                          label: '图纸',
+                          selected: b.style == 'square',
+                          onTap: () => ref
+                              .read(boardProvider.notifier)
+                              .setStyle('square')),
                     ],
                   ),
                 ),
@@ -253,18 +306,29 @@ class _BoardCanvasState extends ConsumerState<BoardCanvas> {
             ),
             // 角落缩放工具（调整底图模式期间锁定）
             Positioned(
-              left: 12, top: 0, bottom: 0,
+              left: 12,
+              top: 0,
+              bottom: 0,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _Mini(icon: Icons.zoom_in_rounded,
-                      onTap: () { if (!b.baseAdjusting) _zoom(1.25); }),
+                  _Mini(
+                      icon: Icons.zoom_in_rounded,
+                      onTap: () {
+                        if (!b.baseAdjusting) _zoom(1.25);
+                      }),
                   const SizedBox(height: 8),
-                  _Mini(icon: Icons.zoom_out_rounded,
-                      onTap: () { if (!b.baseAdjusting) _zoom(0.8); }),
+                  _Mini(
+                      icon: Icons.zoom_out_rounded,
+                      onTap: () {
+                        if (!b.baseAdjusting) _zoom(0.8);
+                      }),
                   const SizedBox(height: 8),
-                  _Mini(icon: Icons.fit_screen_rounded,
-                      onTap: () { if (!b.baseAdjusting) _fit(); }),
+                  _Mini(
+                      icon: Icons.fit_screen_rounded,
+                      onTap: () {
+                        if (!b.baseAdjusting) _fit();
+                      }),
                 ],
               ),
             ),
@@ -280,7 +344,8 @@ class _StylePill extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _StylePill({required this.label, required this.selected, required this.onTap});
+  const _StylePill(
+      {required this.label, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
     final c = context.candy;
@@ -313,7 +378,8 @@ class _Mini extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40, height: 40,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: c.surface,
           border: Border.all(color: c.border),
@@ -364,7 +430,9 @@ class _BoardPainter extends CustomPainter {
     final side = size.shortestSide;
     final offX = (size.width - side) / 2, offY = (size.height - side) / 2;
     final cell = side / s;
-    final codeToColor = {for (final c in state.palette?.colors ?? <BeadColor>[]) c.code: c};
+    final codeToColor = {
+      for (final c in state.palette?.colors ?? <BeadColor>[]) c.code: c
+    };
     Color colOf(String? code) {
       if (code == null) return _pegboard;
       final c = codeToColor[code];
@@ -378,15 +446,19 @@ class _BoardPainter extends CustomPainter {
     // 底图（等比例缩放+偏移叠加，画板内裁切；只改底图不动画板）
     if (state.baseImage != null && state.baseVisible) {
       final img = state.baseImage!;
-      final src = Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+      final src =
+          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
       final w = state.baseW * state.baseScale * cell;
       final h = state.baseH * state.baseScale * cell;
-      final dx = offX + state.baseOffX * cell, dy = offY + state.baseOffY * cell;
+      final dx = offX + state.baseOffX * cell,
+          dy = offY + state.baseOffY * cell;
       final dst = Rect.fromLTWH(dx, dy, w, h);
       canvas.save();
-      canvas.clipRect(Rect.fromLTWH(offX, offY, side, side));   // 只画板内
+      canvas.clipRect(Rect.fromLTWH(offX, offY, side, side)); // 只画板内
       canvas.drawImageRect(
-          img, src, dst,
+          img,
+          src,
+          dst,
           Paint()
             ..color = Colors.white.withOpacity(state.baseOpacity)
             ..filterQuality = FilterQuality.medium);
@@ -409,7 +481,8 @@ class _BoardPainter extends CustomPainter {
       for (var x = 0; x < s; x++) {
         final code = state.grid[y * s + x];
         if (code != null) {
-          _drawBead(canvas, offX + x * cell, offY + y * cell, cell, colOf(code));
+          _drawBead(
+              canvas, offX + x * cell, offY + y * cell, cell, colOf(code));
         }
       }
     }
@@ -433,13 +506,10 @@ class _BoardPainter extends CustomPainter {
       final y1 = rectStart!.$2 < rectEnd!.$2 ? rectStart!.$2 : rectEnd!.$2;
       final x2 = rectStart!.$1 > rectEnd!.$1 ? rectStart!.$1 : rectEnd!.$1;
       final y2 = rectStart!.$2 > rectEnd!.$2 ? rectStart!.$2 : rectEnd!.$2;
-      final rect = Rect.fromLTWH(
-          offX + x1 * cell, offY + y1 * cell,
+      final rect = Rect.fromLTWH(offX + x1 * cell, offY + y1 * cell,
           (x2 - x1 + 1) * cell, (y2 - y1 + 1) * cell);
       canvas.drawRect(
-          rect,
-          Paint()
-            ..color = const Color(0xFF7C3AED).withOpacity(0.12));
+          rect, Paint()..color = const Color(0xFF7C3AED).withOpacity(0.12));
       canvas.drawRect(
           rect,
           Paint()

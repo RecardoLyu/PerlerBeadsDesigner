@@ -5,6 +5,7 @@ import '../../services/export_service.dart';
 import '../../services/image_loader.dart';
 import '../../state/app_state.dart';
 import '../../theme/candy_theme.dart';
+import '../board/board_guide.dart';
 import '../widgets.dart';
 
 /// 图纸画板面板：工具条 + 圆环编号豆色横滚条 + 参考底图 + 导出（底部「屏幕下方」）。
@@ -25,8 +26,11 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: 'board');
-    // 首次进入确保画板已建
-    Future.microtask(() => ref.read(boardProvider.notifier).ensure());
+    // 首次进入确保画板已建，并显示一次分步新手引导。
+    Future.microtask(() async {
+      await ref.read(boardProvider.notifier).ensure();
+      if (mounted) await BoardGuideDialog.showIfFirstUse(context);
+    });
   }
 
   @override
@@ -190,6 +194,15 @@ class _BoardPanelState extends ConsumerState<BoardPanel> {
         // ---- 图纸画板（规格/工具/笔触）----
         const PanelTitle(
             icon: Icons.brush_rounded, title: '图纸画板', sub: '自由绘制拼豆图纸（单指绘制 · 双指缩放平移）'),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => showDialog<void>(
+                context: context, builder: (_) => const BoardGuideDialog()),
+            icon: const Icon(Icons.school_outlined, size: 17),
+            label: const Text('查看新手引导'),
+          ),
+        ),
 
         // ---- 规格 ----
         Row(children: [

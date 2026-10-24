@@ -1676,6 +1676,24 @@ class BoardNotifier extends StateNotifier<BoardState> {
     return out;
   }
 
+  /// 将两个采样点连成 8-连通轨迹，并为沿途每格应用当前笔触。
+  /// 快速滑动即使跨越多格，也不会只留下两个孤立端点。
+  Set<int> strokeLineCells((int, int) from, (int, int) to) {
+    final out = <int>{};
+    var x = from.$1, y = from.$2;
+    final dx = (to.$1 - x).abs(), dy = (to.$2 - y).abs();
+    final sx = x < to.$1 ? 1 : -1, sy = y < to.$2 ? 1 : -1;
+    var err = dx - dy;
+    while (true) {
+      out.addAll(stampCells(x, y));
+      if (x == to.$1 && y == to.$2) break;
+      final e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+    }
+    return out;
+  }
+
   /// 油漆桶 flood fill：从 (x,y) 起把同色连通域填为 code（null=成片擦除）。
   void fill(int x, int y, String? code) {
     final s = state.size, g = state.grid;

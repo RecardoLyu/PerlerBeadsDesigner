@@ -86,8 +86,14 @@ void main() {
       await n.newBoard(4, 'mard');
       n.rectFill(1, 1, 2, 2, 'B'); // 2×2 中心
       final g = c.read(boardProvider).grid;
-      expect(g[5], 'B'); g[6]; g[9]; g[10];
-      expect(g[5], 'B'); expect(g[6], 'B'); expect(g[9], 'B'); expect(g[10], 'B');
+      expect(g[5], 'B');
+      g[6];
+      g[9];
+      g[10];
+      expect(g[5], 'B');
+      expect(g[6], 'B');
+      expect(g[9], 'B');
+      expect(g[10], 'B');
       expect(g[0], null);
       expect(n.totalBeads, 4);
     });
@@ -140,6 +146,26 @@ void main() {
       final cells = n.stampCells(1, 1);
       // 2×2 见方：(0,0)(1,0)(0,1)(1,1) → index 0,1,4,5
       expect(cells, {0, 1, 4, 5});
+    });
+
+    test('快速跨格轨迹连续并应用笔触', () async {
+      final c = _mk(_tinyPalette());
+      final n = c.read(boardProvider.notifier);
+      await n.newBoard(8, 'mard');
+      final cells = n.strokeLineCells((0, 0), (7, 3));
+      n.stroke(cells, 'R');
+      final grid = c.read(boardProvider).grid;
+      expect(cells.length, 8);
+      final points = cells.map((i) => (i % 8, i ~/ 8)).toList()
+        ..sort((a, b) => a.$1.compareTo(b.$1));
+      for (var i = 0; i < points.length; i++) {
+        final p = points[i];
+        expect(p.$1, i);
+        expect(grid[p.$2 * 8 + p.$1], 'R');
+        if (i > 0) {
+          expect((p.$2 - points[i - 1].$2).abs(), lessThanOrEqualTo(1));
+        }
+      }
     });
 
     test('BOM 多色统计与排序', () async {

@@ -200,6 +200,7 @@
     $('emptyHint').style.display = 'none';
     await refresh(true);
     if (viewer._updateMini) viewer._updateMini();   // 切到画板 → 鹰眼切到 boardCanvas
+    if (window.BoardGuide) window.BoardGuide.showIfFirstUse();
   };
   /* 离开画板（切回图像转换时由 app.onViewSwitch 链触发） */
   window.onExitBoard = function () {
@@ -397,27 +398,35 @@
     B.baseScale = ns;
     render();
   }, { capture: true, passive: false });
-  window.addEventListener('mousemove', (e) => {
+  /* PointerEvent 的合并样本包含一帧内的高速移动；逐个取出再补格，
+     比只处理 mousemove 的最后一个位置更连贯。 */
+  window.addEventListener('pointermove', (e) => {
     if (!B.active) return;
-    if (B.baseAdjust && B.baseDrag) {          // 中键拖动底图
-      const dx = (e.clientX - B.baseDrag.sx) / viewer.scale / CELL;
-      const dy = (e.clientY - B.baseDrag.sy) / viewer.scale / CELL;
-      B.baseOffX = B.baseDrag.ox + dx; B.baseOffY = B.baseDrag.oy + dy;
-      render();
-      return;
+    const coalesced = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+    const samples = coalesced.length ? coalesced : [e];
+    let changed = false;
+    for (const sample of samples) {
+      if (B.baseAdjust && B.baseDrag) {          // 中键拖动底图
+        const dx = (sample.clientX - B.baseDrag.sx) / viewer.scale / CELL;
+        const dy = (sample.clientY - B.baseDrag.sy) / viewer.scale / CELL;
+        B.baseOffX = B.baseDrag.ox + dx; B.baseOffY = B.baseDrag.oy + dy;
+        changed = true;
+        continue;
+      }
+      if (B.baseAdjust) continue;                // 调整期不进入任何绘制分支
+      if (B.rectStart && !B.drawing) {           // 框选拖动
+        const c = toCell(sample);
+        if (c) { B.rectEnd = c; changed = true; }
+        continue;
+      }
+      if (!B.drawing || !B.stroke) continue;
+      const c = toCell(sample); if (!c) continue;
+      const last = B.stroke.last || c;
+      lineCells(last[0], last[1], c[0], c[1]).forEach(([x, y]) => stamp(x, y));
+      B.stroke.last = c;
+      changed = true;
     }
-    if (B.baseAdjust) return;                  // 调整期不进入任何绘制分支
-    if (B.rectStart && !B.drawing) {           // 框选拖动
-      const c = toCell(e); if (c) { B.rectEnd = c; render(); }
-      return;
-    }
-    if (!B.drawing || !B.stroke) return;
-    const c = toCell(e); if (!c) return;
-    // Bresenham 走线：last→当前沿途整格全 stamp，快速滑动不断线（自然满足 8-连通）
-    const last = B.stroke.last || c;
-    lineCells(last[0], last[1], c[0], c[1]).forEach(([x, y]) => stamp(x, y));
-    B.stroke.last = c;
-    render();
+    if (changed) render();
   });
   window.addEventListener('mouseup', async (e) => {
     if (!B.active) return;
@@ -467,6 +476,7 @@
     host.innerHTML = `
       <div class="panel-card glass">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>画板</h3>
+        <button class="btn btn-ghost" id="boardGuideBtn" style="width:100%;margin-bottom:6px">查看新手引导</button>
         <div class="num-row"><label>规格</label><select class="sel" id="boardSize">${sizeOpts}</select></div>
         <div class="num-row"><label>拼豆品牌</label><select class="sel" id="boardBrand">${brandOpts}</select></div>
         <div class="tool-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
@@ -493,7 +503,7 @@
       <div class="panel-card glass">
         <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-6 6"/></svg>参考底图</h3>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-ghost" id="boardBaseLoadBtn" style="flex:1">上传底图</button>
+          <button class="btn btn-ghost" id="boardBaseLoadBtn" style="flex:1">${B.base ? '更换底图…' : '上传底图'}</button>
           <button class="btn btn-ghost" id="boardBaseClearBtn">清除</button>
         </div>
         <input type="file" id="boardBaseFile" accept="image/*" style="display:none">
@@ -585,6 +595,7 @@
   }
 
   function bindToolbar() {
+    $('boardGuideBtn').addEventListener('click', () => window.BoardGuide.show());
     $('boardSize').addEventListener('change', async () => {
       const sz = +$('boardSize').value;
       const ok = await window.uiConfirm('切换到 ' + sz + '×' + sz + ' 将清空当前画板，确定？', { title: '切换规格', danger: true });

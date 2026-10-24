@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,8 @@ Future<void> main() async {
   // runZonedGuarded 兜底：任何未捕获异常都记录日志，不让 App 启动即崩。
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // 启用输入重采样，结合画板原始指针逐点处理与轨迹补格，改善快速滑动跟手性。
+    GestureBinding.instance.resamplingEnabled = true;
     // 在线更新：原生 DownloadManager 后台下载（退出页面/App 不中断、断点续传）。
     // 必须在 runApp 前初始化。包 try/catch：初始化失败时仅降级「在线更新不可用」，
     // 不阻塞 runApp（否则原生层一抛异常 App 就直接闪退）。
@@ -30,7 +33,8 @@ Future<void> main() async {
     final initialSkin = await SkinNotifier.restore();
     runApp(ProviderScope(
       overrides: [
-        themeModeProvider.overrideWith((_) => ThemeModeNotifier(initialThemeMode)),
+        themeModeProvider
+            .overrideWith((_) => ThemeModeNotifier(initialThemeMode)),
         skinProvider.overrideWith((_) => SkinNotifier(initialSkin)),
       ],
       child: const PerlerApp(),
@@ -53,8 +57,9 @@ class PerlerApp extends ConsumerWidget {
     final cv = skin.colorValue;
     if (skin.enabled && cv != null) {
       final base = Color(0xFF000000 | cv);
-      final accent =
-          skin.accentValue != null ? Color(0xFF000000 | skin.accentValue!) : null;
+      final accent = skin.accentValue != null
+          ? Color(0xFF000000 | skin.accentValue!)
+          : null;
       palLight = deriveSkinPalette(base, Brightness.light, accent: accent);
       palDark = deriveSkinPalette(base, Brightness.dark, accent: accent);
     }
